@@ -1,0 +1,21 @@
+{
+  "name": "@intercept/agent-tee",
+  "version": "1.0.0",
+  "description": "NEAR AI Cloud TEE Quantitative Risk & Cross-Chain Rescue Engine for Intercept",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "verify": "node --experimental-strip-types src/cli-verify.ts",
+    "preflight": "node --experimental-strip-types src/cli-verify.ts --preflight",
+    "rescue:live": "node --experimental-strip-types src/cli-verify.ts --rescue-live",
+    "test": "node --experimental-strip-types --test src/test.ts"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2"
+  }
+}
