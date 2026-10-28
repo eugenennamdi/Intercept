@@ -1,0 +1,23 @@
+{
+  "name": "intercept-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Intercept: Zero-trust cross-chain Kamino liquidation defense powered by NEAR AI Cloud (TEE), NEAR Policy Guardrail Contracts, NEAR Chain Signatures (v1.signer), and NEAR Intents (1-Click Swap API)",
+  "workspaces": [
+    "packages/agent-tee",
+    "packages/web"
+  ],
+  "scripts": {
+    "test:contract": "cargo test --manifest-path contracts/policy-guardrail/Cargo.toml",
+    "test:agent": "npm --workspace=@intercept/agent-tee test",
+    "test": "npm run test:contract && npm run test:agent",
+    "verify": "npm --workspace=@intercept/agent-tee run verify",
+    "preflight": "npm --workspace=@intercept/agent-tee run preflight",
+    "rescue:live": "npm --workspace=@intercept/agent-tee run rescue:live",
+    "dev": "npm --workspace=@intercept/web run dev",
+    "build": "npm --workspace=@intercept/agent-tee run build && npm --workspace=@intercept/web run build"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
