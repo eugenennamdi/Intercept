@@ -391,13 +391,15 @@ export async function fetchKaminoObligationTelemetry(params: {
         const parsed = deserializeKaminoObligationAccount(rawBytes);
         if (parsed) {
           source = "LIVE_ONCHAIN_OBLIGATION";
-          effectiveOwnerEoa = parsed.ownerSolanaEoa;
           effectiveLendingMarket = parsed.lendingMarketPubkey;
-          if (parsed.depositedSol > 0) {
-            effectiveDepositedSol = parsed.depositedSol;
-          }
-          if (parsed.borrowedUsdc > 0) {
-            effectiveBorrowedUsdc = parsed.borrowedUsdc;
+          if (process.env.USER_KAMINO_OBLIGATION_PUBKEY) {
+            effectiveOwnerEoa = parsed.ownerSolanaEoa;
+            if (parsed.depositedSol > 0) {
+              effectiveDepositedSol = parsed.depositedSol;
+            }
+            if (parsed.borrowedUsdc > 0) {
+              effectiveBorrowedUsdc = parsed.borrowedUsdc;
+            }
           }
         }
       } else if (process.env.USER_SOLANA_WALLET_PUBKEY) {

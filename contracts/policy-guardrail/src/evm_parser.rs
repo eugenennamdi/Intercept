@@ -19,6 +19,15 @@ pub const ERC20_TRANSFER_SELECTOR: [u8; 4] = [0xa9, 0x05, 0x9c, 0xbb];
 /// ERC-20 `approve(address,uint256)` selector (explicitly forbidden)
 pub const ERC20_APPROVE_SELECTOR: [u8; 4] = [0x09, 0x5e, 0xa7, 0xb3];
 
+/// Minimum and maximum allowed EIP-1559 `gas_limit` for a Base Native USDC `transfer(address,uint256)`
+/// (Standard Base USDC transfer uses ~55k-65k gas; capping at 250,000 blocks gas-limit griefing)
+pub const MIN_ERC20_TRANSFER_GAS_LIMIT: u64 = 21_000;
+pub const MAX_ERC20_TRANSFER_GAS_LIMIT: u64 = 250_000;
+
+/// Maximum allowed EIP-1559 `max_fee_per_gas` on Base Mainnet (50 gwei = 50,000,000,000 wei).
+/// Prevents a compromised AI agent from draining the MPC Base Vault's ETH gas reserve via MEV builder bribes.
+pub const MAX_ALLOWED_BASE_FEE_PER_GAS_WEI: u128 = 50_000_000_000;
+
 /// Decoded and verified fields of an unsigned EIP-1559 Base USDC transfer transaction
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(crate = "near_sdk::serde")]
@@ -43,6 +52,9 @@ pub enum EvmParseError {
     MalformedRlp(&'static str),
     UnexpectedItemCount(usize),
     InvalidChainId { expected: u64, actual: u64 },
+    GasLimitOutOfBounds { min: u64, max: u64, actual: u64 },
+    MaxFeePerGasExceeded { max_allowed_wei: u128, actual_wei: u128 },
+    PriorityFeeExceedsMaxFee { priority_fee_wei: u128, max_fee_wei: u128 },
     InvalidTargetContract { expected: [u8; 20], actual: Vec<u8> },
     NonZeroNativeValue(u128),
     InvalidCalldataLength(usize),
@@ -67,6 +79,33 @@ impl core::fmt::Display for EvmParseError {
             }
             EvmParseError::InvalidChainId { expected, actual } => {
                 write!(f, "Invalid chain_id: expected {} (Base Mainnet), got {}", expected, actual)
+            }
+            EvmParseError::GasLimitOutOfBounds { min, max, actual } => {
+                write!(
+                    f,
+                    "EIP-1559 gas_limit {} outside allowed guardrail bounds [{}..={}]",
+                    actual, min, max
+                )
+            }
+            EvmParseError::MaxFeePerGasExceeded {
+                max_allowed_wei,
+                actual_wei,
+            } => {
+                write!(
+                    f,
+                    "CRITICAL GAS-GRIEFING BLOCK: EIP-1559 max_fee_per_gas ({} wei) exceeds guardrail cap ({} wei)",
+                    actual_wei, max_allowed_wei
+                )
+            }
+            EvmParseError::PriorityFeeExceedsMaxFee {
+                priority_fee_wei,
+                max_fee_wei,
+            } => {
+                write!(
+                    f,
+                    "Invalid EIP-1559 fee bounds: max_priority_fee_per_gas ({} wei) > max_fee_per_gas ({} wei)",
+                    priority_fee_wei, max_fee_wei
+                )
             }
             EvmParseError::InvalidTargetContract { expected, actual } => {
                 write!(
@@ -325,6 +364,27 @@ pub fn verify_eip1559_base_usdc_transfer(
     let max_priority_fee_per_gas = decode_canonical_u128(&items[2])?;
     let max_fee_per_gas = decode_canonical_u128(&items[3])?;
     let gas_limit = decode_canonical_u64(&items[4])?;
+
+    // 3b. Enforce EIP-1559 gas-limit and priority/base fee bounds to block ETH gas-griefing drains
+    if gas_limit < MIN_ERC20_TRANSFER_GAS_LIMIT || gas_limit > MAX_ERC20_TRANSFER_GAS_LIMIT {
+        return Err(EvmParseError::GasLimitOutOfBounds {
+            min: MIN_ERC20_TRANSFER_GAS_LIMIT,
+            max: MAX_ERC20_TRANSFER_GAS_LIMIT,
+            actual: gas_limit,
+        });
+    }
+    if max_fee_per_gas == 0 || max_fee_per_gas > MAX_ALLOWED_BASE_FEE_PER_GAS_WEI {
+        return Err(EvmParseError::MaxFeePerGasExceeded {
+            max_allowed_wei: MAX_ALLOWED_BASE_FEE_PER_GAS_WEI,
+            actual_wei: max_fee_per_gas,
+        });
+    }
+    if max_priority_fee_per_gas > max_fee_per_gas {
+        return Err(EvmParseError::PriorityFeeExceedsMaxFee {
+            priority_fee_wei: max_priority_fee_per_gas,
+            max_fee_wei: max_fee_per_gas,
+        });
+    }
 
     // 4. Assert `to` == Base Native USDC (0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913)
     let to_bytes = match &items[5] {

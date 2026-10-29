@@ -3,6 +3,7 @@ import {
   executeInterceptRescuePipeline,
   runAdversarialAttackSuite,
   runMainnetPreflightCheck,
+  runQuantitativeBacktestSuite,
   type ExecutionMode,
 } from "@intercept/agent-tee";
 
@@ -22,11 +23,13 @@ export async function GET() {
     runMainnetPreflightCheck(),
   ]);
   const adversarialSuite = runAdversarialAttackSuite();
+  const backtest = runQuantitativeBacktestSuite();
   return NextResponse.json(
     serializeBigInt({
       report,
       preflight,
       adversarialSuite,
+      backtest,
     })
   );
 }
@@ -47,12 +50,14 @@ export async function POST(request: Request) {
     runMainnetPreflightCheck(),
   ]);
   const adversarialSuite = runAdversarialAttackSuite();
+  const backtest = runQuantitativeBacktestSuite();
 
   return NextResponse.json(
     serializeBigInt({
       report,
       preflight,
       adversarialSuite,
+      backtest,
     })
   );
 }

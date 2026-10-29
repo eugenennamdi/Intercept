@@ -35,8 +35,9 @@ cargo test --manifest-path contracts/policy-guardrail/Cargo.toml
 ```
 
 **See Y:**
-- All **19 Rust unit and adversarial tests** compile and pass:
+- All **20 Rust unit and adversarial tests** compile and pass:
   - `test_verify_kamino_anchor_discriminators_and_program_pubkeys`: Verifies exact SHA-256 preimages for `global:repay_obligation_liquidity_v2` (`[116, 174, 213, 76, 180, 53, 210, 144]`), `global:repay_obligation_liquidity` (`[145, 178, 13, 225, 76, 240, 147, 72]`), and the 4 permissionless Kamino same-slot refresh instructions (`global:refresh_reserve` `[2, 218, 138, 235, 79, 201, 25, 102]`, `global:refresh_reserves_batch` `[144, 110, 26, 103, 162, 204, 252, 147]`, `global:refresh_obligation` `[33, 132, 147, 228, 151, 192, 72, 89]`, `global:refresh_obligation_farms_for_reserve` `[140, 144, 253, 21, 10, 74, 248, 3]`), plus Base58 decoding of `ComputeBudget111111111111111111111111111111`, `KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD`, Kamino Mainnet SOL Reserve (`d4A2prbA2whesmvHaL88BH6Ewn5N4bTSU2Ze8P6Bc4Q`), and Kamino Mainnet USDC Reserve (`D6q6wuQSrifJKZYpR1M8R4YawnLDtDsMmWM1NbBmgJ59`).
+  - `test_adversarial_evm_and_solana_gas_griefing_and_header_attacks_rejected`: Proves that EIP-1559 gas-griefing (`gas_limit > 250,000`), Base MEV priority/base fee drains (`max_fee_per_gas > 50 gwei`), invalid EIP-1559 fee ordering (`max_priority_fee_per_gas > max_fee_per_gas`), and Solana `ComputeBudget::SetComputeUnitPrice` priority-fee drains (`micro_lamports > 5,000,000`) are deterministically rejected before `v1.signer` is ever called.
   - `test_nep297_structured_events_and_function_call_key_spec`: Verifies NEP-297 structured JSON event logs (`EVENT_JSON:{"standard":"intercept-guardrail",...}`) and the scoped NEAR Function-Call Access Key specification (`get_agent_function_call_key_spec`).
   - `test_full_kamino_same_slot_refresh_and_repay_sequence_passes`: Verifies the full 5-instruction Solana `V0` repayment sequence `[ComputeBudget, refresh_reserve (SOL), refresh_reserve (USDC), refresh_obligation (remaining_accounts=[SOL, USDC]), repay_obligation_liquidity_v2]` required on Solana Mainnet to avoid `ReserveStale (6009)` / `ObligationStale (6010)`.
   - `test_adversarial_repay_reserve_and_refresh_remaining_accounts_pinning`: Proves that substituting a rogue reserve at `repay_obligation_liquidity_v2` `ix.accounts[3]` (`repay_reserve`) or passing an unauthorized reserve in `refresh_obligation` `ix.accounts[2..]` is rejected with `RepayReserveMismatch` / `UnauthorizedReserveAccount`.
@@ -54,18 +55,20 @@ cargo test --manifest-path contracts/policy-guardrail/Cargo.toml
 **Do X:**
 ```bash
 npm run preflight
+npm run backtest
 npm run verify
 ```
 
 **See Y:**
 1. **Live Mainnet Pre-Flight Check (`npm run preflight`):** Queries `v1.signer::derived_public_key` on NEAR Mainnet (`https://rpc.mainnet.near.org`) to derive `MPC_Base_Vault` (`0x72faa1abaf92e0c4b791f15acedb496c8979746c`), `MPC_Solana_Payer` (`GZMAbwapG99YKCsA2CDVc4bXeBzd7nvKMQgtm9K8aKas`), and its deterministic Solana Native USDC Associated Token Account `MPC_Solana_Payer_USDC_ATA` (`2eLUYLvdceHQTbRHQcU26x4sRj6ZAZ27otxMQS8qpskq`, `bump=255`), queries live Base Mainnet RPC (`https://mainnet.base.org`) for `nonce` + EIP-1559 gas fees + ETH/USDC balances, and queries live Solana Mainnet RPC (`https://api.mainnet-beta.solana.com`) for `recentBlockhash` + SOL balance + ATA existence & USDC balance.
 2. **Step 1 (Kamino Anchor Discriminator Verification):** Prints and verifies `repay_obligation_liquidity_v2` (`0x74aed54cb435d290`), `repay_obligation_liquidity` (`0x91b20de14cf09348`), and all 4 same-slot refresh discriminators.
-3. **Step 2 (`LIVE_MAINNET_MODE`):** Reads the live on-chain Pyth Network `PriceUpdateV2` SOL/USD account (`7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE`) on Solana Mainnet, evaluates the Kamino obligation (`HF ~1.417 >= 1.1500`), and outputs `Regime: HOLD`.
+3. **Step 2 (`LIVE_MAINNET_MODE`):** Reads the live on-chain Pyth Network `PriceUpdateV2` SOL/USD account (`7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE`) and the live on-chain Kamino Mainnet `Obligation` account (`GQTRKyG1jdkZk8zBmfxZ4YCWZXsWJJ4upr6nZ75jPzJQ`, `source: LIVE_ONCHAIN_OBLIGATION`) on Solana Mainnet, evaluates the position (`HF ~1.417 >= 1.1500`), and outputs `Regime: HOLD`.
 4. **Step 3 (`STRESS_TEST_MAINNET_MODE` — `-25%` SOL Flash Crash):**
    - Evaluates the `-25%` SOL shock (`HF 1.0630 < 1.1500`) and triggers `CASCADE_DEEP_RESCUE` (`Target HF 1.45`).
    - Queries a cross-chain swap quote from **NEAR Intents 1-Click API** (`https://1click.chaindefuser.com/v0/quote`) for Base USDC -> Solana USDC.
    - Signs the canonical `TeeDecisionReceipt` with Ed25519, builds the unsigned EIP-1559 Base USDC transaction (`domain_id: 0`) and the 5-instruction Solana `V0` Kamino refresh+repay message (`domain_id: 1`, pinning `repay_reserve` to `D6q6wuQSrifJKZYpR1M8R4YawnLDtDsMmWM1NbBmgJ59` and `user_source_liquidity` to `2eLUYLvdceHQTbRHQcU26x4sRj6ZAZ27otxMQS8qpskq`), reconstructs the signed transactions, and prints the 5-stage millisecond stopwatch telemetry + clickable explorer URLs.
-5. **Step 4 (Adversarial Red-Team Suite):** Fires **9 rogue AI attack vectors** (`ADV_01` through `ADV_09`, including collateral withdrawal, V0 ALT indirection, 32-byte Solana pre-hash, ERC-20 `approve()`, recipient hijack, and concurrent TOCTOU race) and confirms all 9 are `BLOCKED (PASS)` with exact revert diagnostics.
+5. **Step 4 (Adversarial Red-Team Suite):** Fires **11 rogue AI attack vectors** (`ADV_01` through `ADV_11`, including collateral withdrawal, V0 ALT indirection, 32-byte Solana pre-hash, ERC-20 `approve()`, recipient hijack, concurrent TOCTOU race, Base 500 gwei gas-griefing drain, and Solana `ComputeBudget` priority-fee drain) and confirms all 11 are `BLOCKED (PASS)` with exact revert diagnostics.
+6. **Step 5 (Quantitative Multi-Regime Historical Backtest — `npm run backtest`):** Replays 3 historical SOL volatility regimes (`-34%` Flash Cascade, `-12%` Mean-Reverting Dip, and `-7.5%` Choppy Noise) on a `100 SOL / $6,000 USDC` Kamino position, proving **100% liquidation survival** (vs. `66.7%` for a Naive `HF -> 1.20` Static Bot, which gets liquidated on a `-21.4%` cascade wick exceeding its `16.67%` buffer), **`$555.57` in prevented liquidation penalties**, and **`73.9%` Base capital efficiency savings** compared to an Over-Conservative Static Bot.
 
 ---
 

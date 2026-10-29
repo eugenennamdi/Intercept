@@ -1582,3 +1582,134 @@ fn test_nep297_structured_events_and_function_call_key_spec() {
     assert_eq!(last_event_json["event"], "rescue_origin_leg_in_flight");
     assert_eq!(last_event_json["data"][0]["state"], "InFlightLeg1");
 }
+
+#[test]
+fn test_adversarial_evm_and_solana_gas_griefing_and_header_attacks_rejected() {
+    let deposit_addr = [0x99; 20];
+    let repay_amount = 10_000_000u128;
+    let valid_calldata = build_erc20_transfer_calldata(&deposit_addr, repay_amount);
+
+    // 1. EVM Attack: Gas Limit Griefing (gas_limit = 5,000,000 > 250,000 cap)
+    let excessive_gas_tx = build_unsigned_eip1559_tx(
+        BASE_MAINNET_CHAIN_ID,
+        1,
+        1_000_000,
+        20_000_000,
+        5_000_000,
+        &BASE_USDC_ADDRESS,
+        0,
+        &valid_calldata,
+    );
+    assert_eq!(
+        verify_eip1559_base_usdc_transfer(&excessive_gas_tx, &deposit_addr, repay_amount),
+        Err(EvmParseError::GasLimitOutOfBounds {
+            min: 21_000,
+            max: 250_000,
+            actual: 5_000_000,
+        })
+    );
+
+    // 2. EVM Attack: MEV Priority/Base Fee Drain (max_fee_per_gas = 500 gwei > 50 gwei cap)
+    let fee_drain_tx = build_unsigned_eip1559_tx(
+        BASE_MAINNET_CHAIN_ID,
+        1,
+        100_000_000_000,
+        500_000_000_000,
+        65_000,
+        &BASE_USDC_ADDRESS,
+        0,
+        &valid_calldata,
+    );
+    assert_eq!(
+        verify_eip1559_base_usdc_transfer(&fee_drain_tx, &deposit_addr, repay_amount),
+        Err(EvmParseError::MaxFeePerGasExceeded {
+            max_allowed_wei: 50_000_000_000,
+            actual_wei: 500_000_000_000,
+        })
+    );
+
+    // 3. EVM Attack: Invalid EIP-1559 Fee Ordering (max_priority_fee_per_gas > max_fee_per_gas)
+    let inverted_fee_tx = build_unsigned_eip1559_tx(
+        BASE_MAINNET_CHAIN_ID,
+        1,
+        40_000_000_000,
+        10_000_000_000,
+        65_000,
+        &BASE_USDC_ADDRESS,
+        0,
+        &valid_calldata,
+    );
+    assert_eq!(
+        verify_eip1559_base_usdc_transfer(&inverted_fee_tx, &deposit_addr, repay_amount),
+        Err(EvmParseError::PriorityFeeExceedsMaxFee {
+            priority_fee_wei: 40_000_000_000,
+            max_fee_wei: 10_000_000_000,
+        })
+    );
+
+    // 4. Solana Attack: ComputeBudget::SetComputeUnitPrice (0x03) Priority-Fee Drain (500,000,000 micro-lamports > 5,000,000 cap)
+    let mpc_solana_payer = [0x22; 32];
+    let user_obligation = [0x33; 32];
+    let lending_market = KAMINO_MAIN_MARKET_PUBKEY;
+    let sol_reserve = KAMINO_MAINNET_SOL_RESERVE_PUBKEY;
+    let usdc_reserve = KAMINO_MAINNET_USDC_RESERVE_PUBKEY;
+
+    let mut sol_fee_drain_msg = Vec::new();
+    sol_fee_drain_msg.push(0x80); // V0
+    sol_fee_drain_msg.extend_from_slice(&[1, 0, 5]);
+    let keys: Vec<[u8; 32]> = vec![
+        mpc_solana_payer,
+        user_obligation,
+        usdc_reserve,
+        [0x55; 32],
+        [0x66; 32],
+        lending_market,
+        [0x77; 32],
+        [0x88; 32],
+        KAMINO_LEND_PUBKEY,
+        COMPUTE_BUDGET_PUBKEY,
+    ];
+    encode_compact_u16(keys.len() as u16, &mut sol_fee_drain_msg);
+    for k in &keys {
+        sol_fee_drain_msg.extend_from_slice(k);
+    }
+    sol_fee_drain_msg.extend_from_slice(&[0xaa; 32]); // recent_blockhash
+    encode_compact_u16(2, &mut sol_fee_drain_msg); // 2 instructions
+
+    // Ix 0: ComputeBudget::SetComputeUnitPrice(500_000_000 micro-lamports) -> tag 0x03 + u64_le
+    sol_fee_drain_msg.push(9);
+    encode_compact_u16(0, &mut sol_fee_drain_msg);
+    let mut cb_price_data = vec![0x03];
+    cb_price_data.extend_from_slice(&500_000_000u64.to_le_bytes());
+    encode_compact_u16(cb_price_data.len() as u16, &mut sol_fee_drain_msg);
+    sol_fee_drain_msg.extend_from_slice(&cb_price_data);
+
+    // Ix 1: Valid Kamino repay_obligation_liquidity_v2
+    sol_fee_drain_msg.push(8);
+    let kamino_accts: [u8; 8] = [0, 1, 5, 2, 3, 4, 6, 7];
+    encode_compact_u16(kamino_accts.len() as u16, &mut sol_fee_drain_msg);
+    sol_fee_drain_msg.extend_from_slice(&kamino_accts);
+    let mut kamino_data = Vec::new();
+    kamino_data.extend_from_slice(&REPAY_OBLIGATION_LIQUIDITY_V2_DISCRIMINATOR);
+    kamino_data.extend_from_slice(&10_000_000u64.to_le_bytes());
+    encode_compact_u16(kamino_data.len() as u16, &mut sol_fee_drain_msg);
+    sol_fee_drain_msg.extend_from_slice(&kamino_data);
+    encode_compact_u16(0, &mut sol_fee_drain_msg); // 0 ALTs
+
+    assert_eq!(
+        verify_solana_kamino_repay_message(
+            &sol_fee_drain_msg,
+            &mpc_solana_payer,
+            &user_obligation,
+            &lending_market,
+            &sol_reserve,
+            &usdc_reserve,
+            9_900_000,
+            10_000_000,
+        ),
+        Err(SolanaParseError::ComputeBudgetFeeLimitExceeded {
+            max_micro_lamports: 5_000_000,
+            actual_micro_lamports: 500_000_000,
+        })
+    );
+}

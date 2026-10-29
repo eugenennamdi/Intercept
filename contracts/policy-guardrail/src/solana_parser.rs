@@ -67,6 +67,13 @@ pub const WITHDRAW_OBLIGATION_COLLATERAL_V2_DISCRIMINATOR: [u8; 8] =
 pub const BORROW_OBLIGATION_LIQUIDITY_V2_DISCRIMINATOR: [u8; 8] =
     [161, 128, 143, 245, 171, 199, 194, 6];
 
+/// Maximum allowed ComputeBudget compute unit limit (Solana per-transaction protocol ceiling)
+pub const MAX_SOLANA_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
+
+/// Maximum allowed ComputeBudget priority fee (`SetComputeUnitPrice` in micro-lamports per compute unit).
+/// Capped at 5,000,000 micro-lamports/CU (5.0 lamports/CU -> max 0.007 SOL at 1.4M CU) to block SOL fee-griefing drains.
+pub const MAX_SOLANA_PRIORITY_FEE_MICRO_LAMPORTS: u64 = 5_000_000;
+
 /// Computes the 8-byte Anchor instruction discriminator `sha256("global:<ix_name>")[0..8]`
 pub fn compute_anchor_discriminator(global_ix_name: &str) -> [u8; 8] {
     let mut hasher = Sha256::new();
@@ -112,10 +119,17 @@ pub enum SolanaParseError {
     UnexpectedEof(&'static str),
     NonCanonicalCompactU16,
     InvalidSignatureCount(u8),
+    ReadonlySignedAccountsForbidden(u8),
+    DuplicateStaticAccountKey { pubkey: [u8; 32] },
     FeePayerMismatch { expected: [u8; 32], actual: [u8; 32] },
     ZeroRecentBlockhash,
     AccountIndexOutOfBounds { index: u8, max: usize },
     UnauthorizedProgram { program_id: [u8; 32] },
+    InvalidComputeBudgetInstruction,
+    ComputeBudgetFeeLimitExceeded {
+        max_micro_lamports: u64,
+        actual_micro_lamports: u64,
+    },
     MissingKaminoRepayInstruction,
     MultipleKaminoInstructions,
     RefreshInstructionAfterRepay,
@@ -153,6 +167,20 @@ impl core::fmt::Display for SolanaParseError {
                     n
                 )
             }
+            SolanaParseError::ReadonlySignedAccountsForbidden(n) => {
+                write!(
+                    f,
+                    "Solana MessageHeader num_readonly_signed_accounts must be 0, got {}",
+                    n
+                )
+            }
+            SolanaParseError::DuplicateStaticAccountKey { pubkey } => {
+                write!(
+                    f,
+                    "Solana message contains duplicate static account key ({})",
+                    bs58::encode(pubkey).into_string()
+                )
+            }
             SolanaParseError::FeePayerMismatch { expected, actual } => {
                 write!(
                     f,
@@ -176,6 +204,22 @@ impl core::fmt::Display for SolanaParseError {
                     f,
                     "Unauthorized Solana program {} in transaction; only ComputeBudget and Kamino Lend are permitted",
                     bs58::encode(program_id).into_string()
+                )
+            }
+            SolanaParseError::InvalidComputeBudgetInstruction => {
+                write!(
+                    f,
+                    "Invalid or out-of-bounds ComputeBudget instruction payload"
+                )
+            }
+            SolanaParseError::ComputeBudgetFeeLimitExceeded {
+                max_micro_lamports,
+                actual_micro_lamports,
+            } => {
+                write!(
+                    f,
+                    "CRITICAL SOL FEE-GRIEFING BLOCK: ComputeBudget SetComputeUnitPrice ({} micro-lamports/CU) exceeds guardrail cap ({} micro-lamports/CU)",
+                    actual_micro_lamports, max_micro_lamports
                 )
             }
             SolanaParseError::MissingKaminoRepayInstruction => {
@@ -379,12 +423,17 @@ pub fn verify_solana_kamino_repay_message(
         return Err(SolanaParseError::UnexpectedEof("MessageHeader"));
     }
     let num_required_signatures = raw_message[offset];
-    let _num_readonly_signed_accounts = raw_message[offset + 1];
+    let num_readonly_signed_accounts = raw_message[offset + 1];
     let _num_readonly_unsigned_accounts = raw_message[offset + 2];
     offset += 3;
 
     if num_required_signatures != 1 {
         return Err(SolanaParseError::InvalidSignatureCount(num_required_signatures));
+    }
+    if num_readonly_signed_accounts != 0 {
+        return Err(SolanaParseError::ReadonlySignedAccountsForbidden(
+            num_readonly_signed_accounts,
+        ));
     }
 
     // 2. Read static account keys array
@@ -404,6 +453,9 @@ pub fn verify_solana_kamino_repay_message(
         let start = offset + i * 32;
         let mut pk = [0u8; 32];
         pk.copy_from_slice(&raw_message[start..start + 32]);
+        if account_keys.contains(&pk) {
+            return Err(SolanaParseError::DuplicateStaticAccountKey { pubkey: pk });
+        }
         account_keys.push(pk);
     }
     offset += keys_byte_len;
@@ -479,6 +531,53 @@ pub fn verify_solana_kamino_repay_message(
 
         // Whitelist check: ONLY ComputeBudget OR Kamino Lend allowed
         if program_id == COMPUTE_BUDGET_PUBKEY {
+            if !ix_accounts.is_empty() || ix_data.is_empty() {
+                return Err(SolanaParseError::InvalidComputeBudgetInstruction);
+            }
+            match ix_data[0] {
+                0x01 => {
+                    // RequestHeapFrame(u32)
+                    if ix_data.len() != 5 {
+                        return Err(SolanaParseError::InvalidComputeBudgetInstruction);
+                    }
+                    let mut heap_bytes = [0u8; 4];
+                    heap_bytes.copy_from_slice(&ix_data[1..5]);
+                    let heap_bytes_val = u32::from_le_bytes(heap_bytes);
+                    if heap_bytes_val == 0 || heap_bytes_val > 262_144 {
+                        return Err(SolanaParseError::InvalidComputeBudgetInstruction);
+                    }
+                }
+                0x02 => {
+                    // SetComputeUnitLimit(u32)
+                    if ix_data.len() != 5 {
+                        return Err(SolanaParseError::InvalidComputeBudgetInstruction);
+                    }
+                    let mut cu_bytes = [0u8; 4];
+                    cu_bytes.copy_from_slice(&ix_data[1..5]);
+                    let cu_limit = u32::from_le_bytes(cu_bytes);
+                    if cu_limit == 0 || cu_limit > MAX_SOLANA_COMPUTE_UNIT_LIMIT {
+                        return Err(SolanaParseError::InvalidComputeBudgetInstruction);
+                    }
+                }
+                0x03 => {
+                    // SetComputeUnitPrice(u64 micro_lamports)
+                    if ix_data.len() != 9 {
+                        return Err(SolanaParseError::InvalidComputeBudgetInstruction);
+                    }
+                    let mut price_bytes = [0u8; 8];
+                    price_bytes.copy_from_slice(&ix_data[1..9]);
+                    let micro_lamports = u64::from_le_bytes(price_bytes);
+                    if micro_lamports > MAX_SOLANA_PRIORITY_FEE_MICRO_LAMPORTS {
+                        return Err(SolanaParseError::ComputeBudgetFeeLimitExceeded {
+                            max_micro_lamports: MAX_SOLANA_PRIORITY_FEE_MICRO_LAMPORTS,
+                            actual_micro_lamports: micro_lamports,
+                        });
+                    }
+                }
+                _ => {
+                    return Err(SolanaParseError::InvalidComputeBudgetInstruction);
+                }
+            }
             compute_budget_ix_count += 1;
         } else if program_id == KAMINO_LEND_PUBKEY {
             if ix_data.len() < 8 {

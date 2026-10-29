@@ -13,6 +13,7 @@
     "test": "npm run test:contract && npm run test:agent",
     "verify": "npm --workspace=@intercept/agent-tee run verify",
     "preflight": "npm --workspace=@intercept/agent-tee run preflight",
+    "backtest": "npm --workspace=@intercept/agent-tee run verify -- --backtest",
     "rescue:live": "npm --workspace=@intercept/agent-tee run rescue:live",
     "dev": "npm --workspace=@intercept/web run dev",
     "build": "npm --workspace=@intercept/agent-tee run build && npm --workspace=@intercept/web run build"

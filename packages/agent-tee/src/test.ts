@@ -16,6 +16,7 @@ import {
 import {
   executeInterceptRescuePipeline,
   runAdversarialAttackSuite,
+  runQuantitativeBacktestSuite,
 } from "./orchestrator.ts";
 import { verifyNearAiCloudAttestationBundle } from "./near-ai-cloud.ts";
 import {
@@ -269,10 +270,19 @@ test("Byte-level Leg 1 EIP-1559 and Leg 2 Solana V0 verifiers accept valid txs a
   );
 
   const attacks = runAdversarialAttackSuite();
-  assert.equal(attacks.length, 9);
+  assert.equal(attacks.length, 11);
   for (const atk of attacks) {
     assert.equal(atk.guardrailBlocked, true, `Attack ${atk.attackId} must be blocked`);
   }
+
+  // Verify Quantitative Historical Backtest Suite
+  const backtest = runQuantitativeBacktestSuite();
+  assert.equal(backtest.scenarios.length, 3);
+  assert.equal(backtest.aggregateSummary.interceptSurvivalRatePct, 100);
+  assert.ok(backtest.aggregateSummary.totalLiquidationLossPreventedUsd > 500);
+  assert.ok(
+    backtest.aggregateSummary.capitalEfficiencySavingsVsConservativePct > 70
+  );
 });
 
 test("Multi-instruction Kamino refresh+repay passes, sneaking withdraw after refresh fails, and 32-byte pre-hash is rejected", async () => {

@@ -667,6 +667,32 @@ export function verifyEip1559BaseUsdcTransferBytes(params: {
     }
 
     const nonce = Number(rlpBufferToBigInt(item[1]));
+    const maxPriorityFeePerGasWei = rlpBufferToBigInt(item[2]);
+    const maxFeePerGasWei = rlpBufferToBigInt(item[3]);
+    const gasLimit = Number(rlpBufferToBigInt(item[4]));
+
+    if (gasLimit < 21_000 || gasLimit > 250_000) {
+      return {
+        ok: false,
+        errorCode: "GAS_LIMIT_OUT_OF_BOUNDS",
+        errorMessage: `GUARDRAIL REVERT: EIP-1559 gas_limit ${gasLimit} outside allowed guardrail bounds [21000..=250000]`,
+      };
+    }
+    if (maxFeePerGasWei === 0n || maxFeePerGasWei > 50_000_000_000n) {
+      return {
+        ok: false,
+        errorCode: "MAX_FEE_PER_GAS_EXCEEDED",
+        errorMessage: `CRITICAL GAS-GRIEFING BLOCK: EIP-1559 max_fee_per_gas (${maxFeePerGasWei.toString()} wei) exceeds guardrail cap (50000000000 wei / 50 gwei)`,
+      };
+    }
+    if (maxPriorityFeePerGasWei > maxFeePerGasWei) {
+      return {
+        ok: false,
+        errorCode: "PRIORITY_FEE_EXCEEDS_MAX_FEE",
+        errorMessage: `GUARDRAIL REVERT: EIP-1559 max_priority_fee_per_gas (${maxPriorityFeePerGasWei.toString()}) > max_fee_per_gas (${maxFeePerGasWei.toString()})`,
+      };
+    }
+
     const toBuf = item[5];
     if (!Buffer.isBuffer(toBuf)) {
       return {
@@ -831,6 +857,7 @@ export function buildSolanaKaminoRepayMessageBytes(params: {
   customDiscriminator?: Buffer;
   customRefreshDiscriminator?: Buffer;
   customProgramIdPubkey?: string;
+  customComputeBudgetPriceMicroLamports?: bigint;
   includeComputeBudget?: boolean;
   includeRefreshInstructions?: boolean;
   addressLookupTableCount?: number;
@@ -859,6 +886,7 @@ export function buildSolanaKaminoRepayMessageBytes(params: {
     customDiscriminator = REPAY_OBLIGATION_LIQUIDITY_V2_DISCRIMINATOR,
     customRefreshDiscriminator,
     customProgramIdPubkey = KAMINO_LEND_PROGRAM_ID,
+    customComputeBudgetPriceMicroLamports,
     includeComputeBudget = true,
     includeRefreshInstructions = true,
     addressLookupTableCount = 0,
@@ -927,10 +955,17 @@ export function buildSolanaKaminoRepayMessageBytes(params: {
     chunks.push(encodeCompactU16(ixCount));
 
     if (includeComputeBudget) {
-      // Ix 1: ComputeBudget::SetComputeUnitLimit(400_000) at program_id_index = 12
-      const cbData = Buffer.alloc(5);
-      cbData[0] = 0x02;
-      cbData.writeUInt32LE(400_000, 1);
+      let cbData: Buffer;
+      if (customComputeBudgetPriceMicroLamports !== undefined) {
+        cbData = Buffer.alloc(9);
+        cbData[0] = 0x03;
+        cbData.writeBigUInt64LE(customComputeBudgetPriceMicroLamports, 1);
+      } else {
+        // Ix 1: ComputeBudget::SetComputeUnitLimit(400_000) at program_id_index = 12
+        cbData = Buffer.alloc(5);
+        cbData[0] = 0x02;
+        cbData.writeUInt32LE(400_000, 1);
+      }
       chunks.push(
         Buffer.from([12]),
         encodeCompactU16(0),
@@ -1195,6 +1230,7 @@ export function verifySolanaKaminoRepayMessageBytes(params: {
     }
 
     const numRequiredSignatures = raw[offset];
+    const numReadonlySignedAccounts = raw[offset + 1];
     offset += 3;
     if (numRequiredSignatures !== 1) {
       return {
@@ -1203,13 +1239,28 @@ export function verifySolanaKaminoRepayMessageBytes(params: {
         errorMessage: `GUARDRAIL REVERT: Solana message must require 1 signer, got ${numRequiredSignatures}`,
       };
     }
+    if (numReadonlySignedAccounts !== 0) {
+      return {
+        ok: false,
+        errorCode: "READONLY_SIGNED_FORBIDDEN",
+        errorMessage: `GUARDRAIL REVERT: Solana MessageHeader num_readonly_signed_accounts must be 0, got ${numReadonlySignedAccounts}`,
+      };
+    }
 
     const keysLenRes = decodeCompactU16(raw, offset);
     offset = keysLenRes.nextOffset;
     const accountKeys: string[] = [];
     for (let i = 0; i < keysLenRes.value; i++) {
       const pkBytes = raw.subarray(offset, offset + 32);
-      accountKeys.push(base58Encode(pkBytes));
+      const pkBase58 = base58Encode(pkBytes);
+      if (accountKeys.includes(pkBase58)) {
+        return {
+          ok: false,
+          errorCode: "DUPLICATE_STATIC_ACCOUNT_KEY",
+          errorMessage: `GUARDRAIL REVERT: Duplicate static account key (${pkBase58}) in Solana message`,
+        };
+      }
+      accountKeys.push(pkBase58);
       offset += 32;
     }
 
@@ -1263,6 +1314,56 @@ export function verifySolanaKaminoRepayMessageBytes(params: {
       offset += dataLenRes.value;
 
       if (programId === COMPUTE_BUDGET_PROGRAM_ID) {
+        if (ixAccounts.length > 0 || ixData.length === 0) {
+          return {
+            ok: false,
+            errorCode: "INVALID_COMPUTE_BUDGET_IX",
+            errorMessage:
+              "GUARDRAIL REVERT: Invalid ComputeBudget instruction accounts or empty data",
+          };
+        }
+        const cbTag = ixData[0];
+        if (cbTag === 0x02) {
+          if (ixData.length !== 5) {
+            return {
+              ok: false,
+              errorCode: "INVALID_COMPUTE_BUDGET_IX",
+              errorMessage:
+                "GUARDRAIL REVERT: ComputeBudget::SetComputeUnitLimit must be 5 bytes",
+            };
+          }
+          const cuLimit = ixData.readUInt32LE(1);
+          if (cuLimit === 0 || cuLimit > 1_400_000) {
+            return {
+              ok: false,
+              errorCode: "COMPUTE_UNIT_LIMIT_EXCEEDED",
+              errorMessage: `GUARDRAIL REVERT: ComputeBudget::SetComputeUnitLimit (${cuLimit}) outside [1..=1400000]`,
+            };
+          }
+        } else if (cbTag === 0x03) {
+          if (ixData.length !== 9) {
+            return {
+              ok: false,
+              errorCode: "INVALID_COMPUTE_BUDGET_IX",
+              errorMessage:
+                "GUARDRAIL REVERT: ComputeBudget::SetComputeUnitPrice must be 9 bytes",
+            };
+          }
+          const microLamports = ixData.readBigUInt64LE(1);
+          if (microLamports > 5_000_000n) {
+            return {
+              ok: false,
+              errorCode: "COMPUTE_BUDGET_FEE_LIMIT_EXCEEDED",
+              errorMessage: `CRITICAL SOL FEE-GRIEFING BLOCK: ComputeBudget SetComputeUnitPrice (${microLamports.toString()} micro-lamports/CU) exceeds guardrail cap (5000000 micro-lamports/CU)`,
+            };
+          }
+        } else if (cbTag !== 0x01 || ixData.length !== 5) {
+          return {
+            ok: false,
+            errorCode: "INVALID_COMPUTE_BUDGET_IX",
+            errorMessage: `GUARDRAIL REVERT: Unsupported ComputeBudget instruction tag 0x${cbTag.toString(16)}`,
+          };
+        }
         computeBudgetIxCount++;
       } else if (programId === KAMINO_LEND_PROGRAM_ID) {
         if (ixData.length < 8) {

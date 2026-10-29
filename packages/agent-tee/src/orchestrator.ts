@@ -47,6 +47,12 @@ import {
   type QuantitativeRiskEvaluation,
   type TeeDecisionReceipt,
 } from "./risk-engine.ts";
+export {
+  runQuantitativeBacktestSuite,
+  type BacktestScenarioReport,
+  type FullBacktestSuiteReport,
+  type StrategySimulationOutcome,
+} from "./backtest.ts";
 
 export type ExecutionMode = "LIVE_MAINNET_MODE" | "STRESS_TEST_MAINNET_MODE";
 
@@ -171,8 +177,8 @@ export function getDefaultInterceptSetup(): {
   policy: PolicyGuardrailConfig;
 } {
   const enclave = createTeeEnclaveKeypairFromSeed("42".repeat(32));
-  const obligationPubkey = "H6ARHf6YXhGYeQfUzQNGk6rDNnLBQKrenN712K4AQJEG";
-  const userSolanaEoa = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU";
+  const obligationPubkey = "GQTRKyG1jdkZk8zBmfxZ4YCWZXsWJJ4upr6nZ75jPzJQ";
+  const userSolanaEoa = "Bvgoe3sxUCbEmMAy3q1AES8wBWDYWsHXF2mLomos475H";
   // Exact `v1.signer::derived_public_key` on NEAR Mainnet for `guardrail.intercept-defi.near`:
   const mpcSolanaPayer = "GZMAbwapG99YKCsA2CDVc4bXeBzd7nvKMQgtm9K8aKas";
   const mpcBaseVault = secp256k1DerivedKeyToEvmAddress(
@@ -980,6 +986,80 @@ export function runAdversarialAttackSuite(): AdversarialAttackVectorResult[] {
       errorCode: "TOCTOU_STATE_NOT_READY_FOR_LEG2",
       contractRevertMessage:
         "GUARDRAIL REVERT (LEG 2 SOLANA): Leg 1 is still InFlightLeg1 for receipt_hash; await on_origin_leg_signed callback",
+      verificationTimeUs: Math.max(
+        1,
+        Math.round((performance.now() - t0) * 1000)
+      ),
+    });
+  }
+
+  // Vector 10: Base EIP-1559 MEV Gas-Griefing / ETH Reserve Drain on Leg 1
+  {
+    const t0 = performance.now();
+    const validCalldata = buildErc20TransferCalldata(
+      approvedDepositAddress,
+      approvedRepayMicro
+    );
+    const gasDrainTx = buildUnsignedEip1559TxBytes({
+      nonce: 1,
+      maxPriorityFeePerGasWei: 100_000_000_000n,
+      maxFeePerGasWei: 500_000_000_000n, // 500 gwei > 50 gwei cap
+      gasLimit: 65_000,
+      calldata: validCalldata,
+    });
+    const res = verifyEip1559BaseUsdcTransferBytes({
+      rawUnsignedTxHex: gasDrainTx.rawUnsignedTxHex,
+      expectedDepositAddressHex: approvedDepositAddress,
+      expectedRepayAmountUsdcMicro: approvedRepayMicro,
+    });
+    results.push({
+      attackId: "ADV_10_BASE_GAS_GRIEFING_DRAIN",
+      title: "Rogue AI Drains Base Vault ETH via 500 Gwei Fee Bribe",
+      targetLeg: "LEG_1_BASE_EVM",
+      attackerGoal:
+        "Set EIP-1559 max_fee_per_gas = 500 gwei (10x guardrail cap) to siphon ETH gas reserves from MPC_Base_Vault to a colluding builder",
+      injectedPayloadSummary: `EIP-1559 Type 0x02 | max_fee_per_gas = 500,000,000,000 wei (500 gwei > 50 gwei cap)`,
+      guardrailBlocked: !res.ok,
+      errorCode: res.errorCode ?? "NONE",
+      contractRevertMessage: res.errorMessage ?? "",
+      verificationTimeUs: Math.max(
+        1,
+        Math.round((performance.now() - t0) * 1000)
+      ),
+    });
+  }
+
+  // Vector 11: Solana ComputeBudget Priority-Fee Drain on Leg 2
+  {
+    const t0 = performance.now();
+    const solFeeDrainMsg = buildSolanaKaminoRepayMessageBytes({
+      versionedV0: true,
+      mpcSolanaPayerPubkey: policy.mpcSolanaPayerPubkey,
+      userObligationPubkey: policy.userKaminoObligationPubkey,
+      lendingMarketPubkey: policy.kaminoLendingMarketPubkey,
+      repayAmountUsdcMicro: approvedRepayMicro,
+      includeComputeBudget: true,
+      includeRefreshInstructions: true,
+      customComputeBudgetPriceMicroLamports: 500_000_000n, // 500M micro-lamports/CU > 5M cap
+    });
+    const res = verifySolanaKaminoRepayMessageBytes({
+      rawMessageHex: solFeeDrainMsg.rawMessageHex,
+      expectedMpcSolanaPayerPubkey: policy.mpcSolanaPayerPubkey,
+      expectedUserObligationPubkey: policy.userKaminoObligationPubkey,
+      expectedLendingMarketPubkey: policy.kaminoLendingMarketPubkey,
+      minRepayAmountUsdcMicro: approvedRepayMicro,
+      maxRepayAmountUsdcMicro: approvedRepayMicro,
+    });
+    results.push({
+      attackId: "ADV_11_SOLANA_PRIORITY_FEE_DRAIN",
+      title: "Rogue AI Drains Solana Payer SOL via ComputeBudget Priority Fee",
+      targetLeg: "LEG_2_SOLANA_KAMINO",
+      attackerGoal:
+        "Inject ComputeBudget::SetComputeUnitPrice(500,000,000 micro-lamports/CU) to burn MPC_Solana_Payer SOL balance as priority fees",
+      injectedPayloadSummary: `Solana V0 Message | ComputeBudget tag 0x03 SetComputeUnitPrice = 500,000,000 micro-lamports/CU (> 5,000,000 cap)`,
+      guardrailBlocked: !res.ok,
+      errorCode: res.errorCode ?? "NONE",
+      contractRevertMessage: res.errorMessage ?? "",
       verificationTimeUs: Math.max(
         1,
         Math.round((performance.now() - t0) * 1000)

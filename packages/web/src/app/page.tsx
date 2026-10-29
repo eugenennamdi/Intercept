@@ -232,10 +232,40 @@ interface AdversarialAttackVectorResult {
   verificationTimeUs: number;
 }
 
+interface BacktestSuiteReport {
+  generatedAtIso: string;
+  executionTimeMs: number;
+  scenarios: Array<{
+    scenarioId: string;
+    title: string;
+    description: string;
+    outcomes: Array<{
+      strategyId: string;
+      strategyName: string;
+      survivedWithoutLiquidation: boolean;
+      liquidatedAtTick: number | null;
+      minimumObservedHf: number;
+      finalHf: number;
+      rescueTriggerCount: number;
+      totalBaseUsdcDeployed: number;
+      netCostUsd: number;
+    }>;
+    interceptEdgeSummary: string;
+  }>;
+  aggregateSummary: {
+    interceptSurvivalRatePct: number;
+    naiveMicroBotSurvivalRatePct: number;
+    unprotectedSurvivalRatePct: number;
+    totalLiquidationLossPreventedUsd: number;
+    capitalEfficiencySavingsVsConservativePct: number;
+  };
+}
+
 export default function InterceptCommandCenterPage() {
   const [report, setReport] = useState<ExecutionReport | null>(null);
   const [preflight, setPreflight] = useState<PreflightReport | null>(null);
   const [attacks, setAttacks] = useState<AdversarialAttackVectorResult[]>([]);
+  const [backtest, setBacktest] = useState<BacktestSuiteReport | null>(null);
   const [selectedAttackIdx, setSelectedAttackIdx] = useState<number>(0);
   const [isRunning, setIsRunning] = useState<boolean>(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -264,10 +294,12 @@ export default function InterceptCommandCenterPage() {
           report: ExecutionReport;
           preflight: PreflightReport;
           adversarialSuite: AdversarialAttackVectorResult[];
+          backtest: BacktestSuiteReport;
         };
         setReport(data.report);
         setPreflight(data.preflight);
         setAttacks(data.adversarialSuite);
+        setBacktest(data.backtest);
       } catch (err) {
         setErrorMsg((err as Error).message);
       } finally {
@@ -1198,6 +1230,92 @@ export default function InterceptCommandCenterPage() {
                   </div>
                 )}
               </div>
+            </div>
+          </section>
+        )}
+
+        {/* Quantitative Multi-Regime Historical Backtest Benchmark */}
+        {backtest && (
+          <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h2 className="text-base font-semibold text-zinc-100 flex items-center gap-2">
+                  <Pulse
+                    size={18}
+                    weight="duotone"
+                    className="text-emerald-400"
+                  />
+                  Quantitative Historical Backtest Lab — Why Volatility-Aware TEE
+                  Sizing Beats Static Threshold Bots
+                </h2>
+                <p className="text-xs text-zinc-400 mt-0.5">
+                  Deterministic multi-tick replay on a 100 SOL ($10,000) / $6,000
+                  USDC Kamino Obligation comparing Unprotected, Naive Static
+                  (HF &rarr; 1.20), Over-Conservative (HF &rarr; 1.45), and
+                  Intercept&apos;s Pyth Volatility + Velocity TEE Engine.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
+                <span className="px-2.5 py-1 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-300">
+                  Survival: {backtest.aggregateSummary.interceptSurvivalRatePct}%
+                  (vs. {backtest.aggregateSummary.naiveMicroBotSurvivalRatePct}%
+                  Naive Bot)
+                </span>
+                <span className="px-2.5 py-1 rounded bg-sky-500/10 border border-sky-500/30 text-sky-300">
+                  Capital Saved:{" "}
+                  {
+                    backtest.aggregateSummary
+                      .capitalEfficiencySavingsVsConservativePct
+                  }
+                  %
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              {backtest.scenarios.map((scen) => (
+                <div
+                  key={scen.scenarioId}
+                  className="rounded-lg border border-zinc-800 bg-zinc-950/70 p-4 flex flex-col justify-between space-y-3"
+                >
+                  <div className="space-y-1.5">
+                    <div className="font-mono text-xs font-semibold text-zinc-100">
+                      {scen.title}
+                    </div>
+                    <p className="text-[11px] text-zinc-400 leading-relaxed">
+                      {scen.description}
+                    </p>
+                    <div className="space-y-1.5 pt-2">
+                      {scen.outcomes.map((o) => {
+                        const isIntercept =
+                          o.strategyId === "INTERCEPT_VOLATILITY_TEE_ENGINE";
+                        return (
+                          <div
+                            key={o.strategyId}
+                            className={`rounded border px-2.5 py-1.5 font-mono text-[11px] flex items-center justify-between gap-2 ${
+                              isIntercept
+                                ? "border-emerald-500/40 bg-emerald-950/20 text-emerald-200"
+                                : o.survivedWithoutLiquidation
+                                  ? "border-zinc-800 bg-zinc-900/60 text-zinc-300"
+                                  : "border-rose-500/30 bg-rose-950/20 text-rose-300"
+                            }`}
+                          >
+                            <span className="truncate">{o.strategyName}</span>
+                            <span className="shrink-0">
+                              {o.survivedWithoutLiquidation
+                                ? `HF ${o.finalHf.toFixed(2)} · $${o.totalBaseUsdcDeployed.toFixed(0)}`
+                                : `LIQUIDATED (-$${o.netCostUsd.toFixed(0)})`}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div className="text-[11px] text-emerald-300/90 bg-emerald-950/20 border border-emerald-500/20 rounded p-2.5 leading-relaxed">
+                    {scen.interceptEdgeSummary}
+                  </div>
+                </div>
+              ))}
             </div>
           </section>
         )}
