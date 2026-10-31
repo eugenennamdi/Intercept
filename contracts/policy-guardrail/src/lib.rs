@@ -16,11 +16,11 @@ use solana_parser::{
 use std::collections::{BTreeMap, BTreeSet};
 use tee_receipt::TeeDecisionReceipt;
 
-/// Default gas attached to `v1.signer::sign` cross-contract call (50 TGas)
-pub const MPC_SIGN_GAS: Gas = Gas::from_tgas(50);
+/// Default gas attached to `v1.signer::sign` cross-contract call (250 TGas required by NEAR MPC threshold signing)
+pub const MPC_SIGN_GAS: Gas = Gas::from_tgas(250);
 
-/// Gas reserved for the local `on_origin_leg_signed` / `on_destination_leg_signed` callback (15 TGas)
-pub const MPC_CALLBACK_GAS: Gas = Gas::from_tgas(15);
+/// Gas reserved for the local `on_origin_leg_signed` / `on_destination_leg_signed` callback (30 TGas)
+pub const MPC_CALLBACK_GAS: Gas = Gas::from_tgas(30);
 
 /// Seconds in a 24-hour rolling spending limit window
 pub const ROLLING_WINDOW_SECONDS: u64 = 86_400;
@@ -292,14 +292,7 @@ impl InterceptPolicyContract {
             "usdc_repay_reserve_pubkey",
         );
 
-        assert!(
-            policy.max_per_action_usdc > 0 && policy.max_per_action_usdc <= policy.max_daily_usdc,
-            "Policy invariant failed: 0 < max_per_action_usdc <= max_daily_usdc"
-        );
-        assert!(
-            policy.max_slippage_bps <= 1_000,
-            "Policy invariant failed: max_slippage_bps cannot exceed 1000 bps (10%)"
-        );
+        validate_policy_invariants(&policy);
 
         let now_sec = env::block_timestamp() / 1_000_000_000;
 
@@ -347,6 +340,7 @@ impl InterceptPolicyContract {
         if new_policy.usdc_repay_reserve_pubkey.trim().is_empty() {
             new_policy.usdc_repay_reserve_pubkey = default_usdc_repay_reserve_pubkey();
         }
+        validate_policy_invariants(&new_policy);
         self.tee_enclave_pubkey =
             decode_hex_32(&new_policy.tee_enclave_pubkey_hex, "tee_enclave_pubkey_hex");
         self.mpc_base_vault_address = decode_hex_20(
@@ -410,6 +404,9 @@ impl InterceptPolicyContract {
     ) -> Promise {
         self.assert_authorized_caller();
 
+        let now_sec = env::block_timestamp() / 1_000_000_000;
+        self.prune_expired_receipts(now_sec);
+
         let receipt_hash = receipt.receipt_hash();
         assert!(
             !self.consumed_receipt_hashes.contains(&receipt_hash),
@@ -417,7 +414,6 @@ impl InterceptPolicyContract {
             hex::encode(receipt_hash)
         );
 
-        let now_sec = env::block_timestamp() / 1_000_000_000;
         if now_sec >= self.rolling_window_start_sec + ROLLING_WINDOW_SECONDS {
             self.rolling_window_start_sec = now_sec;
             self.rolling_24h_spent_usdc = 0;
@@ -822,6 +818,42 @@ impl InterceptPolicyContract {
         );
     }
 
+    /// Prunes expired `Completed` receipt records older than `max_receipt_age_sec * 2`
+    /// (and any stale entry older than 24h) from `leg2_authorizations` and `consumed_receipt_hashes`.
+    /// Because `TeeDecisionReceipt::verify` already rejects any receipt older than `max_receipt_age_sec`
+    /// with `ReceiptExpired`, expired receipts can never be replayed even after storage eviction.
+    pub fn prune_expired_receipts(&mut self, now_sec: u64) -> usize {
+        let completed_ttl = self.policy.max_receipt_age_sec.saturating_mul(2);
+        let stale_keys: Vec<String> = self
+            .leg2_authorizations
+            .iter()
+            .filter_map(|(hash_hex, auth)| {
+                let age = now_sec.saturating_sub(auth.authorized_at_sec);
+                let is_expired_completed =
+                    auth.state == RescueLifecycleState::Completed && age > completed_ttl;
+                let is_abandoned_older_than_window = age > ROLLING_WINDOW_SECONDS;
+                if is_expired_completed || is_abandoned_older_than_window {
+                    Some(hash_hex.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let pruned_count = stale_keys.len();
+        for key in stale_keys {
+            self.leg2_authorizations.remove(&key);
+            if let Ok(bytes) = hex::decode(&key) {
+                if bytes.len() == 32 {
+                    let mut arr = [0u8; 32];
+                    arr.copy_from_slice(&bytes);
+                    self.consumed_receipt_hashes.remove(&arr);
+                }
+            }
+        }
+        pruned_count
+    }
+
     fn internal_verify_origin_leg(
         &self,
         receipt: &TeeDecisionReceipt,
@@ -1053,6 +1085,22 @@ fn decode_base58_32(s: &str, field_name: &str) -> [u8; 32] {
     let mut arr = [0u8; 32];
     arr.copy_from_slice(&v);
     arr
+}
+
+/// Validates numeric invariants on `PolicyConfig` during `new` and `update_policy`.
+fn validate_policy_invariants(policy: &PolicyConfig) {
+    assert!(
+        policy.max_per_action_usdc > 0 && policy.max_per_action_usdc <= policy.max_daily_usdc,
+        "Policy invariant failed: 0 < max_per_action_usdc <= max_daily_usdc"
+    );
+    assert!(
+        policy.max_slippage_bps <= 1_000,
+        "Policy invariant failed: max_slippage_bps cannot exceed 1000 bps (10%)"
+    );
+    assert!(
+        policy.max_receipt_age_sec >= 30 && policy.max_receipt_age_sec <= 3_600,
+        "Policy invariant failed: max_receipt_age_sec must be in 30..=3600 seconds"
+    );
 }
 
 /// Emits a structured NEP-297 event log (`EVENT_JSON:{"standard":"intercept-guardrail","version":"1.0.0","event":"...","data":[...]}`)

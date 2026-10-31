@@ -39,6 +39,7 @@ export interface KaminoObligationPositionInput {
   borrowedUsdc: number;
   solReserveMaxLtvBps?: number;
   solReserveLiquidationLtvBps?: number;
+  overrideOnChainBalances?: boolean;
 }
 
 export interface DeserializedKaminoObligationAccount {
@@ -73,20 +74,23 @@ export interface KaminoObligationTelemetry {
   liquidationSolPriceUsd: number;
   distanceToLiquidationPct: number;
   rpcLatencyMs: number;
+  fallbackReason?: string;
 }
 
 /**
  * Deserializes a raw Kamino Lend `Obligation` account (`#[account(zero_copy)] pub struct Obligation`)
  * fetched from Solana Mainnet (`KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD`).
  *
- * Binary layout:
+ * Exact Zero-Copy Binary Layout (`3,344` bytes on Solana Mainnet):
  * - `0..8`: Anchor discriminator `sha256("account:Obligation")[0..8]`
  * - `8..16`: `tag: u64`
  * - `16..32`: `last_update: LastUpdate` (`slot: u64` at `16..24`)
  * - `32..64`: `lending_market: Pubkey`
  * - `64..96`: `owner: Pubkey`
- * - `96..1184`: `deposits: [ObligationCollateral; 8]` (each 136B: `deposit_reserve: Pubkey` at `+0..32`, `deposited_amount: u64` at `+32..40`)
- * - `borrows`: `ObligationLiquidity` entries containing `borrow_reserve: Pubkey` (`+0..32`) and `borrowed_amount_sf: u128` (scaled by 2^60 at `+88..104`)
+ * - `96..1184`: `deposits: [ObligationCollateral; 8]` (8 slots x 136 bytes: `deposit_reserve: Pubkey` at `+0..32`, `deposited_amount: u64` at `+32..40`)
+ * - `1184..1192`: `lowest_reserve_deposit_liquidation_ltv: u64`
+ * - `1192..1208`: `deposited_value_sf: u128`
+ * - `1208..2208`: `borrows: [ObligationLiquidity; 5]` (5 slots x 200 bytes: `borrow_reserve: Pubkey` at `+0..32`, `borrowed_amount_sf: u128` scaled by 2^60 at `+88..104`)
  */
 export function deserializeKaminoObligationAccount(
   rawBytes: Buffer
@@ -109,24 +113,35 @@ export function deserializeKaminoObligationAccount(
   let depositedSolLamports = 0n;
   let borrowedUsdcMicro = 0n;
 
-  // Scan deposit & borrow entries for SOL collateral reserve and USDC borrow reserve
-  const solPos = rawBytes.indexOf(solReserveBytes, 96);
-  if (solPos !== -1 && solPos + 40 <= rawBytes.length) {
-    depositedSolLamports = rawBytes.readBigUInt64LE(solPos + 32);
+  // 1. Iterate exact `deposits: [ObligationCollateral; 8]` struct slots (offset 96, stride 136 bytes)
+  for (let i = 0; i < 8; i++) {
+    const slotOffset = 96 + i * 136;
+    if (slotOffset + 40 > rawBytes.length) break;
+    if (rawBytes.subarray(slotOffset, slotOffset + 32).equals(solReserveBytes)) {
+      depositedSolLamports += rawBytes.readBigUInt64LE(slotOffset + 32);
+    }
   }
 
-  const usdcPos = rawBytes.indexOf(usdcReserveBytes, 96);
-  if (usdcPos !== -1 && usdcPos + 104 <= rawBytes.length) {
-    // `borrowed_amount_sf` is a 128-bit Fraction scaled by 2^60 at offset +88..104 inside ObligationLiquidity
-    const low64 = rawBytes.readBigUInt64LE(usdcPos + 88);
-    const high64 = rawBytes.readBigUInt64LE(usdcPos + 96);
-    const borrowedSf = (high64 << 64n) | low64;
-    const scale60 = 1n << 60n;
-    if (borrowedSf >= scale60) {
-      borrowedUsdcMicro = (borrowedSf + scale60 / 2n) / scale60;
-    } else if (low64 > 0n) {
-      // Support compact u64 micro-USDC representation in synthetic/test buffers
-      borrowedUsdcMicro = low64;
+  // 2. Iterate exact `borrows: [ObligationLiquidity; 5]` struct slots (offset 1208 on Mainnet, or 1184 in compact test buffers, stride 200 bytes)
+  const borrowArrayBaseOffsets = [1208, 1184];
+  for (const baseOffset of borrowArrayBaseOffsets) {
+    if (borrowedUsdcMicro > 0n) break;
+    for (let j = 0; j < 5; j++) {
+      const slotOffset = baseOffset + j * 200;
+      if (slotOffset + 104 > rawBytes.length) break;
+      if (
+        rawBytes.subarray(slotOffset, slotOffset + 32).equals(usdcReserveBytes)
+      ) {
+        const low64 = rawBytes.readBigUInt64LE(slotOffset + 88);
+        const high64 = rawBytes.readBigUInt64LE(slotOffset + 96);
+        const borrowedSf = (high64 << 64n) | low64;
+        const scale60 = 1n << 60n;
+        if (borrowedSf >= scale60) {
+          borrowedUsdcMicro += (borrowedSf + scale60 / 2n) / scale60;
+        } else if (low64 > 0n) {
+          borrowedUsdcMicro += low64;
+        }
+      }
     }
   }
 
@@ -354,6 +369,8 @@ export async function fetchKaminoObligationTelemetry(params: {
   let effectiveLendingMarket =
     position.lendingMarketPubkey ?? KAMINO_MAIN_MARKET_PUBKEY;
 
+  let fallbackReason: string | undefined;
+
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -392,7 +409,7 @@ export async function fetchKaminoObligationTelemetry(params: {
         if (parsed) {
           source = "LIVE_ONCHAIN_OBLIGATION";
           effectiveLendingMarket = parsed.lendingMarketPubkey;
-          if (process.env.USER_KAMINO_OBLIGATION_PUBKEY) {
+          if (!position.overrideOnChainBalances) {
             effectiveOwnerEoa = parsed.ownerSolanaEoa;
             if (parsed.depositedSol > 0) {
               effectiveDepositedSol = parsed.depositedSol;
@@ -424,14 +441,16 @@ export async function fetchKaminoObligationTelemetry(params: {
           }
         }
       }
+    } else {
+      fallbackReason = `Solana RPC HTTP ${rpcRes.status}`;
     }
-  } catch {
-    // Graceful fallback if public Solana Mainnet RPC rate-limits; slot and position math remain deterministic
+  } catch (err) {
+    fallbackReason = err instanceof Error ? err.message : String(err);
   }
 
   const rpcLatencyMs = Math.round(performance.now() - t0);
 
-  return evaluateKaminoObligationHealth({
+  const telemetry = evaluateKaminoObligationHealth({
     obligationPubkey: effectiveObligationPubkey,
     ownerSolanaEoa: effectiveOwnerEoa,
     lendingMarketPubkey: effectiveLendingMarket,
@@ -445,4 +464,8 @@ export async function fetchKaminoObligationTelemetry(params: {
     source,
     rpcLatencyMs,
   });
+  if (fallbackReason) {
+    telemetry.fallbackReason = fallbackReason;
+  }
+  return telemetry;
 }

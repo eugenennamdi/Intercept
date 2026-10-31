@@ -1,0 +1,46 @@
+name: Intercept CI & Security Verification
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    name: Rust Guardrail Contract, Agent-TEE & Web Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain (stable + wasm32-unknown-unknown)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run 22 Rust Smart Contract Unit & Adversarial Tests
+        run: cargo test --manifest-path contracts/policy-guardrail/Cargo.toml
+
+      - name: Build Release WASM Smart Contract
+        run: cargo build --manifest-path contracts/policy-guardrail/Cargo.toml --target wasm32-unknown-unknown --release
+
+      - name: Run Agent-TEE Unit & Adversarial Suite
+        run: npm run test:agent
+
+      - name: Run Full CLI Verification & Quantitative Backtest Suite
+        run: |
+          npm run verify
+          npm run backtest
+
+      - name: Build Agent-TEE & Next.js Command Center
+        run: npm run build

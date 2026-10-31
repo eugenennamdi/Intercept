@@ -34,6 +34,7 @@ export interface NearAiCloudAttestationBundle {
   };
   verifiedChainOfTrust: boolean;
   latencyMs: number;
+  fallbackReason?: string;
 }
 
 /**
@@ -119,7 +120,7 @@ export async function executeNearAiCloudVerifiableInference(params: {
   const {
     obligationPubkey,
     riskEvaluation,
-    enclaveKeypair = createTeeEnclaveKeypairFromSeed("42".repeat(32)),
+    enclaveKeypair = createTeeEnclaveKeypairFromSeed(),
     apiKey = process.env.NEAR_AI_CLOUD_API_KEY,
     baseUrl = process.env.NEAR_AI_CLOUD_BASE_URL ?? NEAR_AI_CLOUD_BASE_URL,
     model = process.env.NEAR_AI_CLOUD_MODEL ?? NEAR_AI_CLOUD_DEFAULT_MODEL,
@@ -164,6 +165,8 @@ export async function executeNearAiCloudVerifiableInference(params: {
     .createHash("sha256")
     .update(exactRequestBodyStr, "utf8")
     .digest("hex");
+
+  let fallbackReason: string | undefined;
 
   if (apiKey && apiKey.trim().length > 0) {
     try {
@@ -251,9 +254,12 @@ export async function executeNearAiCloudVerifiableInference(params: {
           };
         }
       }
-    } catch {
+    } catch (err) {
       // Fall back to deterministic enclave signing if offline or unauthenticated
+      fallbackReason = err instanceof Error ? err.message : String(err);
     }
+  } else {
+    fallbackReason = "NEAR_AI_CLOUD_API_KEY not configured; using local Ed25519 enclave verification";
   }
 
   // Deterministic confidential enclave execution (produces real Ed25519 signature over "{model}:{request_hash}:{response_hash}")
@@ -318,6 +324,7 @@ export async function executeNearAiCloudVerifiableInference(params: {
     },
     verifiedChainOfTrust: true,
     latencyMs: Math.max(1, Math.round(performance.now() - t0)),
+    fallbackReason,
   };
 
   const check = verifyNearAiCloudAttestationBundle(

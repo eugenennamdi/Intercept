@@ -35,8 +35,9 @@ cargo test --manifest-path contracts/policy-guardrail/Cargo.toml
 ```
 
 **See Y:**
-- All **20 Rust unit and adversarial tests** compile and pass:
+- All **22 Rust unit and adversarial tests** compile and pass:
   - `test_verify_kamino_anchor_discriminators_and_program_pubkeys`: Verifies exact SHA-256 preimages for `global:repay_obligation_liquidity_v2` (`[116, 174, 213, 76, 180, 53, 210, 144]`), `global:repay_obligation_liquidity` (`[145, 178, 13, 225, 76, 240, 147, 72]`), and the 4 permissionless Kamino same-slot refresh instructions (`global:refresh_reserve` `[2, 218, 138, 235, 79, 201, 25, 102]`, `global:refresh_reserves_batch` `[144, 110, 26, 103, 162, 204, 252, 147]`, `global:refresh_obligation` `[33, 132, 147, 228, 151, 192, 72, 89]`, `global:refresh_obligation_farms_for_reserve` `[140, 144, 253, 21, 10, 74, 248, 3]`), plus Base58 decoding of `ComputeBudget111111111111111111111111111111`, `KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD`, Kamino Mainnet SOL Reserve (`d4A2prbA2whesmvHaL88BH6Ewn5N4bTSU2Ze8P6Bc4Q`), and Kamino Mainnet USDC Reserve (`D6q6wuQSrifJKZYpR1M8R4YawnLDtDsMmWM1NbBmgJ59`).
+  - `test_bounded_receipt_storage_pruning_and_mpc_gas_constants` & `test_adversarial_zero_receipt_age_policy_update_rejected`: Verifies `MPC_SIGN_GAS = 250 TGas` (`MPC_CALLBACK_GAS = 30 TGas`), enforces `max_receipt_age_sec in 30..=3600`, and proves automatic bounded storage pruning of expired completed receipts.
   - `test_adversarial_evm_and_solana_gas_griefing_and_header_attacks_rejected`: Proves that EIP-1559 gas-griefing (`gas_limit > 250,000`), Base MEV priority/base fee drains (`max_fee_per_gas > 50 gwei`), invalid EIP-1559 fee ordering (`max_priority_fee_per_gas > max_fee_per_gas`), and Solana `ComputeBudget::SetComputeUnitPrice` priority-fee drains (`micro_lamports > 5,000,000`) are deterministically rejected before `v1.signer` is ever called.
   - `test_nep297_structured_events_and_function_call_key_spec`: Verifies NEP-297 structured JSON event logs (`EVENT_JSON:{"standard":"intercept-guardrail",...}`) and the scoped NEAR Function-Call Access Key specification (`get_agent_function_call_key_spec`).
   - `test_full_kamino_same_slot_refresh_and_repay_sequence_passes`: Verifies the full 5-instruction Solana `V0` repayment sequence `[ComputeBudget, refresh_reserve (SOL), refresh_reserve (USDC), refresh_obligation (remaining_accounts=[SOL, USDC]), repay_obligation_liquidity_v2]` required on Solana Mainnet to avoid `ReserveStale (6009)` / `ObligationStale (6010)`.
@@ -62,7 +63,7 @@ npm run verify
 **See Y:**
 1. **Live Mainnet Pre-Flight Check (`npm run preflight`):** Queries `v1.signer::derived_public_key` on NEAR Mainnet (`https://rpc.mainnet.near.org`) to derive `MPC_Base_Vault` (`0x72faa1abaf92e0c4b791f15acedb496c8979746c`), `MPC_Solana_Payer` (`GZMAbwapG99YKCsA2CDVc4bXeBzd7nvKMQgtm9K8aKas`), and its deterministic Solana Native USDC Associated Token Account `MPC_Solana_Payer_USDC_ATA` (`2eLUYLvdceHQTbRHQcU26x4sRj6ZAZ27otxMQS8qpskq`, `bump=255`), queries live Base Mainnet RPC (`https://mainnet.base.org`) for `nonce` + EIP-1559 gas fees + ETH/USDC balances, and queries live Solana Mainnet RPC (`https://api.mainnet-beta.solana.com`) for `recentBlockhash` + SOL balance + ATA existence & USDC balance.
 2. **Step 1 (Kamino Anchor Discriminator Verification):** Prints and verifies `repay_obligation_liquidity_v2` (`0x74aed54cb435d290`), `repay_obligation_liquidity` (`0x91b20de14cf09348`), and all 4 same-slot refresh discriminators.
-3. **Step 2 (`LIVE_MAINNET_MODE`):** Reads the live on-chain Pyth Network `PriceUpdateV2` SOL/USD account (`7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE`) and the live on-chain Kamino Mainnet `Obligation` account (`GQTRKyG1jdkZk8zBmfxZ4YCWZXsWJJ4upr6nZ75jPzJQ`, `source: LIVE_ONCHAIN_OBLIGATION`) on Solana Mainnet, evaluates the position (`HF ~1.417 >= 1.1500`), and outputs `Regime: HOLD`.
+3. **Step 2 (`LIVE_MAINNET_MODE`):** Reads the live on-chain Pyth Network `PriceUpdateV2` SOL/USD account (`7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE`) and deserializes the live on-chain 3,344-byte Kamino Mainnet `Obligation` account (`C5dZVpvpA39SNLDkojsi98nRePRRy8ELhtxak8m2vMq`, `0.184738038 SOL` collateral at `offset 96` & `9.230855 USDC` debt at `offset 1208`, `source: LIVE_ONCHAIN_OBLIGATION`) on Solana Mainnet, evaluates the position (`HF ~1.436 >= 1.1500`), and outputs `Regime: HOLD`.
 4. **Step 3 (`STRESS_TEST_MAINNET_MODE` — `-25%` SOL Flash Crash):**
    - Evaluates the `-25%` SOL shock (`HF 1.0630 < 1.1500`) and triggers `CASCADE_DEEP_RESCUE` (`Target HF 1.45`).
    - Queries a cross-chain swap quote from **NEAR Intents 1-Click API** (`https://1click.chaindefuser.com/v0/quote`) for Base USDC -> Solana USDC.
@@ -106,27 +107,34 @@ Then open `http://localhost:3000`.
 
 ```text
 Intercept/
+├── .github/workflows/ci.yml      # Automated CI pipeline (cargo test, npm test, verify, build)
 ├── HACKATHON.md                  # Official NEAR Hackathon instructions
 ├── README.md                     # Judge verification guide ("Do X, See Y")
 ├── ARCHITECTURE.md               # Byte-level parser & cryptographic specification
+├── scripts/
+│   └── deploy-near.sh            # 1-command WASM build & NEAR contract deployment script
 ├── contracts/
 │   └── policy-guardrail/         # Rust smart contract (near-sdk-rs)
 │       ├── Cargo.toml
 │       └── src/
-│           ├── lib.rs            # Contract entrypoints, 24h caps, v1.signer calls
+│           ├── lib.rs            # Contract entrypoints, 24h caps, v1.signer calls (250 TGas)
 │           ├── evm_parser.rs     # Zero-trust RLP / EIP-1559 Base USDC transfer verifier
 │           ├── solana_parser.rs  # Zero-trust Solana V0/Legacy Message & Kamino verifier
 │           ├── tee_receipt.rs    # Ed25519 TeeDecisionReceipt verifier
-│           └── tests.rs          # 10 unit + adversarial security tests
+│           └── tests.rs          # 22 unit + adversarial security tests
 └── packages/
     ├── agent-tee/                # TypeScript TEE Quantitative Risk & Routing Service
     │   └── src/
+    │       ├── index.ts          # Public package exports
     │       ├── kamino-reader.ts  # Solana Mainnet Kamino Obligation reader & health math
     │       ├── pyth-volatility.ts# Live on-chain Pyth Solana Receiver + Hermes reader
     │       ├── risk-engine.ts    # Dynamic de-risking sizing model + Ed25519 receipt signer
-    │       ├── oneclick-client.ts# Live NEAR Intents 1-Click API client
+    │       ├── near-ai-cloud.ts  # NEAR AI Cloud (Intel TDX + NVIDIA NRAS) TEE attestation client
+    │       ├── oneclick-client.ts# Live NEAR Intents 1-Click API client + live safety abort
     │       ├── payload-builder.ts# Unsigned EIP-1559 & Solana V0 Message byte builders
-    │       ├── orchestrator.ts   # 5-stage rescue state machine & adversarial suite
+    │       ├── mainnet-broadcaster.ts # Live NEAR v1.signer, Base & Solana RPC broadcaster
+    │       ├── orchestrator.ts   # 5-stage rescue state machine & 11-vector adversarial suite
+    │       ├── backtest.ts       # Multi-regime historical quantitative backtest engine
     │       ├── cli-verify.ts     # 1-command deterministic judge verifier
     │       └── test.ts           # Unit & adversarial test suite
     └── web/                      # Next.js + Tailwind Institutional DeFi Command Center

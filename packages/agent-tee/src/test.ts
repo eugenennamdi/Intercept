@@ -10,9 +10,11 @@ import {
   KAMINO_USDC_RESERVE_PUBKEY,
 } from "./kamino-reader.ts";
 import {
+  buildSolanaCreateIdempotentUsdcAtaInstruction,
   deriveMpcAddressesFromNearSigner,
   secp256k1DerivedKeyToEvmAddress,
 } from "./mainnet-broadcaster.ts";
+import { fetchOneClickRescueQuote } from "./oneclick-client.ts";
 import {
   executeInterceptRescuePipeline,
   runAdversarialAttackSuite,
@@ -178,7 +180,7 @@ test("Quantitative Risk Engine selects HOLD, MICRO_BUFFER_RESCUE, and CASCADE_DE
 });
 
 test("TEE Ed25519 receipt signing and verification rejects tampering", () => {
-  const enclave = createTeeEnclaveKeypairFromSeed("42".repeat(32));
+  const enclave = createTeeEnclaveKeypairFromSeed();
   const rogue = createTeeEnclaveKeypairFromSeed("99".repeat(32));
 
   const signed = signTeeDecisionReceipt({
@@ -412,8 +414,8 @@ test("Multi-instruction Kamino refresh+repay passes, sneaking withdraw after ref
   );
   assert.ok(derived.mpcSolanaPayerPubkey.length >= 32);
 
-  // 6. Verify Kamino binary Obligation account deserializer & source labeling
-  const rawObligationBuf = Buffer.alloc(400, 0);
+  // 6. Verify Kamino 3,344-byte zero-copy Obligation account deserializer at exact struct offsets (96 & 1208)
+  const rawObligationBuf = Buffer.alloc(3344, 0);
   Buffer.from(KAMINO_OBLIGATION_ACCOUNT_DISCRIMINATOR).copy(rawObligationBuf, 0);
   rawObligationBuf.writeBigUInt64LE(320_111_222n, 16); // last_update.slot
   base58Decode(KAMINO_MAIN_MARKET_PUBKEY).copy(rawObligationBuf, 32);
@@ -421,12 +423,17 @@ test("Multi-instruction Kamino refresh+repay passes, sneaking withdraw after ref
     rawObligationBuf,
     64
   );
+  // deposits[0] (ObligationCollateral) at offset 96
   base58Decode(KAMINO_SOL_RESERVE_PUBKEY).copy(rawObligationBuf, 96);
   rawObligationBuf.writeBigUInt64LE(115_000_000n, 96 + 32); // 0.115 SOL
-  base58Decode(KAMINO_USDC_RESERVE_PUBKEY).copy(rawObligationBuf, 232);
+  // borrows[0] (ObligationLiquidity) at offset 1208
+  base58Decode(KAMINO_USDC_RESERVE_PUBKEY).copy(rawObligationBuf, 1208);
   const borrowedSf = 6_200_000n * (1n << 60n); // 6.20 USDC scaled by 2^60
-  rawObligationBuf.writeBigUInt64LE(borrowedSf & 0xffffffffffffffffn, 232 + 88);
-  rawObligationBuf.writeBigUInt64LE(borrowedSf >> 64n, 232 + 96);
+  rawObligationBuf.writeBigUInt64LE(
+    borrowedSf & 0xffffffffffffffffn,
+    1208 + 88
+  );
+  rawObligationBuf.writeBigUInt64LE(borrowedSf >> 64n, 1208 + 96);
 
   const parsedObligation = deserializeKaminoObligationAccount(rawObligationBuf);
   assert.ok(parsedObligation !== null);
@@ -450,7 +457,7 @@ test("Multi-instruction Kamino refresh+repay passes, sneaking withdraw after ref
     mode: "STRESS_TEST_MAINNET_MODE",
     stressShockPct: -25,
   });
-  const enclave = createTeeEnclaveKeypairFromSeed("42".repeat(32));
+  const enclave = createTeeEnclaveKeypairFromSeed();
   assert.equal(
     stressReport.nearAiCloudAttestation.verifiedChainOfTrust,
     true
@@ -473,4 +480,31 @@ test("Multi-instruction Kamino refresh+repay passes, sneaking withdraw after ref
     enclave.publicKeyObject
   );
   assert.equal(tamperedNonceCheck.valid, false);
+
+  // 8. Verify 1-Click safety abort when dryRun=false and API fails (never synthesize a fake depositAddress for live broadcasts)
+  await assert.rejects(
+    async () => {
+      await fetchOneClickRescueQuote({
+        amountInMicroUsdc: 10_000_000n,
+        mpcBaseVaultAddress: derived.mpcBaseVaultAddress,
+        mpcSolanaPayerAddress: derived.mpcSolanaPayerPubkey,
+        dryRun: false,
+        apiBaseUrl: "http://127.0.0.1:1",
+        timeoutMs: 250,
+      });
+    },
+    /CRITICAL SAFETY ABORT/
+  );
+
+  // 9. Verify idempotent Solana Associated Token Account creation instruction builder
+  const createAtaIx = buildSolanaCreateIdempotentUsdcAtaInstruction({
+    payerPubkey: mpcPayer,
+    ownerPubkey: mpcPayer,
+  });
+  assert.equal(
+    createAtaIx.programId,
+    "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+  );
+  assert.equal(createAtaIx.instructionDataHex, "01");
+  assert.equal(createAtaIx.ataPubkey, derivedAta.ataPubkeyBase58);
 });

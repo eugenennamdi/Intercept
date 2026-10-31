@@ -50,6 +50,7 @@ export interface OneClickQuoteResult {
   deadlineIso: string;
   quoteLatencyMs: number;
   statusExplorerUrl: string;
+  fallbackReason?: string;
 }
 
 let cachedTokensVerified: {
@@ -193,6 +194,8 @@ export async function fetchOneClickRescueQuote(params: {
     confidentiality,
   };
 
+  let fallbackReason: string | undefined;
+
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -239,15 +242,22 @@ export async function fetchOneClickRescueQuote(params: {
               10_000n
             ).toString()
         );
-        const depositAddress =
+        const hasValidLiveDepositAddress = Boolean(
           data.quote.depositAddress &&
-          /^0x[0-9a-fA-F]{40}$/.test(data.quote.depositAddress)
-            ? data.quote.depositAddress.toLowerCase()
-            : deriveDeterministicOneClickDepositAddress({
-                recipientSolanaAddress: mpcSolanaPayerAddress,
-                refundBaseAddress: mpcBaseVaultAddress,
-                amountInMicroUsdc,
-              });
+            /^0x[0-9a-fA-F]{40}$/.test(data.quote.depositAddress)
+        );
+        if (!dryRun && !hasValidLiveDepositAddress) {
+          throw new Error(
+            "CRITICAL SAFETY ABORT: 1-Click live quote (dryRun=false) did not return a valid 20-byte EVM depositAddress"
+          );
+        }
+        const depositAddress = hasValidLiveDepositAddress
+          ? data.quote.depositAddress!.toLowerCase()
+          : deriveDeterministicOneClickDepositAddress({
+              recipientSolanaAddress: mpcSolanaPayerAddress,
+              refundBaseAddress: mpcBaseVaultAddress,
+              amountInMicroUsdc,
+            });
 
         const spreadBps = Number(
           ((amountInMicroUsdc - expectedOut) * 10_000n) /
@@ -289,12 +299,26 @@ export async function fetchOneClickRescueQuote(params: {
           statusExplorerUrl: `${apiBaseUrl}/v0/status?depositAddress=${depositAddress}`,
         };
       }
+      fallbackReason = "1-Click response missing quote object";
+    } else {
+      fallbackReason = `1-Click HTTP ${res.status}`;
     }
-  } catch {
-    // Fall through to deterministic 1-Click quote structure if unauthenticated or offline
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    if (errMsg.startsWith("CRITICAL SAFETY ABORT:")) {
+      throw err;
+    }
+    fallbackReason = errMsg;
   }
 
-  // Deterministic 1-Click solver quote model (12 bps solver spread, guaranteed minAmountOut within maxSlippageBps)
+  // CRITICAL SAFETY GUARD: Never synthesize a deposit address when broadcasting real funds (`dryRun === false`)!
+  if (!dryRun) {
+    throw new Error(
+      `CRITICAL SAFETY ABORT: Refusing to synthesize a 1-Click deposit address during live broadcast (dryRun=false). Reason: ${fallbackReason ?? "Unknown 1-Click API error"}`
+    );
+  }
+
+  // Deterministic 1-Click solver quote model (12 bps solver spread, guaranteed minAmountOut within maxSlippageBps) for dryRun / CI verification
   const solverSpreadBps = 12n; // 0.12% solver fee
   const expectedAmountOutMicroUsdc =
     (amountInMicroUsdc * (10_000n - solverSpreadBps)) / 10_000n;
@@ -338,6 +362,7 @@ export async function fetchOneClickRescueQuote(params: {
     deadlineIso,
     quoteLatencyMs: Math.round(performance.now() - t0),
     statusExplorerUrl: `${apiBaseUrl}/v0/status?depositAddress=${depositAddress}`,
+    fallbackReason,
   };
 }
 

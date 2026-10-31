@@ -48,6 +48,7 @@ export interface PythVolatilityTelemetry {
   usdcSpotUsd: number;
   priceProofHash: string;
   fetchLatencyMs: number;
+  fallbackReason?: string;
 }
 
 function scalePythValue(valStr: string | bigint, expo: number): number {
@@ -362,8 +363,9 @@ export async function fetchPythSolVolatility(options?: {
       priceProofHash,
       fetchLatencyMs: Math.round(performance.now() - t0),
     };
-  } catch {
+  } catch (err) {
     // ponytail: offline/airgapped CI fallback uses a deterministic mainnet snapshot only if both Solana RPC and Hermes are unreachable
+    const fallbackReason = err instanceof Error ? err.message : String(err);
     const fallbackSpot = 101.89;
     const fallbackEma = 101.8;
     const fallbackConf = 0.036;
@@ -401,6 +403,7 @@ export async function fetchPythSolVolatility(options?: {
       usdcSpotUsd: 1.0,
       priceProofHash,
       fetchLatencyMs: Math.round(performance.now() - t0),
+      fallbackReason,
     };
   }
 }

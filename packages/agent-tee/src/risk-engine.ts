@@ -47,13 +47,21 @@ export interface QuantitativeRiskEvaluation {
 }
 
 /**
- * Generates a deterministic 32-byte Ed25519 keypair for the NEAR AI Cloud TEE enclave
- * from a 32-byte seed (using PKCS8 DER / SPKI DER wrapping via Node's built-in `node:crypto`).
+ * Generates a 32-byte Ed25519 keypair for the NEAR AI Cloud TEE enclave.
+ * Reads `process.env.TEE_ENCLAVE_SECRET_SEED_HEX` in production, or accepts an explicit
+ * 32-byte hex seed / domain-separated derivation for deterministic verification.
  */
 export function createTeeEnclaveKeypairFromSeed(
-  seedHex: string = "42".repeat(32)
+  seedHex?: string
 ): TeeEnclaveKeypair {
-  const seedBytes = Buffer.from(seedHex.replace(/^0x/, ""), "hex");
+  const resolvedSeedHex =
+    seedHex ??
+    process.env.TEE_ENCLAVE_SECRET_SEED_HEX ??
+    crypto
+      .createHash("sha256")
+      .update("INTERCEPT_NEAR_AI_CLOUD_TEE_ENCLAVE_V1")
+      .digest("hex");
+  const seedBytes = Buffer.from(resolvedSeedHex.replace(/^0x/, ""), "hex");
   if (seedBytes.length !== 32) {
     throw new Error(`Ed25519 seed must be 32 bytes, got ${seedBytes.length}`);
   }

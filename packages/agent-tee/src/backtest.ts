@@ -56,8 +56,8 @@ export interface FullBacktestSuiteReport {
   };
 }
 
-const OBLIGATION_PUBKEY = "GQTRKyG1jdkZk8zBmfxZ4YCWZXsWJJ4upr6nZ75jPzJQ";
-const OWNER_SOLANA_EOA = "Bvgoe3sxUCbEmMAy3q1AES8wBWDYWsHXF2mLomos475H";
+const OBLIGATION_PUBKEY = "C5dZVpvpA39SNLDkojsi98nRePRRy8ELhtxak8m2vMq";
+const OWNER_SOLANA_EOA = "BPMrNdZmw9QEzrxNQC46fUwFxevQhUdDgeSmD5WsMGzU";
 
 function simulateStrategyOnScenario(params: {
   strategyId: StrategySimulationOutcome["strategyId"];
@@ -420,14 +420,30 @@ export function runQuantitativeBacktestSuite(): FullBacktestSuiteReport {
         )
       : 0;
 
+  const computeSurvivalRatePct = (
+    strategyId: StrategySimulationOutcome["strategyId"]
+  ): number => {
+    const survivedCount = scenarios.filter((s) => {
+      const out = s.outcomes.find((o) => o.strategyId === strategyId);
+      return Boolean(out?.survivedWithoutLiquidation);
+    }).length;
+    return Number(((survivedCount / scenarios.length) * 100).toFixed(1));
+  };
+
   return {
     generatedAtIso: new Date().toISOString(),
     executionTimeMs: Math.max(1, Math.round(performance.now() - t0)),
     scenarios,
     aggregateSummary: {
-      interceptSurvivalRatePct: 100,
-      naiveMicroBotSurvivalRatePct: 66.7,
-      unprotectedSurvivalRatePct: 66.7,
+      interceptSurvivalRatePct: computeSurvivalRatePct(
+        "INTERCEPT_VOLATILITY_TEE_ENGINE"
+      ),
+      naiveMicroBotSurvivalRatePct: computeSurvivalRatePct(
+        "NAIVE_STATIC_MICRO_BOT"
+      ),
+      unprotectedSurvivalRatePct: computeSurvivalRatePct(
+        "UNPROTECTED_POSITION"
+      ),
       totalLiquidationLossPreventedUsd: Number(
         (
           cascadeUnprotected.liquidationPenaltyLossUsd -

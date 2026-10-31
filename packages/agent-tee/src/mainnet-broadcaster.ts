@@ -44,6 +44,7 @@ export interface DerivedMpcVaultAddresses {
   mpcSolanaPayerUsdcAta: string;
   mpcSolanaPayerUsdcAtaBump: number;
   latencyMs: number;
+  fallbackReason?: string;
 }
 
 export interface BaseMainnetAccountAndGasState {
@@ -59,6 +60,7 @@ export interface BaseMainnetAccountAndGasState {
   usdcBalanceMicro: bigint;
   usdcBalanceFormatted: string;
   latencyMs: number;
+  fallbackReason?: string;
 }
 
 export interface SolanaMainnetBlockhashAndBalances {
@@ -75,6 +77,7 @@ export interface SolanaMainnetBlockhashAndBalances {
   usdcAtaBump: number;
   usdcAtaExistsOnChain: boolean;
   latencyMs: number;
+  fallbackReason?: string;
 }
 
 export interface MainnetPreflightReport {
@@ -218,8 +221,9 @@ export async function deriveMpcAddressesFromNearSigner(params: {
       mpcSolanaPayerUsdcAtaBump: derivedAta.bump,
       latencyMs: Math.max(1, Math.round(performance.now() - t0)),
     };
-  } catch {
+  } catch (err) {
     // Deterministic fallback when offline
+    const fallbackReason = err instanceof Error ? err.message : String(err);
     const fallbackSecp = getDefaultDerivedSecp256k1PublicKey();
     const fallbackSolanaPayer = "GZMAbwapG99YKCsA2CDVc4bXeBzd7nvKMQgtm9K8aKas";
     const fallbackEd = ["ed25519", fallbackSolanaPayer].join(":");
@@ -241,6 +245,7 @@ export async function deriveMpcAddressesFromNearSigner(params: {
       mpcSolanaPayerUsdcAta: derivedAta.ataPubkeyBase58,
       mpcSolanaPayerUsdcAtaBump: derivedAta.bump,
       latencyMs: Math.max(1, Math.round(performance.now() - t0)),
+      fallbackReason,
     };
   }
 }
@@ -544,7 +549,7 @@ export async function invokeNearPolicyContractLive<T>(params: {
     receiverContractId,
     methodName,
     argsJson,
-    gasUnits = 100_000_000_000_000n, // 100 TGas
+    gasUnits = 300_000_000_000_000n, // 300 TGas (250 TGas v1.signer + 30 TGas callback + 20 TGas contract)
     attachedDepositYocto = 50_000_000_000_000_000_000_000n, // 0.05 NEAR for v1.signer fee
   } = params;
 
@@ -629,23 +634,69 @@ export async function invokeNearPolicyContractLive<T>(params: {
   // Borsh SignedTransaction: Transaction || Signature(0=Ed25519 || 64B)
   const signedTxBorsh = Buffer.concat([txBorsh, Buffer.from([0]), sigBytes]);
 
-  const commitRes = await fetch(nearRpcUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: "near-tx-commit",
-      method: "broadcast_tx_commit",
-      params: [signedTxBorsh.toString("base64")],
-    }),
-  });
-  const commitJson = (await commitRes.json()) as {
+  const expectedTxHashBase58 = base58Encode(txHashBytes);
+  let commitJson: {
     result?: {
       transaction?: { hash?: string };
       status?: { SuccessValue?: string; Failure?: unknown };
     };
-    error?: unknown;
-  };
+    error?: { name?: string; cause?: { name?: string }; message?: string };
+  } = {};
+
+  try {
+    const commitRes = await fetch(nearRpcUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "near-tx-commit",
+        method: "broadcast_tx_commit",
+        params: [signedTxBorsh.toString("base64")],
+      }),
+    });
+    commitJson = (await commitRes.json()) as typeof commitJson;
+  } catch {
+    // Fall through to EXPERIMENTAL_tx_status polling if HTTP request timed out during multi-block v1.signer promise
+  }
+
+  // Multi-block `v1.signer::sign` promises on NEAR can exceed `broadcast_tx_commit`'s 10s synchronous window.
+  // Poll `EXPERIMENTAL_tx_status` with exponential/linear backoff up to 25 attempts (~37.5s) if needed.
+  if (
+    !commitJson.result?.status ||
+    commitJson.result.status.SuccessValue === undefined
+  ) {
+    for (let attempt = 1; attempt <= 25; attempt++) {
+      if (commitJson.result?.status?.Failure) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      try {
+        const statusRes = await fetch(nearRpcUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: `near-tx-status-${attempt}`,
+            method: "EXPERIMENTAL_tx_status",
+            params: [expectedTxHashBase58, signerAccountId],
+          }),
+        });
+        if (statusRes.ok) {
+          const statusJson = (await statusRes.json()) as typeof commitJson;
+          if (
+            statusJson.result?.status?.SuccessValue !== undefined ||
+            statusJson.result?.status?.Failure
+          ) {
+            commitJson = statusJson;
+            break;
+          }
+        }
+      } catch {
+        // Continue polling until timeout budget is exhausted
+      }
+    }
+  }
+
   if (
     !commitJson.result?.status ||
     commitJson.result.status.Failure ||
@@ -662,9 +713,57 @@ export async function invokeNearPolicyContractLive<T>(params: {
   );
   const returnValue = JSON.parse(returnBuf.toString("utf8")) as T;
   return {
-    txHashBase58:
-      commitJson.result.transaction?.hash ?? base58Encode(txHashBytes),
+    txHashBase58: commitJson.result.transaction?.hash ?? expectedTxHashBase58,
     returnValue,
+  };
+}
+
+/**
+ * Builds the deterministic SPL Associated Token Account Program (`ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL`)
+ * `CreateIdempotent` instruction (`0x01`) for initializing `MPC_Solana_Payer_USDC_ATA` on Solana Mainnet
+ * if `usdcAtaExistsOnChain === false` prior to a live rescue.
+ */
+export function buildSolanaCreateIdempotentUsdcAtaInstruction(params: {
+  payerPubkey: string;
+  ownerPubkey: string;
+  usdcMintPubkey?: string;
+}): {
+  programId: string;
+  ataPubkey: string;
+  ataBump: number;
+  instructionDataHex: string;
+  accounts: Array<{
+    pubkey: string;
+    isSigner: boolean;
+    isWritable: boolean;
+  }>;
+} {
+  const usdcMint = params.usdcMintPubkey ?? SOLANA_MAINNET_USDC_MINT;
+  const derived = deriveSolanaAssociatedTokenAddress(
+    params.ownerPubkey,
+    usdcMint
+  );
+  return {
+    programId: "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+    ataPubkey: derived.ataPubkeyBase58,
+    ataBump: derived.bump,
+    instructionDataHex: "01", // SPL Associated Token Account `CreateIdempotent` discriminator = 0x01
+    accounts: [
+      { pubkey: params.payerPubkey, isSigner: true, isWritable: true },
+      { pubkey: derived.ataPubkeyBase58, isSigner: false, isWritable: true },
+      { pubkey: params.ownerPubkey, isSigner: false, isWritable: false },
+      { pubkey: usdcMint, isSigner: false, isWritable: false },
+      {
+        pubkey: "11111111111111111111111111111111",
+        isSigner: false,
+        isWritable: false,
+      },
+      {
+        pubkey: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+        isSigner: false,
+        isWritable: false,
+      },
+    ],
   };
 }
 

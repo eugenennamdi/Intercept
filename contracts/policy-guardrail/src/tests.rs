@@ -1361,6 +1361,7 @@ fn test_leg1_and_leg2_mpc_failure_rollbacks_preserve_funds() {
     assert!(telemetry_rolled_back.pending_leg2_authorizations.is_empty());
 
     // 2. Retry Leg 1 with the same receipt (since it was rolled back) and let `v1.signer` succeed
+    setup_context("agent.intercept.near", TEST_TIMESTAMP_SEC);
     let _ = contract.request_rescue_origin_leg(
         receipt,
         policy.mpc_solana_payer_pubkey.clone(),
@@ -1384,6 +1385,7 @@ fn test_leg1_and_leg2_mpc_failure_rollbacks_preserve_funds() {
     );
 
     // 3. Dispatch Leg 2 -> sets InFlightLeg2
+    setup_context("agent.intercept.near", TEST_TIMESTAMP_SEC);
     let solana_full_msg = build_solana_kamino_full_refresh_and_repay_message(
         true,
         &mpc_solana_payer,
@@ -1425,6 +1427,7 @@ fn test_leg1_and_leg2_mpc_failure_rollbacks_preserve_funds() {
     assert!(!telemetry_leg2_retryable.pending_leg2_authorizations[0].leg2_completed);
 
     // 5. Retry `request_rescue_destination_leg` and complete successfully!
+    setup_context("agent.intercept.near", TEST_TIMESTAMP_SEC);
     let _ = contract.request_rescue_destination_leg(receipt_hash_hex.clone(), solana_hex);
     let mock_ed25519_json = near_sdk::serde_json::json!({
         "scheme": "Ed25519",
@@ -1712,4 +1715,124 @@ fn test_adversarial_evm_and_solana_gas_griefing_and_header_attacks_rejected() {
             actual_micro_lamports: 500_000_000,
         })
     );
+}
+
+#[test]
+#[should_panic(expected = "Policy invariant failed: max_receipt_age_sec must be in 30..=3600 seconds")]
+fn test_adversarial_zero_receipt_age_policy_update_rejected() {
+    let (policy, _tee_sk, _base_vault, _mpc_solana_payer, _user_obligation, _lending_market) =
+        sample_policy_and_keys();
+    setup_context("alice.near", TEST_TIMESTAMP_SEC);
+    let mut contract = InterceptPolicyContract::new(policy.clone());
+
+    let mut invalid_policy = policy;
+    invalid_policy.max_receipt_age_sec = 0;
+    contract.update_policy(invalid_policy);
+}
+
+#[test]
+fn test_bounded_receipt_storage_pruning_and_mpc_gas_constants() {
+    assert_eq!(crate::MPC_SIGN_GAS, near_sdk::Gas::from_tgas(250));
+    assert_eq!(crate::MPC_CALLBACK_GAS, near_sdk::Gas::from_tgas(30));
+
+    let (policy, tee_sk, _base_vault, mpc_solana_payer, user_obligation, lending_market) =
+        sample_policy_and_keys();
+    setup_context("alice.near", TEST_TIMESTAMP_SEC);
+    let mut contract = InterceptPolicyContract::new(policy.clone());
+
+    // Complete Rescue #1 at TEST_TIMESTAMP_SEC
+    setup_context("agent.intercept.near", TEST_TIMESTAMP_SEC);
+    let deposit_addr = [0x99; 20];
+    let repay_amount = 10_000_000u128;
+    let receipt_1 = sign_test_receipt(
+        &tee_sk,
+        &policy.user_kamino_obligation_pubkey,
+        RiskRegime::MicroBufferRescue,
+        repay_amount,
+        9_950_000,
+        &deposit_addr,
+        TEST_TIMESTAMP_SEC,
+    );
+    let calldata = build_erc20_transfer_calldata(&deposit_addr, repay_amount);
+    let tx_1 = build_unsigned_eip1559_tx(
+        BASE_MAINNET_CHAIN_ID,
+        1,
+        1_000_000,
+        20_000_000,
+        60_000,
+        &BASE_USDC_ADDRESS,
+        0,
+        &calldata,
+    );
+    let _ = contract.request_rescue_origin_leg(
+        receipt_1.clone(),
+        policy.mpc_solana_payer_pubkey.clone(),
+        hex::encode(tx_1),
+    );
+    let hash_1 = hex::encode(receipt_1.receipt_hash());
+    let _ = contract.on_origin_leg_signed(
+        hash_1.clone(),
+        hex::encode([0x11u8; 32]),
+        repay_amount,
+        Ok(near_sdk::serde_json::json!({
+            "big_r": { "affine_point": "02aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899" },
+            "s": { "scalar": "11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff" },
+            "recovery_id": 0
+        })),
+    );
+    let sol_msg = build_solana_kamino_full_refresh_and_repay_message(
+        true,
+        &mpc_solana_payer,
+        &user_obligation,
+        &lending_market,
+        &KAMINO_MAINNET_SOL_RESERVE_PUBKEY,
+        &KAMINO_MAINNET_USDC_RESERVE_PUBKEY,
+        &[0x55; 32],
+        &[0x66; 32],
+        &[0x77; 32],
+        &[0x88; 32],
+        &[0x91; 32],
+        &[0x92; 32],
+        &[0xaa; 32],
+        9_980_000,
+    );
+    let _ = contract.request_rescue_destination_leg(hash_1.clone(), hex::encode(&sol_msg));
+    let _ = contract.on_destination_leg_signed(
+        hash_1,
+        sol_msg.len(),
+        Ok(near_sdk::serde_json::json!({ "signature": vec![0x77u8; 64] })),
+    );
+    assert_eq!(contract.get_telemetry().consumed_receipt_count, 1);
+
+    // Advance clock past max_receipt_age_sec * 2 (300 * 2 + 10 = 610s) and dispatch Rescue #2
+    let later_ts = TEST_TIMESTAMP_SEC + 610;
+    setup_context("agent.intercept.near", later_ts);
+    let receipt_2 = sign_test_receipt(
+        &tee_sk,
+        &policy.user_kamino_obligation_pubkey,
+        RiskRegime::MicroBufferRescue,
+        repay_amount,
+        9_950_000,
+        &deposit_addr,
+        later_ts,
+    );
+    let tx_2 = build_unsigned_eip1559_tx(
+        BASE_MAINNET_CHAIN_ID,
+        2,
+        1_000_000,
+        20_000_000,
+        60_000,
+        &BASE_USDC_ADDRESS,
+        0,
+        &calldata,
+    );
+    let _ = contract.request_rescue_origin_leg(
+        receipt_2,
+        policy.mpc_solana_payer_pubkey,
+        hex::encode(tx_2),
+    );
+    // Completed Rescue #1 was pruned before Rescue #2 was inserted, so storage count stays bounded at 1!
+    let telemetry = contract.get_telemetry();
+    assert_eq!(telemetry.consumed_receipt_count, 1);
+    assert_eq!(telemetry.pending_leg2_authorizations.len(), 1);
 }

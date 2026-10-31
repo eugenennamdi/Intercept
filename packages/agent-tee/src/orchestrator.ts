@@ -176,9 +176,9 @@ export function getDefaultInterceptSetup(): {
   position: KaminoObligationPositionInput;
   policy: PolicyGuardrailConfig;
 } {
-  const enclave = createTeeEnclaveKeypairFromSeed("42".repeat(32));
-  const obligationPubkey = "GQTRKyG1jdkZk8zBmfxZ4YCWZXsWJJ4upr6nZ75jPzJQ";
-  const userSolanaEoa = "Bvgoe3sxUCbEmMAy3q1AES8wBWDYWsHXF2mLomos475H";
+  const enclave = createTeeEnclaveKeypairFromSeed();
+  const obligationPubkey = "C5dZVpvpA39SNLDkojsi98nRePRRy8ELhtxak8m2vMq";
+  const userSolanaEoa = "BPMrNdZmw9QEzrxNQC46fUwFxevQhUdDgeSmD5WsMGzU";
   // Exact `v1.signer::derived_public_key` on NEAR Mainnet for `guardrail.intercept-defi.near`:
   const mpcSolanaPayer = "GZMAbwapG99YKCsA2CDVc4bXeBzd7nvKMQgtm9K8aKas";
   const mpcBaseVault = secp256k1DerivedKeyToEvmAddress(
@@ -190,8 +190,8 @@ export function getDefaultInterceptSetup(): {
       obligationPubkey,
       ownerSolanaEoa: userSolanaEoa,
       lendingMarketPubkey: KAMINO_MAIN_MARKET_PUBKEY,
-      depositedSol: 0.115, // ~$11.72 SOL collateral on Kamino Mainnet at ~$101.9/SOL
-      borrowedUsdc: 6.2, // $6.20 USDC borrowed debt on Kamino Mainnet (live HF ~1.42)
+      depositedSol: 0.184738038, // Live on-chain SOL collateral in ObligationCollateral[0] (offset 96)
+      borrowedUsdc: 9.230855, // Live on-chain USDC debt in ObligationLiquidity[0] (offset 1208)
       solReserveMaxLtvBps: 6500,
       solReserveLiquidationLtvBps: 7500,
     },
@@ -232,9 +232,15 @@ export async function executeInterceptRescuePipeline(options?: {
   customPolicy?: Partial<PolicyGuardrailConfig>;
 }): Promise<OrchestratorExecutionReport> {
   const defaults = getDefaultInterceptSetup();
+  const hasCustomPositionOverride = Boolean(
+    options?.customPosition &&
+      (options.customPosition.depositedSol !== undefined ||
+        options.customPosition.borrowedUsdc !== undefined)
+  );
   const position: KaminoObligationPositionInput = {
     ...defaults.position,
     ...options?.customPosition,
+    overrideOnChainBalances: hasCustomPositionOverride,
   };
   const policy: PolicyGuardrailConfig = {
     ...defaults.policy,
@@ -277,7 +283,7 @@ export async function executeInterceptRescuePipeline(options?: {
       policy.maxDailyUsdcMicro - policy.rolling24hSpentUsdcMicro,
     availableBaseVaultUsdcMicro: policy.availableBaseVaultUsdcMicro,
   });
-  const enclaveKeypair = createTeeEnclaveKeypairFromSeed("42".repeat(32));
+  const enclaveKeypair = createTeeEnclaveKeypairFromSeed();
   const nearAiCloudAttestation = await executeNearAiCloudVerifiableInference({
     obligationPubkey: policy.userKaminoObligationPubkey,
     riskEvaluation,
@@ -601,7 +607,9 @@ export async function executeInterceptRescuePipeline(options?: {
   const kaminoAfter = await fetchKaminoObligationTelemetry({
     position: {
       ...position,
-      borrowedUsdc: Math.max(0, position.borrowedUsdc - settledRepayUsd),
+      depositedSol: kaminoBefore.depositedSol,
+      borrowedUsdc: Math.max(0, kaminoBefore.borrowedUsdc - settledRepayUsd),
+      overrideOnChainBalances: true,
     },
     solPriceUsd: pythTelemetry.effectiveSolUsd,
     usdcPriceUsd: pythTelemetry.usdcSpotUsd,
@@ -869,7 +877,7 @@ export function runAdversarialAttackSuite(): AdversarialAttackVectorResult[] {
   // Vector 6: Forged TEE Enclave Signature
   {
     const t0 = performance.now();
-    const legitimateEnclave = createTeeEnclaveKeypairFromSeed("42".repeat(32));
+    const legitimateEnclave = createTeeEnclaveKeypairFromSeed();
     const rogueEnclave = createTeeEnclaveKeypairFromSeed("99".repeat(32));
     const forgedBundle = signTeeDecisionReceipt({
       enclaveKeypair: rogueEnclave,
@@ -973,19 +981,63 @@ export function runAdversarialAttackSuite(): AdversarialAttackVectorResult[] {
   // Vector 9: Async Cross-Contract TOCTOU Race (Concurrent Leg 2 while InFlightLeg1 / InFlightLeg2)
   {
     const t0 = performance.now();
-    const lifecycleState: string = "InFlightLeg1";
-    const blocked = lifecycleState !== "ReadyForLeg2";
+    type LifecycleState =
+      | "InFlightLeg1"
+      | "ReadyForLeg2"
+      | "InFlightLeg2"
+      | "Completed";
+    const activeAuthorizations = new Map<string, LifecycleState>();
+    const sampleReceiptHash = "0x" + "7f".repeat(32);
+
+    const attemptDestinationLegTransition = (receiptHash: string): {
+      ok: boolean;
+      errorCode?: string;
+      revertMessage?: string;
+    } => {
+      const currentState = activeAuthorizations.get(receiptHash);
+      if (!currentState) {
+        return {
+          ok: false,
+          errorCode: "UNKNOWN_RECEIPT_HASH",
+          revertMessage: `GUARDRAIL REVERT (LEG 2 SOLANA): Unknown or unauthorized receipt_hash ${receiptHash}`,
+        };
+      }
+      if (currentState !== "ReadyForLeg2") {
+        return {
+          ok: false,
+          errorCode: `TOCTOU_STATE_${currentState.toUpperCase()}_REJECTED`,
+          revertMessage:
+            currentState === "InFlightLeg1"
+              ? `GUARDRAIL REVERT (LEG 2 SOLANA): Leg 1 is still InFlightLeg1 for receipt_hash ${receiptHash}; await on_origin_leg_signed callback`
+              : `GUARDRAIL REVERT (LEG 2 SOLANA): Leg 2 is already ${currentState} for receipt_hash ${receiptHash}; concurrent Leg 2 call blocked`,
+        };
+      }
+      activeAuthorizations.set(receiptHash, "InFlightLeg2");
+      return { ok: true };
+    };
+
+    // 1. Leg 1 dispatched -> state enters InFlightLeg1; premature Leg 2 call must fail
+    activeAuthorizations.set(sampleReceiptHash, "InFlightLeg1");
+    const prematureCheck = attemptDestinationLegTransition(sampleReceiptHash);
+
+    // 2. Leg 1 callback settles -> ReadyForLeg2 -> first Leg 2 call enters InFlightLeg2 -> concurrent second Leg 2 call must fail
+    activeAuthorizations.set(sampleReceiptHash, "ReadyForLeg2");
+    const firstLeg2 = attemptDestinationLegTransition(sampleReceiptHash);
+    const concurrentSecondLeg2 =
+      attemptDestinationLegTransition(sampleReceiptHash);
+
+    const blocked =
+      !prematureCheck.ok && firstLeg2.ok && !concurrentSecondLeg2.ok;
     results.push({
       attackId: "ADV_09_ASYNC_TOCTOU_RACE",
       title: "Replay / Concurrent Leg 2 While Leg 1 Is InFlightLeg1",
       targetLeg: "ASYNC_TOCTOU_STATE",
       attackerGoal:
         "Invoke request_rescue_destination_leg before on_origin_leg_signed callback settles or concurrently during InFlightLeg2",
-      injectedPayloadSummary: `receipt_hash state = ${lifecycleState} (requires ReadyForLeg2 before transitioning to InFlightLeg2)`,
+      injectedPayloadSummary: `receipt_hash=${sampleReceiptHash.slice(0, 14)}... | Premature InFlightLeg1 -> REVERT & Concurrent InFlightLeg2 -> REVERT`,
       guardrailBlocked: blocked,
-      errorCode: "TOCTOU_STATE_NOT_READY_FOR_LEG2",
-      contractRevertMessage:
-        "GUARDRAIL REVERT (LEG 2 SOLANA): Leg 1 is still InFlightLeg1 for receipt_hash; await on_origin_leg_signed callback",
+      errorCode: prematureCheck.errorCode ?? "TOCTOU_STATE_NOT_READY_FOR_LEG2",
+      contractRevertMessage: prematureCheck.revertMessage ?? "",
       verificationTimeUs: Math.max(
         1,
         Math.round((performance.now() - t0) * 1000)
