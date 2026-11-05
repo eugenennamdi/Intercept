@@ -74,9 +74,9 @@ INTERCEPT_TEE_RECEIPT_V1|{timestamp}|{obligation_pubkey}|{observed_hf_bps}|{vola
 
 The NEAR Policy Guardrail Contract verifies:
 1. `near_sdk::env::ed25519_verify(&signature, canonical_payload.as_bytes(), &self.tee_enclave_pubkey)` passes.
-2. Replay protection: `sha256(canonical_payload)` is not present in `consumed_receipt_hashes`.
+2. Replay protection & bounded storage: `sha256(canonical_payload)` is not present in `consumed_receipt_hashes`, and `prune_expired_receipts` automatically evicts completed receipts older than `max_receipt_age_sec * 2` (and stale records older than 24h) on each rescue invocation.
 3. `regime` is `"MICRO_BUFFER_RESCUE"` or `"CASCADE_DEEP_RESCUE"` (rejects `"HOLD"`).
-4. Timestamp freshness: `receipt.timestamp + policy.max_receipt_age_sec >= block_timestamp_sec`.
+4. Timestamp freshness & policy invariant: `policy.max_receipt_age_sec` is strictly enforced in `30..=3600`, and `receipt.timestamp + policy.max_receipt_age_sec >= block_timestamp_sec`.
 5. `bs58::decode(receipt.obligation_pubkey) == self.user_kamino_obligation_pubkey`.
 6. Slippage bound: `receipt.min_amount_out * 10_000 >= receipt.repay_amount_usdc * (10_000 - policy.max_slippage_bps)`.
 
@@ -88,6 +88,9 @@ The contract decodes the raw unsigned EIP-1559 payload (`0x02 || rlp([chain_id, 
 | :--- | :--- | :--- |
 | Transaction Type | Byte `0` | Must equal `0x02` (EIP-1559) |
 | `chain_id` | Item `0` | Must equal `8453` (Base Mainnet) |
+| `max_priority_fee_per_gas` | Item `2` | `<= 10 gwei` and `<= max_fee_per_gas` (anti-MEV / fee-drain cap) |
+| `max_fee_per_gas` | Item `3` | `> 0` and `<= 50 gwei` |
+| `gas_limit` | Item `4` | `21_000..=250_000` (anti-gas-griefing bound) |
 | `to` | Item `5` | Must equal `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` (Base Native USDC) |
 | `value` | Item `6` | Must equal `0` (zero native ETH transfer) |
 | `data` length | Item `7` | Must equal `68` bytes |
@@ -98,19 +101,19 @@ The contract decodes the raw unsigned EIP-1559 payload (`0x02 || rlp([chain_id, 
 | `data[52..68]` | Amount | `u128::from_be_bytes` must equal `receipt.repay_amount_usdc` |
 | `access_list` | Item `8` | Must be empty RLP list (`0xc0`) |
 
-Only after all checks pass does the contract compute `keccak256(raw_unsigned_tx)` and invoke `v1.signer::sign` (`domain_id: 0`).
+Only after all checks pass does the contract compute `keccak256(raw_unsigned_tx)` and invoke `v1.signer::sign` (`domain_id: 0`, `MPC_SIGN_GAS = 250 TGas`, `MPC_CALLBACK_GAS = 30 TGas`).
 
 ### 3.3 Leg 2 Byte-Level Solana Message & Kamino Repay Verifier (`src/solana_parser.rs`)
 
 The contract parses the raw serialized Solana `Message` bytes (`64..=1232` bytes, supporting both Legacy and `V0` versioned messages; 32-byte pre-hashes are strictly rejected because Solana Ed25519 verifies signatures over the raw `Message` bytes directly):
 
 1. **Header & Static Account Keys:**
-   - Asserts `num_required_signatures == 1`.
+   - Asserts `num_required_signatures == 1` and `num_readonly_signed_accounts == 0`.
    - Reads the `compact-u16` static `account_keys` array and asserts `account_keys[0] == self.mpc_solana_payer_pubkey`.
    - If `V0` (`0x80` prefix), asserts `address_table_lookups_len == 0` (forbidding opaque Address Lookup Table indirection) and asserts zero trailing bytes.
-2. **Program Whitelist:**
+2. **Program Whitelist & ComputeBudget Fee Bounds:**
    - Every compiled instruction's `program_id_index` must resolve to either:
-     - `ComputeBudget111111111111111111111111111111` (`[3, 6, 70, 111, 229, 33, 23, 50, 255, 236, 173, 186, 114, 195, 155, 231, 188, 140, 229, 187, 197, 247, 18, 107, 44, 67, 155, 58, 64, 0, 0, 0]`)
+     - `ComputeBudget111111111111111111111111111111` (`SetComputeUnitLimit` `0x02` bounded to `50_000..=1_400_000` CUs; `SetComputeUnitPrice` `0x03` bounded to `<= 5_000_000` micro-lamports/CU to block SOL fee-drain attacks)
      - `KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD` (`[4, 178, 172, 177, 18, 88, 204, 227, 104, 44, 65, 139, 168, 114, 255, 61, 249, 17, 2, 113, 47, 21, 175, 18, 182, 190, 105, 179, 67, 91, 0, 8]`)
 3. **Kamino Same-Slot Refresh & Repayment Anchor Discriminator Verification:**
    - Preceding Kamino instructions in the transaction are permitted **only if** their 8-byte discriminator matches one of the 4 permissionless refresh instructions:

@@ -54,9 +54,18 @@ async function printPreflightSection(): Promise<void> {
   console.log(
     `  Base Mainnet RPC State       : ${preflight.baseState.source} | Chain ID ${preflight.baseState.chainId} | Nonce ${preflight.baseState.nonce} | ETH ${preflight.baseState.ethBalanceFormatted} | USDC ${preflight.baseState.usdcBalanceFormatted}`
   );
+  if (preflight.baseState.fallbackReason) {
+    console.log(`    ⚠️ FALLBACK (Base RPC)     : ${preflight.baseState.fallbackReason}`);
+  }
   console.log(
     `  Solana Mainnet RPC State     : ${preflight.solanaState.source} | Blockhash ${preflight.solanaState.recentBlockhashBase58} | SOL ${preflight.solanaState.solBalanceFormatted} | USDC ${preflight.solanaState.usdcBalanceFormatted}`
   );
+  if (preflight.solanaState.fallbackReason) {
+    console.log(`    ⚠️ FALLBACK (Solana RPC)   : ${preflight.solanaState.fallbackReason}`);
+  }
+  if (preflight.derivedMpc.fallbackReason) {
+    console.log(`    ⚠️ FALLBACK (NEAR MPC RPC) : ${preflight.derivedMpc.fallbackReason}`);
+  }
   console.log("\n  Live $10 Mainnet Rescue Readiness Checklist:");
   for (const item of preflight.checklist) {
     const badge = item.passed ? "READY" : "INFO ";
@@ -164,7 +173,13 @@ async function main(): Promise<void> {
     mode: "LIVE_MAINNET_MODE",
   });
   console.log(`  Oracle Source        : ${liveReport.pythTelemetry.source}`);
+  if (liveReport.pythTelemetry.fallbackReason) {
+    console.log(`    ⚠️ FALLBACK (Pyth) : ${liveReport.pythTelemetry.fallbackReason}`);
+  }
   console.log(`  Kamino Source        : ${liveReport.kaminoBefore.source}`);
+  if (liveReport.kaminoBefore.fallbackReason) {
+    console.log(`    ⚠️ FALLBACK (Kamino): ${liveReport.kaminoBefore.fallbackReason}`);
+  }
   console.log(
     `  Live Pyth SOL/USD    : $${liveReport.pythTelemetry.rawSpotSolUsd.toFixed(4)} ± $${liveReport.pythTelemetry.confidenceUsd.toFixed(4)} (EMA: $${liveReport.pythTelemetry.emaSolUsd.toFixed(4)})`
   );
@@ -210,6 +225,11 @@ async function main(): Promise<void> {
     console.log(
       `  NEAR AI Cloud TEE    : ${stressReport.nearAiCloudAttestation.source} | Model: ${stressReport.nearAiCloudAttestation.model}`
     );
+    if (stressReport.nearAiCloudAttestation.fallbackReason) {
+      console.log(
+        `    ⚠️ FALLBACK (TEE)  : ${stressReport.nearAiCloudAttestation.fallbackReason}`
+      );
+    }
     console.log(
       `  Hardware Attestation : ${stressReport.nearAiCloudAttestation.hardwareAttestation.gpuArchitecture} | Nonce: 0x${stressReport.nearAiCloudAttestation.attestationNonceHex.slice(0, 24)}... (ChainOfTrust=${stressReport.nearAiCloudAttestation.verifiedChainOfTrust})`
     );

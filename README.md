@@ -81,7 +81,7 @@ npm run test:agent
 ```
 
 **See Y:**
-- Executes the deterministic `node:test` suite in [`packages/agent-tee/src/test.ts`](file:///Users/apple/Desktop/Intercept/packages/agent-tee/src/test.ts) covering all 3 quantitative risk regimes, Ed25519 receipt tampering rejection, and byte-level EVM/Solana parsers (`4 passed, 0 failed`).
+- Executes the deterministic `node:test` suite in [`packages/agent-tee/src/test.ts`](file:///Users/apple/Desktop/Intercept/packages/agent-tee/src/test.ts) covering all 3 quantitative risk regimes, Ed25519 receipt tampering rejection, live 1-Click safety aborts, idempotent Solana ATA construction, and byte-level EVM/Solana parsers (`5 passed, 0 failed`).
 
 ---
 
@@ -99,7 +99,7 @@ Then open `http://localhost:3000`.
 - **Interactive Mode Controls:** Toggle between `Live Mainnet Mode (0% Shock)`, `Mild Breach (-21% SOL -> Micro Rescue)`, `Cascade Crash (-25% SOL -> Deep Rescue)`, `Policy Threshold Override (Min HF 1.48)`, or any custom shock (`-40%` to `0%`).
 - **5-Stage Cross-Chain Execution Telemetry:** Inspect real measured millisecond latency per stage and click directly into `Solscan`, `1-Click Swap Status`, `NearBlocks (v1.signer)`, and `BaseScan`.
 - **Byte-Level Guardrail Inspector:** Inspect the full canonical `TeeDecisionReceipt`, Ed25519 signature hex, unsigned EIP-1559 RLP bytes, and raw 394-byte Solana `V0` message hex.
-- **Simulate Rogue AI Hack Button:** Click **"Simulate Rogue AI Hack"** in the top banner (or select any of the 6 red-team cards at the bottom) to inject rogue instructions (`withdraw_obligation_collateral_v2`, ERC-20 `approve()`, recipient hijack, obligation spoofing) and inspect the exact NEAR Policy Contract revert error.
+- **Prompt-Inject the AI (Adversarial Simulator):** Click **"Prompt-Inject the AI"** in the top banner (or select any of the **11** red-team attack cards at the bottom) to inject rogue instructions (`withdraw_obligation_collateral_v2`, ERC-20 `approve()`, recipient hijack, V0 ALT indirection, gas-griefing drains, concurrent TOCTOU races) and inspect the exact NEAR Policy Contract revert error.
 
 ---
 

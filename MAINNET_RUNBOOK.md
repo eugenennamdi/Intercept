@@ -34,7 +34,19 @@ Expected output for default `POLICY_CONTRACT_ID="guardrail.intercept-defi.near"`
 
 ## Step 3: Build & Deploy `contracts/policy-guardrail` to NEAR Mainnet
 
+You can build and deploy in one command via [`scripts/deploy-near.sh`](file:///Users/apple/Desktop/Intercept/scripts/deploy-near.sh), or run the explicit `near-cli-rs` steps below:
+
 ```bash
+# Option A: One-command reproducible WASM build & deploy
+OWNER_NEAR_ID="<your-account>.near" \
+NEAR_ACCOUNT_ID="agent.<your-account>.near" \
+POLICY_CONTRACT_ID="guardrail.<your-account>.near" \
+NEAR_NETWORK="mainnet" \
+npm run deploy:near -- --deploy
+```
+
+```bash
+# Option B: Explicit step-by-step near-cli-rs deployment
 # 1. Build the release WASM binary
 cargo build --manifest-path contracts/policy-guardrail/Cargo.toml --target wasm32-unknown-unknown --release
 
@@ -49,12 +61,14 @@ near contract deploy guardrail.<your-account>.near \
 POLICY_CONTRACT_ID="guardrail.<your-account>.near" npm run preflight
 
 # 4. Initialize the Policy Guardrail Contract
+# Note: tee_enclave_pubkey_hex below matches the default domain-separated enclave keypair;
+# if using a custom TEE_ENCLAVE_SECRET_SEED_HEX, substitute its derived 32-byte Ed25519 pubkey hex.
 near contract call-function as-transaction guardrail.<your-account>.near new json-args '{
   "policy": {
     "owner_id": "<your-account>.near",
     "authorized_agent_id": "agent.<your-account>.near",
     "mpc_signer_contract": "v1.signer",
-    "tee_enclave_pubkey_hex": "197f6b23e16c8532c6abc838facd3ea789be0c76b2920334039bfa8b3d368d61",
+    "tee_enclave_pubkey_hex": "ef03c6fb5128efac12f621f4496fd3b84aa00f3df130f925b82e5d24c2a3a054",
     "mpc_base_vault_address_hex": "<MPC_Base_Vault_0x_from_step_3>",
     "mpc_solana_payer_pubkey": "<MPC_Solana_Payer_base58_from_step_3>",
     "user_kamino_obligation_pubkey": "<User_Kamino_Obligation_PDA_from_step_2>",
@@ -69,7 +83,7 @@ near contract call-function as-transaction guardrail.<your-account>.near new jso
     "min_trigger_hf_bps": 11500,
     "max_receipt_age_sec": 300
   }
-}' prepaid-gas '30.0 Tgas' attached-deposit '0 NEAR' sign-as <your-account>.near network-config mainnet sign-with-keychain send
+}' prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' sign-as <your-account>.near network-config mainnet sign-with-keychain send
 ```
 
 Create a scoped Function Call Access Key for the agent account restricted strictly to `request_rescue_origin_leg` and `request_rescue_destination_leg`:

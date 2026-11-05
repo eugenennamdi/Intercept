@@ -60,9 +60,11 @@ interface ExecutionReport {
     effectiveSolUsd: number;
     priceProofHash: string;
     fetchLatencyMs: number;
+    fallbackReason?: string;
   };
   kaminoBefore: {
     source: string;
+    fallbackReason?: string;
     programId: string;
     lendingMarketPubkey: string;
     obligationPubkey: string;
@@ -119,9 +121,11 @@ interface ExecutionReport {
       tdxReportDataBindsKeyAndNonce: boolean;
     };
     verifiedChainOfTrust: boolean;
+    fallbackReason?: string;
   };
   oneClickQuote: {
     source: string;
+    fallbackReason?: string;
     quoteId: string;
     amountInFormatted: string;
     amountOutFormatted: string;
@@ -421,7 +425,7 @@ export default function InterceptCommandCenterPage() {
               <div className="text-zinc-300 text-[11px]">
                 Holds SOL Collateral &amp; Kamino Obligation PDA (
                 {report?.policy.userKaminoObligationPubkey.slice(0, 8) ??
-                  "H6ARHf6Y"}
+                  "C5dZVpvp"}
                 ...).{" "}
                 <span className="text-emerald-300">
                   withdraw_obligation_collateral_v2 requires User EOA signature
@@ -707,6 +711,30 @@ export default function InterceptCommandCenterPage() {
             Error: {errorMsg}
           </div>
         )}
+
+        {report &&
+          (report.pythTelemetry.fallbackReason ||
+            report.kaminoBefore.fallbackReason ||
+            report.oneClickQuote?.fallbackReason) && (
+            <div className="rounded-xl border border-amber-500/35 bg-amber-950/20 p-3.5 text-xs font-mono text-amber-200 space-y-1">
+              {report.pythTelemetry.fallbackReason && (
+                <div>
+                  ⚠️ FALLBACK (Pyth RPC): {report.pythTelemetry.fallbackReason}
+                </div>
+              )}
+              {report.kaminoBefore.fallbackReason && (
+                <div>
+                  ⚠️ FALLBACK (Kamino RPC): {report.kaminoBefore.fallbackReason}
+                </div>
+              )}
+              {report.oneClickQuote?.fallbackReason && (
+                <div>
+                  ⚠️ FALLBACK (1-Click Quote — Dry-Run Only):{" "}
+                  {report.oneClickQuote.fallbackReason}
+                </div>
+              )}
+            </div>
+          )}
 
         {/* Top 3-Column Telemetry Grid: Kamino HF Gauge + Pyth Volatility + Quantitative Risk Model */}
         {report && (

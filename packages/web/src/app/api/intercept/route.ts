@@ -7,6 +7,9 @@ import {
   type ExecutionMode,
 } from "@intercept/agent-tee";
 
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
 function serializeBigInt<T>(obj: T): unknown {
   return JSON.parse(
     JSON.stringify(obj, (_key, value) =>
