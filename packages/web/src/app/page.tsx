@@ -6,7 +6,6 @@ import {
   Pulse,
   Cpu,
   LockKey,
-  ArrowsLeftRight,
   CheckCircle,
   WarningOctagon,
   SlidersHorizontal,
@@ -20,8 +19,7 @@ import {
   Check,
   TerminalWindow,
   Lightning,
-  ArrowUpRight,
-  Info,
+  ArrowSquareOut,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,7 +28,6 @@ import {
   CardTitle,
   CardDescription,
   CardContent,
-  CardFooter,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -47,242 +44,259 @@ import {
   TabsTrigger,
   TabsContent,
 } from "@/components/ui/tabs";
-import { Separator } from "@/components/ui/separator";
 
-interface PipelineStage {
-  stageNumber: 1 | 2 | 3 | 4 | 5;
-  title: string;
-  actor: string;
-  chain: "SOLANA" | "NEAR_TEE" | "NEAR_GUARDRAIL_AND_MPC" | "NEAR_INTENTS_1CLICK";
-  status: "VERIFIED" | "SIGNED" | "SIMULATED_READY" | "SKIPPED_HOLD";
-  latencyMs: number;
-  summary: string;
-  cryptographicProof: Record<string, string | number | boolean>;
-}
-
-interface AdversarialCaseResult {
-  id: string;
-  title: string;
-  targetLeg: "LEG_1_BASE_EVM" | "LEG_2_SOLANA_KAMINO" | "TEE_ATTESTATION" | "STATE_MACHINE";
-  attackVectorDescription: string;
-  injectedPayloadSummary: string;
-  status: "BLOCKED";
-  exactRevertReason: string;
-  executionTimeUs: number;
-}
-
-interface BacktestStrategyOutcome {
-  strategyId:
-    | "UNPROTECTED"
-    | "NAIVE_STATIC_120"
-    | "OVER_CONSERVATIVE_145"
-    | "INTERCEPT_VOLATILITY_AWARE";
-  strategyName: string;
-  survivedLiquidations: boolean;
-  liquidationCount: number;
-  totalUsdcDeployed: number;
-  liquidationPenaltyUsd: number;
-  bridgeAndDexFeesUsd: number;
-  foregoneBaseYieldUsd: number;
-  totalNetCostUsd: number;
-  minObservedHealthFactor: number;
-  triggerTickIndex: number | null;
-  triggeredRegime: string;
-}
-
-interface BacktestScenarioReport {
-  scenarioId: string;
-  title: string;
-  subtitle: string;
-  initialCollateralSol: number;
-  initialDebtUsdc: number;
-  pricePathUsd: number[];
-  outcomes: BacktestStrategyOutcome[];
-  interceptEdgeSummary: string;
-}
-
-interface MainnetPreflightItem {
-  id: string;
+interface StageTimingTelemetry {
+  stageIndex: number;
+  stageId: string;
   label: string;
-  status: "READY" | "ACTION_REQUIRED" | "INFO";
+  status: "COMPLETED" | "SKIPPED_HEALTHY" | "REVERTED_BY_GUARDRAIL";
+  measuredLatencyMs: number;
   detail: string;
-  latencyMs?: number;
+  explorerUrl: string;
+  explorerLabel: string;
 }
 
-interface MainnetPreflightReport {
-  timestampIso: string;
-  nearMpcDerivation: {
+interface ExecutionReport {
+  mode: "LIVE_MAINNET_MODE" | "STRESS_TEST_MAINNET_MODE";
+  executedAtIso: string;
+  totalMeasuredLatencyMs: number;
+  policy: {
+    nearContractId: string;
+    mpcBaseVaultAddress: string;
+    mpcSolanaPayerPubkey: string;
+    userKaminoObligationPubkey: string;
+    userSolanaEoaPubkey: string;
+    minTriggerHfBps: number;
+    maxPerActionUsdcFormatted: string;
+    maxDailyUsdcFormatted: string;
+    maxSlippageBps: number;
+  };
+  pythTelemetry: {
+    source: string;
+    feedId: string;
+    solanaAccountPubkey: string;
+    solanaSlot?: number;
+    publishTimeUnix: number;
+    rawSpotSolUsd: number;
+    emaSolUsd: number;
+    confidenceUsd: number;
+    confidenceSpreadBps: number;
+    emaVelocityBps: number;
+    realizedVolatilityBps: number;
+    stressShockPctApplied: number;
+    effectiveSolUsd: number;
+    priceProofHash: string;
+    fetchLatencyMs: number;
+    fallbackReason?: string;
+  };
+  kaminoBefore: {
+    source: string;
+    fallbackReason?: string;
+    programId: string;
+    lendingMarketPubkey: string;
+    obligationPubkey: string;
+    ownerSolanaEoa: string;
+    solanaSlot: number;
+    depositedSol: number;
+    collateralValueUsd: number;
+    borrowedUsdc: number;
+    debtValueUsd: number;
+    maxLtvBps: number;
+    liquidationLtvBps: number;
+    currentLtvBps: number;
+    riskAdjustedCollateralUsd: number;
+    healthFactor: number;
+    healthFactorBps: number;
+    liquidationSolPriceUsd: number;
+    distanceToLiquidationPct: number;
+  };
+  kaminoAfter: {
+    borrowedUsdc: number;
+    debtValueUsd: number;
+    currentLtvBps: number;
+    healthFactor: number;
+    healthFactorBps: number;
+  };
+  riskEvaluation: {
+    regime: "HOLD" | "MICRO_BUFFER_RESCUE" | "CASCADE_DEEP_RESCUE";
+    actionable: boolean;
+    observedHfBps: number;
+    triggerThresholdHfBps: number;
+    targetHfBps: number;
+    projectedPostRescueHfBps: number;
+    estimatedKaminoLiquidationPenaltyBps: number;
+    expectedLiquidationLossUsd: number;
+    capitalOpportunityCostBps: number;
+    capitalExecutionCostUsd: number;
+    netProtectedValueUsd: number;
+    repayAmountUsdcMicro: string;
+    repayAmountUsdcFormatted: string;
+    reasoningSummary: string;
+    reasoningHash: string;
+  };
+  nearAiCloudAttestation: {
+    source: string;
+    model: string;
+    chatId: string;
+    attestationNonceHex: string;
+    signingAddress: string;
+    signedText: string;
+    hardwareAttestation: {
+      intelTdxQuoteCommitmentHex: string;
+      nvidiaNrasEatNonceHex: string;
+      gpuArchitecture: string;
+      tdxReportDataBindsKeyAndNonce: boolean;
+    };
+    verifiedChainOfTrust: boolean;
+    fallbackReason?: string;
+  };
+  oneClickQuote: {
+    source: string;
+    fallbackReason?: string;
+    quoteId: string;
+    amountInFormatted: string;
+    amountOutFormatted: string;
+    effectiveFeeSpreadBps: number;
+    depositAddress: string;
+    recipientSolanaAddress: string;
+    refundBaseAddress: string;
+    estimatedSettlementSec: number;
+    quoteLatencyMs: number;
+    statusExplorerUrl: string;
+  } | null;
+  teeReceipt: {
+    receipt: {
+      timestamp: number;
+      obligation_pubkey: string;
+      observed_hf_bps: number;
+      volatility_bps: number;
+      regime: string;
+      repay_amount_usdc: string;
+      oneclick_deposit_address: string;
+      min_amount_out: string;
+      reasoning_hash: string;
+      enclave_signature_hex: string;
+    };
+    canonicalPayload: string;
+    receiptHashHex: string;
+    signatureVerified: boolean;
+  } | null;
+  leg1BaseVerification: {
+    rawUnsignedTxHex: string;
+    signingHashKeccak256Hex: string;
+    mpcDomainId: number;
+    derivationPath: string;
+    guardrailVerified: boolean;
+  } | null;
+  leg2SolanaVerification: {
+    rawMessageHex: string;
+    discriminatorHex: string;
+    kaminoRefreshIxCount: number;
+    repayReservePubkey: string;
+    userSourceLiquidityAtaPubkey: string;
+    mpcDomainId: number;
+    derivationPath: string;
+    guardrailVerified: boolean;
+  } | null;
+  stages: StageTimingTelemetry[];
+}
+
+interface PreflightReport {
+  checkedAtIso: string;
+  derivedMpc: {
     source: string;
     nearRpcUrl: string;
-    signerContractId: string;
-    predecessorId: string;
-    baseDomain0Path: string;
-    baseSecp256k1PublicKey: string;
-    derivedMpcBaseVaultAddress: string;
-    solanaDomain1Path: string;
-    solanaEd25519PublicKey: string;
-    derivedMpcSolanaPayerPubkey: string;
-    derivedMpcSolanaUsdcAta: string;
-    derivedMpcSolanaUsdcAtaBump: number;
+    mpcSignerContractId: string;
+    predecessorContractId: string;
+    baseDerivationPath: string;
+    solanaDerivationPath: string;
+    rawSecp256k1DerivedKey: string;
+    mpcBaseVaultAddress: string;
+    rawEd25519DerivedKey: string;
+    mpcSolanaPayerPubkey: string;
+    mpcSolanaPayerUsdcAta: string;
+    mpcSolanaPayerUsdcAtaBump: number;
     latencyMs: number;
   };
-  baseMainnetState: {
+  baseState: {
     source: string;
     chainId: number;
     mpcBaseVaultAddress: string;
     nonce: number;
-    ethBalanceWei: string;
     ethBalanceFormatted: string;
-    usdcBalanceBaseUnits: string;
     usdcBalanceFormatted: string;
-    suggestedMaxFeePerGasWei: string;
-    suggestedPriorityFeeWei: string;
     latencyMs: number;
   };
-  solanaMainnetState: {
+  solanaState: {
     source: string;
     mpcSolanaPayerPubkey: string;
-    mpcSolanaUsdcAta: string;
-    ataExistsOnChain: boolean;
-    solBalanceLamports: number;
+    recentBlockhashBase58: string;
     solBalanceFormatted: string;
-    usdcAtaBalanceBaseUnits: string;
-    usdcAtaBalanceFormatted: string;
-    recentBlockhash: string;
-    lastValidBlockHeight: number;
+    usdcBalanceFormatted: string;
+    usdcAtaPubkey: string;
+    usdcAtaBump: number;
+    usdcAtaExistsOnChain: boolean;
     latencyMs: number;
   };
-  liveBroadcastEnabled: boolean;
-  readinessChecklist: MainnetPreflightItem[];
+  liveBroadcastCredentialsConfigured: boolean;
+  readyForTenDollarMainnetRescue: boolean;
+  checklist: Array<{
+    item: string;
+    passed: boolean;
+    detail: string;
+  }>;
+}
+
+interface AdversarialAttackVectorResult {
+  attackId: string;
+  title: string;
+  targetLeg:
+    | "LEG_1_BASE_EVM"
+    | "LEG_2_SOLANA_KAMINO"
+    | "TEE_ATTESTATION"
+    | "ASYNC_TOCTOU_STATE";
+  attackerGoal: string;
+  injectedPayloadSummary: string;
+  guardrailBlocked: boolean;
+  errorCode: string;
+  contractRevertMessage: string;
+  verificationTimeUs: number;
+}
+
+interface BacktestSuiteReport {
+  generatedAtIso: string;
+  executionTimeMs: number;
+  scenarios: Array<{
+    scenarioId: string;
+    title: string;
+    description: string;
+    outcomes: Array<{
+      strategyId: string;
+      strategyName: string;
+      survivedWithoutLiquidation: boolean;
+      liquidatedAtTick: number | null;
+      minimumObservedHf: number;
+      finalHf: number;
+      rescueTriggerCount: number;
+      totalBaseUsdcDeployed: number;
+      netCostUsd: number;
+    }>;
+    interceptEdgeSummary: string;
+  }>;
+  aggregateSummary: {
+    interceptSurvivalRatePct: number;
+    naiveMicroBotSurvivalRatePct: number;
+    unprotectedSurvivalRatePct: number;
+    totalLiquidationLossPreventedUsd: number;
+    capitalEfficiencySavingsVsConservativePct: number;
+  };
 }
 
 interface InterceptApiResponse {
-  report: {
-    mode: "LIVE_MAINNET_MODE" | "STRESS_TEST_MAINNET_MODE";
-    executedAtIso: string;
-    totalMeasuredLatencyMs: number;
-    policy: {
-      nearContractId: string;
-      authorizedAgentNearAccount: string;
-      mpcBaseVaultAddress: string;
-      mpcSolanaPayerPubkey: string;
-      mpcSolanaUsdcAta: string;
-      userKaminoObligationPubkey: string;
-      kaminoLendingMarketPubkey: string;
-      kaminoUsdcReservePubkey: string;
-      kaminoSolReservePubkey: string;
-      maxSingleRescueUsdc: number;
-      dailySpendingCapUsdc: number;
-    };
-    kaminoAnchorDiscriminatorsHex: {
-      repayObligationLiquidityV2: string;
-      repayObligationLiquidityV1: string;
-      refreshReserve: string;
-      refreshReservesBatch: string;
-      refreshObligation: string;
-      refreshObligationFarmsForReserve: string;
-    };
-    oracleSnapshot: {
-      source: string;
-      solPriceUsd: number;
-      confidenceUsd: number;
-      emaPriceUsd: number;
-      publishTimeUnix: number;
-      realizedVolatilityBps: number;
-      emaVelocityBps: number;
-    };
-    positionBefore: {
-      source: string;
-      obligationAddress: string;
-      ownerAddress: string;
-      lendingMarketAddress: string;
-      depositedSol: number;
-      collateralValueUsd: number;
-      borrowedUsdc: number;
-      liquidationLtvBps: number;
-      healthFactor: number;
-      healthFactorBps: number;
-      solanaSlot: number;
-    };
-    positionAfterRescue: {
-      healthFactor: number;
-      healthFactorBps: number;
-      remainingDebtUsdc: number;
-    };
-    decision: {
-      regime: "HOLD" | "MICRO_BUFFER_RESCUE" | "CASCADE_DEEP_RESCUE";
-      requiresAction: boolean;
-      observedHealthFactor: number;
-      triggerThresholdHf: number;
-      targetHealthFactor: number;
-      repayAmountUsdc: number;
-      repayAmountBaseUnits: string;
-      rationale: string;
-      volatilitySpreadBps: number;
-      emaVelocityBps: number;
-    };
-    teeAttestation: {
-      model: string;
-      enclaveProvider: string;
-      enclavePublicKeyHex: string;
-      receiptHashHex: string;
-      ed25519SignatureHex: string;
-      aiReasoningSummary: string;
-      attestationSource?: string;
-      hardwareQuoteVerified?: boolean;
-      liveSigningKeyAddress?: string;
-    };
-    intentsQuote: {
-      source: string;
-      depositAddressOnBase: string;
-      originAsset: string;
-      destinationAsset: string;
-      amountInBaseUnits: string;
-      amountInFormatted: string;
-      expectedAmountOutBaseUnits: string;
-      expectedAmountOutFormatted: string;
-      recipientOnSolana: string;
-      slippageBps: number;
-      estimatedTimeSeconds: number;
-      quoteId: string;
-    } | null;
-    unsignedTransactions: {
-      leg1BaseEip1559TxHex: string;
-      leg2SolanaKaminoV0MessageHex: string;
-      leg1GuardrailCheck: {
-        valid: boolean;
-        decodedChainId: number;
-        decodedToAddress: string;
-        decodedSelectorHex: string;
-        decodedRecipientAddress: string;
-        decodedAmountBaseUnits: string;
-      };
-      leg2GuardrailCheck: {
-        valid: boolean;
-        numInstructions: number;
-        instructionSequence: string[];
-        kaminoProgramIndex: number;
-        discriminatorHex: string;
-        decodedRepayAmountBaseUnits: string;
-        obligationPubkeyHex: string;
-        destinationReservePubkeyHex: string;
-      };
-    } | null;
-    stages: PipelineStage[];
-    adversarialSuite: AdversarialCaseResult[];
-  };
-  backtest: {
-    scenarios: BacktestScenarioReport[];
-    aggregateSummary: {
-      totalScenariosTested: number;
-      unprotectedSurvivalRatePct: number;
-      naiveStaticSurvivalRatePct: number;
-      interceptSurvivalRatePct: number;
-      cascadeLiquidationLossSavedUsd: number;
-      calmDipCapitalSavedVsOverConservativePct: number;
-    };
-  };
-  preflight?: MainnetPreflightReport;
+  report: ExecutionReport;
+  preflight: PreflightReport;
+  adversarialSuite: AdversarialAttackVectorResult[];
+  backtest: BacktestSuiteReport;
 }
 
 function CopyChip({
@@ -330,10 +344,11 @@ export default function InterceptDashboardPage() {
   const [priceDropPct, setPriceDropPct] = useState<number>(25);
   const [data, setData] = useState<InterceptApiResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isTransitioning, setIsTransitioning] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<string>("overview");
   const [expandedStage, setExpandedStage] = useState<number | null>(3);
-  const [selectedAdvId, setSelectedAdvId] = useState<string>("ADV_01_BASE_RAW_ETH_DRAIN");
+  const [selectedAdvId, setSelectedAdvId] = useState<string>("");
   const [advSimRunning, setAdvSimRunning] = useState<boolean>(false);
   const [advFlashProtection, setAdvFlashProtection] = useState<boolean>(false);
   const [showCustodyDetail, setShowCustodyDetail] = useState<boolean>(false);
@@ -351,27 +366,40 @@ export default function InterceptDashboardPage() {
       dropPct: number
     ) => {
       setLoading(true);
+      setErrorMsg(null);
       setIsTransitioning(true);
       try {
-        const res = await fetch(
-          `/api/intercept?mode=${targetMode}&priceDropPct=${dropPct}`,
-          { cache: "no-store" }
-        );
+        const res = await fetch("/api/intercept", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mode: targetMode,
+            stressShockPct: -Math.abs(dropPct),
+          }),
+        });
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
         const json = (await res.json()) as InterceptApiResponse;
         setData(json);
+        if (json.adversarialSuite?.length && !selectedAdvId) {
+          setSelectedAdvId(json.adversarialSuite[0].attackId);
+        }
       } catch (err) {
         console.error("Failed to fetch Intercept pipeline:", err);
+        setErrorMsg((err as Error).message);
       } finally {
         setLoading(false);
         setTimeout(() => setIsTransitioning(false), 160);
       }
     },
-    []
+    [selectedAdvId]
   );
 
   useEffect(() => {
-    fetchPipeline(mode, priceDropPct);
-  }, [mode, priceDropPct, fetchPipeline]);
+    void fetchPipeline(mode, priceDropPct);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, priceDropPct]);
 
   const handleSelectScenario = (
     nextMode: "LIVE_MAINNET_MODE" | "STRESS_TEST_MAINNET_MODE",
@@ -397,20 +425,21 @@ export default function InterceptDashboardPage() {
   const report = data?.report;
   const backtest = data?.backtest;
   const preflight = data?.preflight;
+  const adversarialSuite = data?.adversarialSuite ?? [];
 
   const selectedAdvCase =
-    report?.adversarialSuite.find((c) => c.id === selectedAdvId) ??
-    report?.adversarialSuite[0];
+    adversarialSuite.find((c) => c.attackId === selectedAdvId) ??
+    adversarialSuite[0];
 
-  const hfBefore = report?.positionBefore.healthFactor ?? 1.3323;
-  const hfAfter = report?.positionAfterRescue.healthFactor ?? hfBefore;
-  const triggerHf = report?.decision.triggerThresholdHf ?? 1.15;
+  const hfBefore = report?.kaminoBefore?.healthFactor ?? 1.3323;
+  const hfAfter = report?.kaminoAfter?.healthFactor ?? hfBefore;
+  const triggerHf = (report?.riskEvaluation?.triggerThresholdHfBps ?? 11500) / 10000;
 
   // Map HF in [0.85, 1.60] to [0%, 100%]
   const hfToPercent = (hf: number) =>
     Math.max(2, Math.min(98, ((hf - 0.85) / (1.6 - 0.85)) * 100));
 
-  const isRescueTriggered = report?.decision.requiresAction ?? false;
+  const isRescueTriggered = report?.riskEvaluation?.actionable ?? false;
 
   return (
     <div className="min-h-dvh flex flex-col bg-background text-foreground">
@@ -457,14 +486,14 @@ export default function InterceptDashboardPage() {
                 <span>
                   Slot{" "}
                   <strong className="font-mono font-medium text-foreground">
-                    #{report.positionBefore.solanaSlot.toLocaleString()}
+                    #{report.kaminoBefore.solanaSlot.toLocaleString()}
                   </strong>
                 </span>
                 <span className="text-zinc-700">·</span>
                 <span>
                   SOL{" "}
                   <strong className="font-mono font-medium text-foreground">
-                    ${report.oracleSnapshot.solPriceUsd.toFixed(2)}
+                    ${report.pythTelemetry.effectiveSolUsd.toFixed(2)}
                   </strong>
                 </span>
                 <span className="text-zinc-700">·</span>
@@ -481,7 +510,7 @@ export default function InterceptDashboardPage() {
               variant="destructive"
               size="sm"
               onClick={() => {
-                triggerAdversarialIntercept("ADV_01_BASE_RAW_ETH_DRAIN");
+                triggerAdversarialIntercept(adversarialSuite[0]?.attackId);
                 workspaceRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
               }}
             >
@@ -492,7 +521,7 @@ export default function InterceptDashboardPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => fetchPipeline(mode, priceDropPct)}
+              onClick={() => void fetchPipeline(mode, priceDropPct)}
               disabled={loading}
             >
               <ArrowClockwise
@@ -505,6 +534,12 @@ export default function InterceptDashboardPage() {
       </header>
 
       <main className="mx-auto w-full max-w-[1360px] flex-1 px-4 py-6 sm:px-6 space-y-6">
+        {errorMsg && (
+          <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-300">
+            Telemetry error: {errorMsg}
+          </div>
+        )}
+
         {/* Top Command Header + Scenario Controller */}
         <section className="grid gap-6 lg:grid-cols-12 items-start">
           <div className="lg:col-span-7 space-y-3">
@@ -787,11 +822,11 @@ export default function InterceptDashboardPage() {
               </span>
               {report && (
                 <CopyChip
-                  value={report.positionBefore.obligationAddress}
-                  display={`${report.positionBefore.obligationAddress.slice(
+                  value={report.kaminoBefore.obligationPubkey}
+                  display={`${report.kaminoBefore.obligationPubkey.slice(
                     0,
                     5
-                  )}...${report.positionBefore.obligationAddress.slice(-4)}`}
+                  )}...${report.kaminoBefore.obligationPubkey.slice(-4)}`}
                   label="Kamino Obligation Address"
                 />
               )}
@@ -800,10 +835,10 @@ export default function InterceptDashboardPage() {
               <div className="flex items-baseline justify-between tabular-nums">
                 <div>
                   <span className="text-2xl font-semibold tracking-[-0.02em] text-foreground">
-                    ${report ? report.positionBefore.collateralValueUsd.toFixed(2) : "16.40"}
+                    ${report ? report.kaminoBefore.collateralValueUsd.toFixed(2) : "16.40"}
                   </span>
                   <span className="ml-1.5 text-xs text-muted-foreground">
-                    ({report ? report.positionBefore.depositedSol.toFixed(4) : "0.1847"} SOL)
+                    ({report ? report.kaminoBefore.depositedSol.toFixed(4) : "0.1847"} SOL)
                   </span>
                 </div>
               </div>
@@ -811,17 +846,13 @@ export default function InterceptDashboardPage() {
                 <span>
                   Debt:{" "}
                   <strong className="text-foreground font-medium">
-                    ${report ? report.positionBefore.borrowedUsdc.toFixed(2) : "9.23"} USDC
+                    ${report ? report.kaminoBefore.borrowedUsdc.toFixed(2) : "9.23"} USDC
                   </strong>
                 </span>
                 <span>
                   After:{" "}
                   <strong className="text-emerald-400 font-medium">
-                    $
-                    {report
-                      ? report.positionAfterRescue.remainingDebtUsdc.toFixed(2)
-                      : "9.23"}{" "}
-                    USDC
+                    ${report ? report.kaminoAfter.borrowedUsdc.toFixed(2) : "9.23"} USDC
                   </strong>
                 </span>
               </div>
@@ -839,23 +870,23 @@ export default function InterceptDashboardPage() {
             <CardContent className="space-y-2">
               <div className="flex items-baseline gap-2 tabular-nums">
                 <span className="text-2xl font-semibold tracking-[-0.02em] text-foreground">
-                  ${report ? report.oracleSnapshot.solPriceUsd.toFixed(2) : "88.76"}
+                  ${report ? report.pythTelemetry.effectiveSolUsd.toFixed(2) : "88.76"}
                 </span>
                 <span className="text-xs font-mono text-muted-foreground">
-                  ±${report ? report.oracleSnapshot.confidenceUsd.toFixed(4) : "0.0302"}
+                  ±${report ? report.pythTelemetry.confidenceUsd.toFixed(4) : "0.0302"}
                 </span>
               </div>
               <div className="flex items-center justify-between text-xs text-muted-foreground tabular-nums pt-1 border-t border-border/60">
                 <span>
                   Vol:{" "}
                   <strong className="text-foreground font-medium">
-                    {report ? report.oracleSnapshot.realizedVolatilityBps : 3336} bps
+                    {report ? report.pythTelemetry.realizedVolatilityBps : 3336} bps
                   </strong>
                 </span>
                 <span>
                   Regime:{" "}
                   <strong className="text-foreground font-medium">
-                    {report?.decision.regime ?? "HOLD"}
+                    {report?.riskEvaluation.regime ?? "HOLD"}
                   </strong>
                 </span>
               </div>
@@ -875,10 +906,7 @@ export default function InterceptDashboardPage() {
             <CardContent className="space-y-2">
               <div className="flex items-baseline gap-2 tabular-nums">
                 <span className="text-2xl font-semibold tracking-[-0.02em] text-foreground">
-                  $
-                  {report
-                    ? report.decision.repayAmountUsdc.toFixed(4)
-                    : "0.0000"}{" "}
+                  {report ? report.riskEvaluation.repayAmountUsdcFormatted : "$0.00"}
                 </span>
                 <span className="text-xs text-muted-foreground">USDC</span>
               </div>
@@ -887,7 +915,7 @@ export default function InterceptDashboardPage() {
                 <span>
                   Cap:{" "}
                   <strong className="text-foreground font-medium">
-                    ${report?.policy.maxSingleRescueUsdc ?? 2500}/tx
+                    {report?.policy.maxPerActionUsdcFormatted ?? "$2,500.00"}/tx
                   </strong>
                 </span>
               </div>
@@ -932,12 +960,12 @@ export default function InterceptDashboardPage() {
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <span>TEE Signer:</span>
                   <CopyChip
-                    value={report.teeAttestation.enclavePublicKeyHex}
-                    display={`ed25519:${report.teeAttestation.enclavePublicKeyHex.slice(
+                    value={report.nearAiCloudAttestation.signingAddress}
+                    display={`${report.nearAiCloudAttestation.signingAddress.slice(
                       0,
-                      10
+                      12
                     )}...`}
-                    label="TEE Enclave Public Key"
+                    label="TEE Enclave Signing Address"
                   />
                 </div>
               )}
@@ -1010,7 +1038,8 @@ export default function InterceptDashboardPage() {
                     <div className="flex items-center justify-between py-1 border-t border-border/60">
                       <span className="text-muted-foreground">TEE Hardware Quote</span>
                       <span className="font-medium text-foreground">
-                        {report?.teeAttestation.model ?? "deepseek-ai/DeepSeek-V3.1"}
+                        {report?.nearAiCloudAttestation.model ??
+                          "deepseek-ai/DeepSeek-V3.1"}
                       </span>
                     </div>
                   </CardContent>
@@ -1069,13 +1098,13 @@ export default function InterceptDashboardPage() {
                       </CardTitle>
                       <CardDescription className="text-xs mt-1">
                         Click any stage row to inspect its cryptographic attestation,
-                        Anchor SHA-256 discriminator, or <code className="font-mono">v1.signer</code>{" "}
+                        explorer proof link, or <code className="font-mono">v1.signer</code>{" "}
                         payload.
                       </CardDescription>
                     </div>
                     {report && (
                       <Badge variant="outline" className="self-start sm:self-auto">
-                        AI Rationale: {report.decision.regime}
+                        Regime: {report.riskEvaluation.regime}
                       </Badge>
                     )}
                   </div>
@@ -1087,18 +1116,23 @@ export default function InterceptDashboardPage() {
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <span className="font-medium text-foreground flex items-center gap-1.5">
                           <Cpu className="h-4 w-4 text-emerald-400" />
-                          <span>NEAR AI Cloud TEE Reasoning ({report.teeAttestation.model})</span>
+                          <span>
+                            NEAR AI Cloud TEE Reasoning (
+                            {report.nearAiCloudAttestation.model})
+                          </span>
                         </span>
-                        <CopyChip
-                          value={report.teeAttestation.receiptHashHex}
-                          display={`Receipt: ${report.teeAttestation.receiptHashHex.slice(
-                            0,
-                            14
-                          )}...`}
-                        />
+                        {report.teeReceipt && (
+                          <CopyChip
+                            value={report.teeReceipt.receiptHashHex}
+                            display={`Receipt: ${report.teeReceipt.receiptHashHex.slice(
+                              0,
+                              14
+                            )}...`}
+                          />
+                        )}
                       </div>
                       <p className="text-muted-foreground leading-relaxed max-w-[85ch]">
-                        {report.teeAttestation.aiReasoningSummary}
+                        {report.riskEvaluation.reasoningSummary}
                       </p>
                     </div>
                   )}
@@ -1106,43 +1140,48 @@ export default function InterceptDashboardPage() {
                   {/* Stages Accordion List */}
                   <div className="divide-y divide-border rounded-lg border border-border">
                     {report?.stages.map((stage) => {
-                      const isExpanded = expandedStage === stage.stageNumber;
+                      const isExpanded = expandedStage === stage.stageIndex;
                       return (
-                        <div key={stage.stageNumber} className="bg-card">
+                        <div key={stage.stageId} className="bg-card">
                           <button
                             type="button"
                             onClick={() =>
-                              setExpandedStage(isExpanded ? null : stage.stageNumber)
+                              setExpandedStage(isExpanded ? null : stage.stageIndex)
                             }
                             className="emil-row-hover flex w-full items-center justify-between gap-4 px-4 py-3.5 text-left cursor-pointer"
                           >
                             <div className="flex items-center gap-3 min-w-0">
                               <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border bg-secondary font-mono text-xs font-medium text-foreground">
-                                {stage.stageNumber}
+                                {stage.stageIndex}
                               </span>
                               <div className="min-w-0">
                                 <div className="flex flex-wrap items-center gap-2">
                                   <span className="text-sm font-medium text-foreground">
-                                    {stage.title}
+                                    {stage.label}
                                   </span>
-                                  <Badge variant="secondary" className="font-mono text-[11px]">
-                                    {stage.chain}
+                                  <Badge
+                                    variant="secondary"
+                                    className="font-mono text-[11px]"
+                                  >
+                                    {stage.stageId}
                                   </Badge>
                                 </div>
                                 <p className="text-xs text-muted-foreground truncate mt-0.5">
-                                  {stage.summary}
+                                  {stage.detail}
                                 </p>
                               </div>
                             </div>
 
                             <div className="flex items-center gap-3 shrink-0">
                               <span className="hidden sm:inline font-mono text-xs text-muted-foreground tabular-nums">
-                                {stage.latencyMs} ms
+                                {stage.measuredLatencyMs} ms
                               </span>
                               <Badge
                                 variant={
-                                  stage.status === "SKIPPED_HOLD"
+                                  stage.status === "SKIPPED_HEALTHY"
                                     ? "outline"
+                                    : stage.status === "REVERTED_BY_GUARDRAIL"
+                                    ? "destructive"
                                     : "emerald"
                                 }
                               >
@@ -1157,22 +1196,24 @@ export default function InterceptDashboardPage() {
                           </button>
 
                           {isExpanded && (
-                            <div className="emil-enter border-t border-border/60 bg-secondary/25 px-4 py-3.5">
-                              <div className="grid gap-2 sm:grid-cols-2">
-                                {Object.entries(stage.cryptographicProof).map(
-                                  ([k, v]) => (
-                                    <div
-                                      key={k}
-                                      className="flex flex-col justify-between rounded-md border border-border/60 bg-background/80 p-2.5 text-xs"
-                                    >
-                                      <span className="text-muted-foreground font-mono text-[11px]">
-                                        {k}
-                                      </span>
-                                      <span className="font-mono text-foreground break-all mt-1">
-                                        {String(v)}
-                                      </span>
-                                    </div>
-                                  )
+                            <div className="emil-enter border-t border-border/60 bg-secondary/25 px-4 py-3.5 space-y-2 text-xs">
+                              <p className="text-foreground leading-relaxed">
+                                {stage.detail}
+                              </p>
+                              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                                <span className="font-mono text-muted-foreground">
+                                  Measured Latency: {stage.measuredLatencyMs} ms
+                                </span>
+                                {stage.explorerUrl && (
+                                  <a
+                                    href={stage.explorerUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-1 font-medium text-emerald-400 hover:underline"
+                                  >
+                                    <span>{stage.explorerLabel}</span>
+                                    <ArrowSquareOut className="h-3.5 w-3.5" />
+                                  </a>
                                 )}
                               </div>
                             </div>
@@ -1189,7 +1230,7 @@ export default function InterceptDashboardPage() {
                 TAB 2: BYTE-LEVEL GUARDRAIL INSPECTOR (LEG 1 & LEG 2)
                ===================================================================== */}
             <TabsContent value="inspector" className="space-y-6">
-              {!report?.unsignedTransactions ? (
+              {!report?.leg1BaseVerification || !report?.leg2SolanaVerification ? (
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-base">
@@ -1250,20 +1291,16 @@ export default function InterceptDashboardPage() {
                               0x02 · Chain 8453
                             </TableCell>
                             <TableCell className="font-mono text-xs text-emerald-400">
-                              Chain {report.unsignedTransactions.leg1GuardrailCheck.decodedChainId}
+                              domain_id: {report.leg1BaseVerification.mpcDomainId}
                             </TableCell>
                           </TableRow>
                           <TableRow>
-                            <TableCell className="font-medium">Target Contract</TableCell>
+                            <TableCell className="font-medium">Derivation Path</TableCell>
                             <TableCell className="font-mono text-xs text-muted-foreground">
-                              Base USDC (value == 0)
+                              v1.signer Path
                             </TableCell>
                             <TableCell className="font-mono text-xs">
-                              {report.unsignedTransactions.leg1GuardrailCheck.decodedToAddress.slice(
-                                0,
-                                10
-                              )}
-                              ...
+                              {report.leg1BaseVerification.derivationPath}
                             </TableCell>
                           </TableRow>
                           <TableRow>
@@ -1272,11 +1309,7 @@ export default function InterceptDashboardPage() {
                               0xa9059cbb (68B)
                             </TableCell>
                             <TableCell className="font-mono text-xs text-emerald-400">
-                              0x
-                              {
-                                report.unsignedTransactions.leg1GuardrailCheck
-                                  .decodedSelectorHex
-                              }
+                              transfer(address,uint256)
                             </TableCell>
                           </TableRow>
                           <TableRow>
@@ -1285,24 +1318,20 @@ export default function InterceptDashboardPage() {
                               Calldata [4..36]
                             </TableCell>
                             <TableCell className="font-mono text-xs">
-                              {report.unsignedTransactions.leg1GuardrailCheck.decodedRecipientAddress.slice(
-                                0,
-                                12
-                              )}
-                              ...
+                              {report.oneClickQuote?.depositAddress.slice(0, 14)}...
                             </TableCell>
                           </TableRow>
                           <TableRow>
-                            <TableCell className="font-medium">USDC Amount</TableCell>
+                            <TableCell className="font-medium">Signing Hash</TableCell>
                             <TableCell className="font-mono text-xs text-muted-foreground">
-                              Calldata [36..68]
+                              keccak256(0x02||rlp)
                             </TableCell>
                             <TableCell className="font-mono text-xs text-emerald-400">
-                              {
-                                report.unsignedTransactions.leg1GuardrailCheck
-                                  .decodedAmountBaseUnits
-                              }{" "}
-                              units
+                              {report.leg1BaseVerification.signingHashKeccak256Hex.slice(
+                                0,
+                                16
+                              )}
+                              ...
                             </TableCell>
                           </TableRow>
                         </TableBody>
@@ -1314,12 +1343,12 @@ export default function InterceptDashboardPage() {
                             Raw Unsigned EIP-1559 Payload
                           </span>
                           <CopyChip
-                            value={report.unsignedTransactions.leg1BaseEip1559TxHex}
+                            value={report.leg1BaseVerification.rawUnsignedTxHex}
                             display="Copy Hex"
                           />
                         </div>
                         <pre className="rounded-lg border border-border bg-secondary/50 p-3 font-mono text-[11px] text-muted-foreground overflow-x-auto leading-relaxed">
-                          {report.unsignedTransactions.leg1BaseEip1559TxHex}
+                          {report.leg1BaseVerification.rawUnsignedTxHex}
                         </pre>
                       </div>
                     </CardContent>
@@ -1356,22 +1385,17 @@ export default function InterceptDashboardPage() {
                               0x80 · Signers == 1
                             </TableCell>
                             <TableCell className="font-mono text-xs text-emerald-400">
-                              {
-                                report.unsignedTransactions.leg2GuardrailCheck
-                                  .numInstructions
-                              }{" "}
-                              Instructions
+                              {report.leg2SolanaVerification.kaminoRefreshIxCount} Refresh +
+                              1 Repay
                             </TableCell>
                           </TableRow>
                           <TableRow>
-                            <TableCell className="font-medium">Instruction DAG</TableCell>
+                            <TableCell className="font-medium">Derivation Path</TableCell>
                             <TableCell className="font-mono text-xs text-muted-foreground">
-                              Refresh → Repay Final
+                              v1.signer Path
                             </TableCell>
                             <TableCell className="font-mono text-xs">
-                              {report.unsignedTransactions.leg2GuardrailCheck.instructionSequence.join(
-                                " → "
-                              )}
+                              {report.leg2SolanaVerification.derivationPath}
                             </TableCell>
                           </TableRow>
                           <TableRow>
@@ -1380,35 +1404,31 @@ export default function InterceptDashboardPage() {
                               0x74aed54cb435d290
                             </TableCell>
                             <TableCell className="font-mono text-xs text-emerald-400">
-                              0x
-                              {
-                                report.unsignedTransactions.leg2GuardrailCheck
-                                  .discriminatorHex
-                              }
-                            </TableCell>
-                          </TableRow>
-                          <TableRow>
-                            <TableCell className="font-medium">Pinned Obligation</TableCell>
-                            <TableCell className="font-mono text-xs text-muted-foreground">
-                              Account [1] == User
-                            </TableCell>
-                            <TableCell className="font-mono text-xs">
-                              {report.unsignedTransactions.leg2GuardrailCheck.obligationPubkeyHex.slice(
-                                0,
-                                16
-                              )}
-                              ...
+                              {report.leg2SolanaVerification.discriminatorHex}
                             </TableCell>
                           </TableRow>
                           <TableRow>
                             <TableCell className="font-medium">Pinned USDC Reserve</TableCell>
                             <TableCell className="font-mono text-xs text-muted-foreground">
-                              Account [3] == Reserve
+                              Account [2] == Reserve
                             </TableCell>
                             <TableCell className="font-mono text-xs">
-                              {report.unsignedTransactions.leg2GuardrailCheck.destinationReservePubkeyHex.slice(
+                              {report.leg2SolanaVerification.repayReservePubkey.slice(
                                 0,
-                                16
+                                14
+                              )}
+                              ...
+                            </TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell className="font-medium">Source USDC ATA</TableCell>
+                            <TableCell className="font-mono text-xs text-muted-foreground">
+                              MPC Payer ATA
+                            </TableCell>
+                            <TableCell className="font-mono text-xs">
+                              {report.leg2SolanaVerification.userSourceLiquidityAtaPubkey.slice(
+                                0,
+                                14
                               )}
                               ...
                             </TableCell>
@@ -1422,18 +1442,12 @@ export default function InterceptDashboardPage() {
                             Raw Unsigned Solana V0 Message
                           </span>
                           <CopyChip
-                            value={
-                              report.unsignedTransactions
-                                .leg2SolanaKaminoV0MessageHex
-                            }
+                            value={report.leg2SolanaVerification.rawMessageHex}
                             display="Copy Hex"
                           />
                         </div>
                         <pre className="rounded-lg border border-border bg-secondary/50 p-3 font-mono text-[11px] text-muted-foreground overflow-x-auto leading-relaxed">
-                          {
-                            report.unsignedTransactions
-                              .leg2SolanaKaminoV0MessageHex
-                          }
+                          {report.leg2SolanaVerification.rawMessageHex}
                         </pre>
                       </div>
                     </CardContent>
@@ -1454,7 +1468,9 @@ export default function InterceptDashboardPage() {
                       <CardTitle className="text-base">
                         Adversarial Attack Vectors
                       </CardTitle>
-                      <Badge variant="emerald">11 / 11 Blocked</Badge>
+                      <Badge variant="emerald">
+                        {adversarialSuite.length} / {adversarialSuite.length} Blocked
+                      </Badge>
                     </div>
                     <CardDescription className="text-xs">
                       Select any rogue AI / prompt-injection exploit vector to test
@@ -1463,13 +1479,13 @@ export default function InterceptDashboardPage() {
                   </CardHeader>
                   <CardContent className="p-0">
                     <div className="divide-y divide-border border-t border-border">
-                      {report?.adversarialSuite.map((adv, idx) => {
-                        const isSelected = adv.id === selectedAdvCase?.id;
+                      {adversarialSuite.map((adv, idx) => {
+                        const isSelected = adv.attackId === selectedAdvCase?.attackId;
                         return (
                           <button
-                            key={adv.id}
+                            key={adv.attackId}
                             type="button"
-                            onClick={() => triggerAdversarialIntercept(adv.id)}
+                            onClick={() => triggerAdversarialIntercept(adv.attackId)}
                             className={`emil-row-hover flex w-full items-center justify-between gap-3 px-4 py-3 text-left cursor-pointer ${
                               isSelected ? "bg-secondary/90" : ""
                             }`}
@@ -1489,7 +1505,7 @@ export default function InterceptDashboardPage() {
                                 </span>
                                 <span className="text-zinc-700">·</span>
                                 <span className="font-mono text-[11px] text-muted-foreground tabular-nums">
-                                  {adv.executionTimeUs} µs
+                                  {adv.verificationTimeUs} µs
                                 </span>
                               </div>
                             </div>
@@ -1521,7 +1537,7 @@ export default function InterceptDashboardPage() {
                           variant="secondary"
                           size="sm"
                           onClick={() =>
-                            triggerAdversarialIntercept(selectedAdvCase.id)
+                            triggerAdversarialIntercept(selectedAdvCase.attackId)
                           }
                         >
                           <Lightning className="h-3.5 w-3.5" />
@@ -1536,7 +1552,7 @@ export default function InterceptDashboardPage() {
                         {selectedAdvCase.title}
                       </CardTitle>
                       <CardDescription className="text-xs">
-                        {selectedAdvCase.attackVectorDescription}
+                        {selectedAdvCase.attackerGoal}
                       </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
@@ -1552,14 +1568,15 @@ export default function InterceptDashboardPage() {
                       <div className="space-y-1.5">
                         <div className="flex items-center justify-between text-xs">
                           <span className="font-medium text-red-400">
-                            Deterministic Rust Smart Contract Panic (env::panic_str)
+                            Deterministic Rust Smart Contract Panic (
+                            {selectedAdvCase.errorCode})
                           </span>
                           <span className="font-mono text-muted-foreground tabular-nums">
-                            Rejected in {selectedAdvCase.executionTimeUs} µs
+                            Rejected in {selectedAdvCase.verificationTimeUs} µs
                           </span>
                         </div>
                         <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3.5 font-mono text-xs text-red-300 leading-relaxed">
-                          {selectedAdvCase.exactRevertReason}
+                          {selectedAdvCase.contractRevertMessage}
                         </div>
                       </div>
 
@@ -1611,8 +1628,11 @@ export default function InterceptDashboardPage() {
                           {backtest.aggregateSummary.interceptSurvivalRatePct}%
                         </div>
                         <p className="text-xs text-muted-foreground mt-1">
-                          vs. {backtest.aggregateSummary.naiveStaticSurvivalRatePct}% for
-                          Naive Static 1.20x Bot
+                          vs.{" "}
+                          {backtest.aggregateSummary.naiveMicroBotSurvivalRatePct.toFixed(
+                            1
+                          )}
+                          % for Naive Static 1.20x Bot
                         </p>
                       </CardContent>
                     </Card>
@@ -1626,7 +1646,7 @@ export default function InterceptDashboardPage() {
                       <CardContent>
                         <div className="text-2xl font-semibold tracking-[-0.02em] text-foreground tabular-nums">
                           $
-                          {backtest.aggregateSummary.cascadeLiquidationLossSavedUsd.toFixed(
+                          {backtest.aggregateSummary.totalLiquidationLossPreventedUsd.toFixed(
                             2
                           )}
                         </div>
@@ -1644,7 +1664,7 @@ export default function InterceptDashboardPage() {
                       </CardHeader>
                       <CardContent>
                         <div className="text-2xl font-semibold tracking-[-0.02em] text-foreground tabular-nums">
-                          {backtest.aggregateSummary.calmDipCapitalSavedVsOverConservativePct.toFixed(
+                          {backtest.aggregateSummary.capitalEfficiencySavingsVsConservativePct.toFixed(
                             1
                           )}
                           %
@@ -1662,13 +1682,12 @@ export default function InterceptDashboardPage() {
                         <CardHeader className="pb-3">
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <CardTitle className="text-base">{scen.title}</CardTitle>
-                            <span className="font-mono text-xs text-muted-foreground tabular-nums">
-                              SOL Path:{" "}
-                              {scen.pricePathUsd.map((p) => `$${p}`).join(" → ")}
-                            </span>
+                            <Badge variant="outline" className="font-mono">
+                              {scen.scenarioId}
+                            </Badge>
                           </div>
                           <CardDescription className="text-xs">
-                            {scen.subtitle}
+                            {scen.description}
                           </CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-3">
@@ -1699,24 +1718,24 @@ export default function InterceptDashboardPage() {
                                     <TableCell>
                                       <Badge
                                         variant={
-                                          o.survivedLiquidations
+                                          o.survivedWithoutLiquidation
                                             ? "emerald"
                                             : "destructive"
                                         }
                                       >
-                                        {o.survivedLiquidations
+                                        {o.survivedWithoutLiquidation
                                           ? "Survived"
                                           : "Liquidated"}
                                       </Badge>
                                     </TableCell>
                                     <TableCell className="font-mono text-xs">
-                                      {o.minObservedHealthFactor.toFixed(4)}
+                                      {o.minimumObservedHf.toFixed(4)}
                                     </TableCell>
                                     <TableCell className="font-mono text-xs">
-                                      ${o.totalUsdcDeployed.toFixed(2)}
+                                      ${o.totalBaseUsdcDeployed.toFixed(2)}
                                     </TableCell>
                                     <TableCell className="font-mono text-xs">
-                                      ${o.totalNetCostUsd.toFixed(2)}
+                                      ${o.netCostUsd.toFixed(2)}
                                     </TableCell>
                                   </TableRow>
                                 );
@@ -1760,31 +1779,27 @@ export default function InterceptDashboardPage() {
                           </code>{" "}
                           for path{" "}
                           <code className="font-mono">
-                            &quot;{preflight.nearMpcDerivation.baseDomain0Path}&quot;
+                            &quot;{preflight.derivedMpc.baseDerivationPath}&quot;
                           </code>
                         </CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-2 pt-2 text-xs">
                         <div className="flex items-center justify-between py-1.5 border-t border-border/60">
                           <span className="text-muted-foreground">EVM Address</span>
-                          <CopyChip
-                            value={
-                              preflight.nearMpcDerivation.derivedMpcBaseVaultAddress
-                            }
-                          />
+                          <CopyChip value={preflight.derivedMpc.mpcBaseVaultAddress} />
                         </div>
                         <div className="flex items-center justify-between py-1.5 border-t border-border/60">
                           <span className="text-muted-foreground">Base Balances</span>
                           <span className="font-mono text-foreground tabular-nums">
-                            {preflight.baseMainnetState.usdcBalanceFormatted} USDC ·{" "}
-                            {preflight.baseMainnetState.ethBalanceFormatted} ETH
+                            {preflight.baseState.usdcBalanceFormatted} USDC ·{" "}
+                            {preflight.baseState.ethBalanceFormatted} ETH
                           </span>
                         </div>
                         <div className="flex items-center justify-between py-1.5 border-t border-border/60">
-                          <span className="text-muted-foreground">Nonce & Fee Cap</span>
+                          <span className="text-muted-foreground">Chain & Nonce</span>
                           <span className="font-mono text-muted-foreground tabular-nums">
-                            nonce={preflight.baseMainnetState.nonce} ·{" "}
-                            {preflight.baseMainnetState.suggestedMaxFeePerGasWei} wei
+                            Chain {preflight.baseState.chainId} · nonce=
+                            {preflight.baseState.nonce}
                           </span>
                         </div>
                       </CardContent>
@@ -1805,33 +1820,24 @@ export default function InterceptDashboardPage() {
                           </code>{" "}
                           for path{" "}
                           <code className="font-mono">
-                            &quot;{preflight.nearMpcDerivation.solanaDomain1Path}&quot;
+                            &quot;{preflight.derivedMpc.solanaDerivationPath}&quot;
                           </code>
                         </CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-2 pt-2 text-xs">
                         <div className="flex items-center justify-between py-1.5 border-t border-border/60">
                           <span className="text-muted-foreground">Solana Pubkey</span>
-                          <CopyChip
-                            value={
-                              preflight.nearMpcDerivation
-                                .derivedMpcSolanaPayerPubkey
-                            }
-                          />
+                          <CopyChip value={preflight.derivedMpc.mpcSolanaPayerPubkey} />
                         </div>
                         <div className="flex items-center justify-between py-1.5 border-t border-border/60">
                           <span className="text-muted-foreground">Derived USDC ATA</span>
-                          <CopyChip
-                            value={
-                              preflight.nearMpcDerivation.derivedMpcSolanaUsdcAta
-                            }
-                          />
+                          <CopyChip value={preflight.derivedMpc.mpcSolanaPayerUsdcAta} />
                         </div>
                         <div className="flex items-center justify-between py-1.5 border-t border-border/60">
                           <span className="text-muted-foreground">Solana Balances</span>
                           <span className="font-mono text-foreground tabular-nums">
-                            {preflight.solanaMainnetState.usdcAtaBalanceFormatted} USDC
-                            · {preflight.solanaMainnetState.solBalanceFormatted} SOL
+                            {preflight.solanaState.usdcBalanceFormatted} USDC ·{" "}
+                            {preflight.solanaState.solBalanceFormatted} SOL
                           </span>
                         </div>
                       </CardContent>
@@ -1844,8 +1850,9 @@ export default function InterceptDashboardPage() {
                         Live Mainnet Rescue Readiness Checklist
                       </CardTitle>
                       <CardDescription className="text-xs">
-                        Real-time verification of NEAR <code className="font-mono">v1.signer</code>{" "}
-                        derivation, Base 8453 RPC, and Solana Mainnet state.
+                        Real-time verification of NEAR{" "}
+                        <code className="font-mono">v1.signer</code> derivation, Base 8453
+                        RPC, and Solana Mainnet state.
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -1858,18 +1865,14 @@ export default function InterceptDashboardPage() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {preflight.readinessChecklist.map((item) => (
-                            <TableRow key={item.id}>
+                          {preflight.checklist.map((item) => (
+                            <TableRow key={item.item}>
                               <TableCell className="font-medium text-xs">
-                                {item.label}
+                                {item.item}
                               </TableCell>
                               <TableCell>
-                                <Badge
-                                  variant={
-                                    item.status === "READY" ? "emerald" : "secondary"
-                                  }
-                                >
-                                  {item.status}
+                                <Badge variant={item.passed ? "emerald" : "secondary"}>
+                                  {item.passed ? "READY" : "INFO"}
                                 </Badge>
                               </TableCell>
                               <TableCell className="font-mono text-xs text-muted-foreground">

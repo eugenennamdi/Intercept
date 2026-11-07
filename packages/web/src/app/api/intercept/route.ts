@@ -18,10 +18,21 @@ function serializeBigInt<T>(obj: T): unknown {
   );
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const url = new URL(request.url);
+  const modeParam = url.searchParams.get("mode") as ExecutionMode | null;
+  const dropParam =
+    url.searchParams.get("stressShockPct") ?? url.searchParams.get("priceDropPct");
+  const parsedDrop = dropParam !== null ? Number(dropParam) : undefined;
+  const stressShockPct =
+    parsedDrop !== undefined && !Number.isNaN(parsedDrop)
+      ? -Math.abs(parsedDrop)
+      : undefined;
+
   const [report, preflight] = await Promise.all([
     executeInterceptRescuePipeline({
-      mode: "LIVE_MAINNET_MODE",
+      mode: modeParam ?? "LIVE_MAINNET_MODE",
+      stressShockPct,
     }),
     runMainnetPreflightCheck(),
   ]);
@@ -47,7 +58,8 @@ export async function POST(request: Request) {
   const [report, preflight] = await Promise.all([
     executeInterceptRescuePipeline({
       mode: body.mode ?? "STRESS_TEST_MAINNET_MODE",
-      stressShockPct: body.stressShockPct,
+      stressShockPct:
+        body.stressShockPct !== undefined ? -Math.abs(body.stressShockPct) : undefined,
       minTriggerHfBpsOverride: body.minTriggerHfBpsOverride,
     }),
     runMainnetPreflightCheck(),
