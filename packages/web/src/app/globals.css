@@ -1,37 +1,191 @@
 @import "tailwindcss";
 
-@theme inline {
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-}
-
 :root {
   color-scheme: dark;
+  /* shadcn/ui New York — Zinc Dark Palette */
+  --background: #09090b;
+  --foreground: #fafafa;
+  --card: #0c0c0f;
+  --card-foreground: #fafafa;
+  --popover: #0c0c0f;
+  --popover-foreground: #fafafa;
+  --primary: #fafafa;
+  --primary-foreground: #18181b;
+  --secondary: #18181b;
+  --secondary-foreground: #fafafa;
+  --muted: #18181b;
+  --muted-foreground: #a1a1aa;
+  --accent: #1f1f23;
+  --accent-foreground: #fafafa;
+  --destructive: #ef4444;
+  --destructive-foreground: #fafafa;
+  --border: #27272a;
+  --input: #27272a;
+  --ring: #d4d4d8;
+  --radius: 0.5rem;
+
+  /* Emil Kowalski custom easing curves (never use built-in weak ease-in) */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-html {
-  scroll-behavior: smooth;
+@theme inline {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
 }
 
+* {
+  box-sizing: border-box;
+  border-color: var(--border);
+}
+
+html,
 body {
-  background-color: #060709;
-  color: #f4f4f5;
-  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
-  font-variant-numeric: tabular-nums;
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-feature-settings: "rlig" 1, "calt" 1;
+  font-optical-sizing: auto;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-.font-mono,
+/* Emil Kowalski UI Cheatsheet: Prevent numeric jitter during live oracle & slider updates */
+.tabular-nums,
 code,
 pre,
 table,
-[data-tabular] {
+input[type="range"] {
   font-variant-numeric: tabular-nums;
 }
 
-/* Subtle tactical blueprint surface grid */
-.bg-tactical-grid {
-  background-size: 32px 32px;
-  background-image:
-    linear-gradient(to right, rgba(255, 255, 255, 0.022) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
+/* Emil Kowalski: Pressable elements scale down subtly (0.97) on pointer-down with strong ease-out */
+.emil-press {
+  transition-property: transform, background-color, border-color, color, opacity, box-shadow;
+  transition-duration: 150ms;
+  transition-timing-function: var(--ease-out);
+}
+
+.emil-press:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* Emil Kowalski: Blur crossfade bridges visual gap when state swaps */
+.emil-crossfade {
+  transition-property: opacity, filter, transform;
+  transition-duration: 180ms;
+  transition-timing-function: var(--ease-out);
+}
+
+.emil-crossfade[data-transitioning="true"] {
+  opacity: 0.68;
+  filter: blur(2px);
+  transform: scale(0.996);
+}
+
+/* Emil Kowalski: Never animate from scale(0) — start from scale(0.96) + opacity: 0 */
+.emil-enter {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transition-property: opacity, transform, filter;
+  transition-duration: 200ms;
+  transition-timing-function: var(--ease-out);
+
+  @starting-style {
+    opacity: 0;
+    transform: translateY(4px) scale(0.97);
+  }
+}
+
+/* Gate hover effects behind fine pointer media query to prevent false positives on touch */
+@media (hover: hover) and (pointer: fine) {
+  .emil-row-hover:hover {
+    background-color: rgba(39, 39, 42, 0.45);
+  }
+  .emil-card-hover:hover {
+    border-color: #3f3f46;
+  }
+}
+
+/* Clean, responsive range input styling matching shadcn Slider */
+input[type="range"].shadcn-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 9999px;
+  background: #27272a;
+  cursor: pointer;
+}
+
+input[type="range"].shadcn-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  background: #fafafa;
+  border: 2px solid #09090b;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  transition: transform 150ms var(--ease-out), background-color 150ms ease;
+}
+
+input[type="range"].shadcn-slider::-webkit-slider-thumb:active {
+  transform: scale(0.92);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  input[type="range"].shadcn-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.08);
+  }
+}
+
+/* Emil Kowalski Accessibility: Reduced motion keeps opacity/color, drops transform motion */
+@media (prefers-reduced-motion: reduce) {
+  .emil-press,
+  .emil-crossfade,
+  .emil-enter {
+    transition-property: opacity, background-color, border-color, color !important;
+    transition-duration: 150ms !important;
+    transform: none !important;
+    filter: none !important;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #09090b;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
 }

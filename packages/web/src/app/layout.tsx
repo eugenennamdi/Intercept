@@ -13,22 +13,19 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "INTERCEPT // Zero-Trust Cross-Chain Kamino Liquidation Defense",
+  title: "Intercept — Cross-Chain Kamino Liquidation Defense",
   description:
-    "Institutional DeFi Risk & Cryptographic Guardrail Terminal powered by NEAR AI Cloud (TEE), NEAR Policy Guardrail Contracts, NEAR Chain Signatures (v1.signer), and NEAR Intents (1-Click Swap API).",
+    "Zero-trust cross-chain liquidation protection powered by NEAR AI Cloud TEE, NEAR Policy Guardrail, v1.signer Chain Signatures, and NEAR Intents 1-Click.",
 };
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} dark`}
-    >
-      <body className="min-h-[100dvh] bg-[#060709] bg-tactical-grid text-zinc-100 antialiased selection:bg-emerald-500/20 selection:text-emerald-300 font-sans">
+    <html lang="en" className={`dark ${geistSans.variable} ${geistMono.variable}`}>
+      <body className="min-h-dvh bg-background text-foreground antialiased selection:bg-zinc-800 selection:text-zinc-100">
         {children}
       </body>
     </html>

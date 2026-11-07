@@ -1,1993 +1,1910 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   ShieldCheck,
-  WarningOctagon,
-  Lightning,
   Pulse,
-  ArrowSquareOut,
-  LockKey,
   Cpu,
-  CheckCircle,
-  XCircle,
-  Timer,
+  LockKey,
   ArrowsLeftRight,
-  Code,
-  Play,
+  CheckCircle,
+  WarningOctagon,
   SlidersHorizontal,
+  ArrowClockwise,
+  Code,
+  ChartLineUp,
+  Skull,
+  CaretRight,
+  CaretDown,
   Copy,
   Check,
   TerminalWindow,
-  ChartBar,
-  Vault,
-  CaretRight,
+  Lightning,
+  ArrowUpRight,
+  Info,
 } from "@phosphor-icons/react";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  CardFooter,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+} from "@/components/ui/tabs";
+import { Separator } from "@/components/ui/separator";
 
-interface StageTimingTelemetry {
-  stageIndex: number;
-  stageId: string;
+interface PipelineStage {
+  stageNumber: 1 | 2 | 3 | 4 | 5;
+  title: string;
+  actor: string;
+  chain: "SOLANA" | "NEAR_TEE" | "NEAR_GUARDRAIL_AND_MPC" | "NEAR_INTENTS_1CLICK";
+  status: "VERIFIED" | "SIGNED" | "SIMULATED_READY" | "SKIPPED_HOLD";
+  latencyMs: number;
+  summary: string;
+  cryptographicProof: Record<string, string | number | boolean>;
+}
+
+interface AdversarialCaseResult {
+  id: string;
+  title: string;
+  targetLeg: "LEG_1_BASE_EVM" | "LEG_2_SOLANA_KAMINO" | "TEE_ATTESTATION" | "STATE_MACHINE";
+  attackVectorDescription: string;
+  injectedPayloadSummary: string;
+  status: "BLOCKED";
+  exactRevertReason: string;
+  executionTimeUs: number;
+}
+
+interface BacktestStrategyOutcome {
+  strategyId:
+    | "UNPROTECTED"
+    | "NAIVE_STATIC_120"
+    | "OVER_CONSERVATIVE_145"
+    | "INTERCEPT_VOLATILITY_AWARE";
+  strategyName: string;
+  survivedLiquidations: boolean;
+  liquidationCount: number;
+  totalUsdcDeployed: number;
+  liquidationPenaltyUsd: number;
+  bridgeAndDexFeesUsd: number;
+  foregoneBaseYieldUsd: number;
+  totalNetCostUsd: number;
+  minObservedHealthFactor: number;
+  triggerTickIndex: number | null;
+  triggeredRegime: string;
+}
+
+interface BacktestScenarioReport {
+  scenarioId: string;
+  title: string;
+  subtitle: string;
+  initialCollateralSol: number;
+  initialDebtUsdc: number;
+  pricePathUsd: number[];
+  outcomes: BacktestStrategyOutcome[];
+  interceptEdgeSummary: string;
+}
+
+interface MainnetPreflightItem {
+  id: string;
   label: string;
-  status: "COMPLETED" | "SKIPPED_HEALTHY" | "REVERTED_BY_GUARDRAIL";
-  measuredLatencyMs: number;
+  status: "READY" | "ACTION_REQUIRED" | "INFO";
   detail: string;
-  explorerUrl: string;
-  explorerLabel: string;
+  latencyMs?: number;
 }
 
-interface ExecutionReport {
-  mode: "LIVE_MAINNET_MODE" | "STRESS_TEST_MAINNET_MODE";
-  executedAtIso: string;
-  totalMeasuredLatencyMs: number;
-  policy: {
-    nearContractId: string;
-    mpcBaseVaultAddress: string;
-    mpcSolanaPayerPubkey: string;
-    userKaminoObligationPubkey: string;
-    userSolanaEoaPubkey: string;
-    minTriggerHfBps: number;
-    maxPerActionUsdcFormatted: string;
-    maxDailyUsdcFormatted: string;
-    maxSlippageBps: number;
-    agentFunctionCallKeySpec?: {
-      permissionType: string;
-      receiverContractId: string;
-      allowedMethodNames: string[];
-      allowanceNear: string;
-      forbiddenAdminMethods: string[];
-    };
-  };
-  pythTelemetry: {
-    source: string;
-    feedId: string;
-    solanaAccountPubkey: string;
-    solanaSlot?: number;
-    publishTimeUnix: number;
-    rawSpotSolUsd: number;
-    emaSolUsd: number;
-    confidenceUsd: number;
-    confidenceSpreadBps: number;
-    emaVelocityBps: number;
-    realizedVolatilityBps: number;
-    stressShockPctApplied: number;
-    effectiveSolUsd: number;
-    priceProofHash: string;
-    fetchLatencyMs: number;
-    fallbackReason?: string;
-  };
-  kaminoBefore: {
-    source: string;
-    fallbackReason?: string;
-    programId: string;
-    lendingMarketPubkey: string;
-    obligationPubkey: string;
-    ownerSolanaEoa: string;
-    solanaSlot: number;
-    depositedSol: number;
-    collateralValueUsd: number;
-    borrowedUsdc: number;
-    debtValueUsd: number;
-    maxLtvBps: number;
-    liquidationLtvBps: number;
-    currentLtvBps: number;
-    riskAdjustedCollateralUsd: number;
-    healthFactor: number;
-    healthFactorBps: number;
-    liquidationSolPriceUsd: number;
-    distanceToLiquidationPct: number;
-  };
-  kaminoAfter: {
-    borrowedUsdc: number;
-    debtValueUsd: number;
-    currentLtvBps: number;
-    healthFactor: number;
-    healthFactorBps: number;
-  };
-  riskEvaluation: {
-    regime: "HOLD" | "MICRO_BUFFER_RESCUE" | "CASCADE_DEEP_RESCUE";
-    actionable: boolean;
-    observedHfBps: number;
-    triggerThresholdHfBps: number;
-    targetHfBps: number;
-    projectedPostRescueHfBps: number;
-    estimatedKaminoLiquidationPenaltyBps: number;
-    expectedLiquidationLossUsd: number;
-    capitalOpportunityCostBps: number;
-    capitalExecutionCostUsd: number;
-    netProtectedValueUsd: number;
-    repayAmountUsdcMicro: string;
-    repayAmountUsdcFormatted: string;
-    reasoningSummary: string;
-    reasoningHash: string;
-  };
-  nearAiCloudAttestation: {
-    source: string;
-    fallbackReason?: string;
-    model: string;
-    chatId: string;
-    attestationNonceHex: string;
-    signingAddress: string;
-    signedText: string;
-    hardwareAttestation: {
-      intelTdxQuoteCommitmentHex: string;
-      nvidiaNrasEatNonceHex: string;
-      gpuArchitecture: string;
-      tdxReportDataBindsKeyAndNonce: boolean;
-    };
-    verifiedChainOfTrust: boolean;
-  };
-  oneClickQuote: {
-    source: string;
-    fallbackReason?: string;
-    quoteId: string;
-    amountInFormatted: string;
-    amountOutFormatted: string;
-    effectiveFeeSpreadBps: number;
-    depositAddress: string;
-    recipientSolanaAddress: string;
-    refundBaseAddress: string;
-    estimatedSettlementSec: number;
-    quoteLatencyMs: number;
-    statusExplorerUrl: string;
-  } | null;
-  teeReceipt: {
-    receipt: {
-      timestamp: number;
-      obligation_pubkey: string;
-      observed_hf_bps: number;
-      volatility_bps: number;
-      regime: string;
-      repay_amount_usdc: string;
-      oneclick_deposit_address: string;
-      min_amount_out: string;
-      reasoning_hash: string;
-      enclave_signature_hex: string;
-    };
-    canonicalPayload: string;
-    receiptHashHex: string;
-    signatureVerified: boolean;
-  } | null;
-  leg1BaseVerification: {
-    rawUnsignedTxHex: string;
-    signingHashKeccak256Hex: string;
-    mpcDomainId: number;
-    derivationPath: string;
-    guardrailVerified: boolean;
-  } | null;
-  leg2SolanaVerification: {
-    rawMessageHex: string;
-    discriminatorHex: string;
-    kaminoRefreshIxCount: number;
-    repayReservePubkey: string;
-    userSourceLiquidityAtaPubkey: string;
-    mpcDomainId: number;
-    derivationPath: string;
-    guardrailVerified: boolean;
-  } | null;
-  stages: StageTimingTelemetry[];
-}
-
-interface PreflightReport {
-  checkedAtIso: string;
-  derivedMpc: {
+interface MainnetPreflightReport {
+  timestampIso: string;
+  nearMpcDerivation: {
     source: string;
     nearRpcUrl: string;
-    mpcSignerContractId: string;
-    predecessorContractId: string;
-    baseDerivationPath: string;
-    solanaDerivationPath: string;
-    rawSecp256k1DerivedKey: string;
-    mpcBaseVaultAddress: string;
-    rawEd25519DerivedKey: string;
-    mpcSolanaPayerPubkey: string;
-    mpcSolanaPayerUsdcAta: string;
-    mpcSolanaPayerUsdcAtaBump: number;
+    signerContractId: string;
+    predecessorId: string;
+    baseDomain0Path: string;
+    baseSecp256k1PublicKey: string;
+    derivedMpcBaseVaultAddress: string;
+    solanaDomain1Path: string;
+    solanaEd25519PublicKey: string;
+    derivedMpcSolanaPayerPubkey: string;
+    derivedMpcSolanaUsdcAta: string;
+    derivedMpcSolanaUsdcAtaBump: number;
     latencyMs: number;
   };
-  baseState: {
+  baseMainnetState: {
     source: string;
     chainId: number;
     mpcBaseVaultAddress: string;
     nonce: number;
+    ethBalanceWei: string;
     ethBalanceFormatted: string;
+    usdcBalanceBaseUnits: string;
     usdcBalanceFormatted: string;
+    suggestedMaxFeePerGasWei: string;
+    suggestedPriorityFeeWei: string;
     latencyMs: number;
   };
-  solanaState: {
+  solanaMainnetState: {
     source: string;
     mpcSolanaPayerPubkey: string;
-    recentBlockhashBase58: string;
+    mpcSolanaUsdcAta: string;
+    ataExistsOnChain: boolean;
+    solBalanceLamports: number;
     solBalanceFormatted: string;
-    usdcBalanceFormatted: string;
-    usdcAtaPubkey: string;
-    usdcAtaBump: number;
-    usdcAtaExistsOnChain: boolean;
+    usdcAtaBalanceBaseUnits: string;
+    usdcAtaBalanceFormatted: string;
+    recentBlockhash: string;
+    lastValidBlockHeight: number;
     latencyMs: number;
   };
-  liveBroadcastCredentialsConfigured: boolean;
-  readyForTenDollarMainnetRescue: boolean;
-  checklist: Array<{
-    item: string;
-    passed: boolean;
-    detail: string;
-  }>;
+  liveBroadcastEnabled: boolean;
+  readinessChecklist: MainnetPreflightItem[];
 }
 
-interface AdversarialAttackVectorResult {
-  attackId: string;
-  title: string;
-  targetLeg:
-    | "LEG_1_BASE_EVM"
-    | "LEG_2_SOLANA_KAMINO"
-    | "TEE_ATTESTATION"
-    | "ASYNC_TOCTOU_STATE";
-  attackerGoal: string;
-  injectedPayloadSummary: string;
-  guardrailBlocked: boolean;
-  errorCode: string;
-  contractRevertMessage: string;
-  verificationTimeUs: number;
-}
-
-interface BacktestSuiteReport {
-  generatedAtIso: string;
-  executionTimeMs: number;
-  scenarios: Array<{
-    scenarioId: string;
-    title: string;
-    description: string;
-    outcomes: Array<{
-      strategyId: string;
-      strategyName: string;
-      survivedWithoutLiquidation: boolean;
-      liquidatedAtTick: number | null;
-      minimumObservedHf: number;
-      finalHf: number;
-      rescueTriggerCount: number;
-      totalBaseUsdcDeployed: number;
-      netCostUsd: number;
-    }>;
-    interceptEdgeSummary: string;
-  }>;
-  aggregateSummary: {
-    interceptSurvivalRatePct: number;
-    naiveMicroBotSurvivalRatePct: number;
-    unprotectedSurvivalRatePct: number;
-    totalLiquidationLossPreventedUsd: number;
-    capitalEfficiencySavingsVsConservativePct: number;
+interface InterceptApiResponse {
+  report: {
+    mode: "LIVE_MAINNET_MODE" | "STRESS_TEST_MAINNET_MODE";
+    executedAtIso: string;
+    totalMeasuredLatencyMs: number;
+    policy: {
+      nearContractId: string;
+      authorizedAgentNearAccount: string;
+      mpcBaseVaultAddress: string;
+      mpcSolanaPayerPubkey: string;
+      mpcSolanaUsdcAta: string;
+      userKaminoObligationPubkey: string;
+      kaminoLendingMarketPubkey: string;
+      kaminoUsdcReservePubkey: string;
+      kaminoSolReservePubkey: string;
+      maxSingleRescueUsdc: number;
+      dailySpendingCapUsdc: number;
+    };
+    kaminoAnchorDiscriminatorsHex: {
+      repayObligationLiquidityV2: string;
+      repayObligationLiquidityV1: string;
+      refreshReserve: string;
+      refreshReservesBatch: string;
+      refreshObligation: string;
+      refreshObligationFarmsForReserve: string;
+    };
+    oracleSnapshot: {
+      source: string;
+      solPriceUsd: number;
+      confidenceUsd: number;
+      emaPriceUsd: number;
+      publishTimeUnix: number;
+      realizedVolatilityBps: number;
+      emaVelocityBps: number;
+    };
+    positionBefore: {
+      source: string;
+      obligationAddress: string;
+      ownerAddress: string;
+      lendingMarketAddress: string;
+      depositedSol: number;
+      collateralValueUsd: number;
+      borrowedUsdc: number;
+      liquidationLtvBps: number;
+      healthFactor: number;
+      healthFactorBps: number;
+      solanaSlot: number;
+    };
+    positionAfterRescue: {
+      healthFactor: number;
+      healthFactorBps: number;
+      remainingDebtUsdc: number;
+    };
+    decision: {
+      regime: "HOLD" | "MICRO_BUFFER_RESCUE" | "CASCADE_DEEP_RESCUE";
+      requiresAction: boolean;
+      observedHealthFactor: number;
+      triggerThresholdHf: number;
+      targetHealthFactor: number;
+      repayAmountUsdc: number;
+      repayAmountBaseUnits: string;
+      rationale: string;
+      volatilitySpreadBps: number;
+      emaVelocityBps: number;
+    };
+    teeAttestation: {
+      model: string;
+      enclaveProvider: string;
+      enclavePublicKeyHex: string;
+      receiptHashHex: string;
+      ed25519SignatureHex: string;
+      aiReasoningSummary: string;
+      attestationSource?: string;
+      hardwareQuoteVerified?: boolean;
+      liveSigningKeyAddress?: string;
+    };
+    intentsQuote: {
+      source: string;
+      depositAddressOnBase: string;
+      originAsset: string;
+      destinationAsset: string;
+      amountInBaseUnits: string;
+      amountInFormatted: string;
+      expectedAmountOutBaseUnits: string;
+      expectedAmountOutFormatted: string;
+      recipientOnSolana: string;
+      slippageBps: number;
+      estimatedTimeSeconds: number;
+      quoteId: string;
+    } | null;
+    unsignedTransactions: {
+      leg1BaseEip1559TxHex: string;
+      leg2SolanaKaminoV0MessageHex: string;
+      leg1GuardrailCheck: {
+        valid: boolean;
+        decodedChainId: number;
+        decodedToAddress: string;
+        decodedSelectorHex: string;
+        decodedRecipientAddress: string;
+        decodedAmountBaseUnits: string;
+      };
+      leg2GuardrailCheck: {
+        valid: boolean;
+        numInstructions: number;
+        instructionSequence: string[];
+        kaminoProgramIndex: number;
+        discriminatorHex: string;
+        decodedRepayAmountBaseUnits: string;
+        obligationPubkeyHex: string;
+        destinationReservePubkeyHex: string;
+      };
+    } | null;
+    stages: PipelineStage[];
+    adversarialSuite: AdversarialCaseResult[];
   };
-}
-
-type AuditTabId =
-  | "ALL"
-  | "EXECUTION_AND_BYTES"
-  | "RED_TEAM_SIMULATOR"
-  | "BACKTEST_LAB"
-  | "MPC_PREFLIGHT";
-
-type PresetId =
-  | "LIVE_0"
-  | "MILD_MINUS_21"
-  | "CASCADE_MINUS_25"
-  | "OVERRIDE_148"
-  | "CUSTOM";
-
-function clampPct(val: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, val));
-}
-
-/**
- * Maps a Health Factor in [0.95, 1.65] to a percentage [0, 100] along the liquidation spectrum bar.
- */
-function hfToSpectrumPct(hf: number): number {
-  const minHf = 0.95;
-  const maxHf = 1.65;
-  return clampPct(((hf - minHf) / (maxHf - minHf)) * 100, 2, 98);
-}
-
-export default function InterceptCommandCenterPage() {
-  const [report, setReport] = useState<ExecutionReport | null>(null);
-  const [preflight, setPreflight] = useState<PreflightReport | null>(null);
-  const [attacks, setAttacks] = useState<AdversarialAttackVectorResult[]>([]);
-  const [backtest, setBacktest] = useState<BacktestSuiteReport | null>(null);
-  const [selectedAttackIdx, setSelectedAttackIdx] = useState<number>(0);
-  const [isRunning, setIsRunning] = useState<boolean>(true);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [shockSliderPct, setShockSliderPct] = useState<number>(-25);
-  const [activePreset, setActivePreset] =
-    useState<PresetId>("CASCADE_MINUS_25");
-  const [activeTab, setActiveTab] = useState<AuditTabId>("ALL");
-  const [activeSimulationBanner, setActiveSimulationBanner] =
-    useState<AdversarialAttackVectorResult | null>(null);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-
-  const copyToClipboard = (id: string, text: string) => {
-    void navigator.clipboard?.writeText(text);
-    setCopiedId(id);
-    setTimeout(() => {
-      setCopiedId((prev) => (prev === id ? null : prev));
-    }, 1600);
+  backtest: {
+    scenarios: BacktestScenarioReport[];
+    aggregateSummary: {
+      totalScenariosTested: number;
+      unprotectedSurvivalRatePct: number;
+      naiveStaticSurvivalRatePct: number;
+      interceptSurvivalRatePct: number;
+      cascadeLiquidationLossSavedUsd: number;
+      calmDipCapitalSavedVsOverConservativePct: number;
+    };
   };
+  preflight?: MainnetPreflightReport;
+}
 
-  const runPipeline = useCallback(
-    async (params: {
-      mode: "LIVE_MAINNET_MODE" | "STRESS_TEST_MAINNET_MODE";
-      stressShockPct?: number;
-      minTriggerHfBpsOverride?: number;
-      presetId?: PresetId;
-    }) => {
-      setIsRunning(true);
-      setErrorMsg(null);
-      if (params.presetId) {
-        setActivePreset(params.presetId);
-      }
+function CopyChip({
+  value,
+  display,
+  label,
+}: {
+  value: string;
+  display?: string;
+  label?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    },
+    [value]
+  );
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      title={`Copy ${label ?? value}`}
+      className="emil-press inline-flex items-center gap-1.5 rounded-md border border-border bg-secondary/70 px-2 py-0.5 font-mono text-xs text-muted-foreground hover:text-foreground hover:border-zinc-700 cursor-pointer"
+    >
+      <span className="truncate max-w-[180px]">{display ?? value}</span>
+      {copied ? (
+        <Check className="w-3 h-3 text-emerald-400 shrink-0 emil-enter" weight="bold" />
+      ) : (
+        <Copy className="w-3 h-3 opacity-60 shrink-0" />
+      )}
+    </button>
+  );
+}
+
+export default function InterceptDashboardPage() {
+  const [mode, setMode] = useState<"LIVE_MAINNET_MODE" | "STRESS_TEST_MAINNET_MODE">(
+    "STRESS_TEST_MAINNET_MODE"
+  );
+  const [priceDropPct, setPriceDropPct] = useState<number>(25);
+  const [data, setData] = useState<InterceptApiResponse | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [isTransitioning, setIsTransitioning] = useState<boolean>(false);
+  const [activeTab, setActiveTab] = useState<string>("overview");
+  const [expandedStage, setExpandedStage] = useState<number | null>(3);
+  const [selectedAdvId, setSelectedAdvId] = useState<string>("ADV_01_BASE_RAW_ETH_DRAIN");
+  const [advSimRunning, setAdvSimRunning] = useState<boolean>(false);
+  const [advFlashProtection, setAdvFlashProtection] = useState<boolean>(false);
+  const [showCustodyDetail, setShowCustodyDetail] = useState<boolean>(false);
+  const workspaceRef = useRef<HTMLDivElement>(null);
+
+  const triggerSmoothTransition = useCallback((fn: () => void) => {
+    setIsTransitioning(true);
+    fn();
+    setTimeout(() => setIsTransitioning(false), 180);
+  }, []);
+
+  const fetchPipeline = useCallback(
+    async (
+      targetMode: "LIVE_MAINNET_MODE" | "STRESS_TEST_MAINNET_MODE",
+      dropPct: number
+    ) => {
+      setLoading(true);
+      setIsTransitioning(true);
       try {
-        const res = await fetch("/api/intercept", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            mode: params.mode,
-            stressShockPct: params.stressShockPct,
-            minTriggerHfBpsOverride: params.minTriggerHfBpsOverride,
-          }),
-        });
-        if (!res.ok) {
-          throw new Error(`API HTTP ${res.status}`);
-        }
-        const data = (await res.json()) as {
-          report: ExecutionReport;
-          preflight: PreflightReport;
-          adversarialSuite: AdversarialAttackVectorResult[];
-          backtest: BacktestSuiteReport;
-        };
-        setReport(data.report);
-        setPreflight(data.preflight);
-        setAttacks(data.adversarialSuite);
-        setBacktest(data.backtest);
+        const res = await fetch(
+          `/api/intercept?mode=${targetMode}&priceDropPct=${dropPct}`,
+          { cache: "no-store" }
+        );
+        const json = (await res.json()) as InterceptApiResponse;
+        setData(json);
       } catch (err) {
-        setErrorMsg((err as Error).message);
+        console.error("Failed to fetch Intercept pipeline:", err);
       } finally {
-        setIsRunning(false);
+        setLoading(false);
+        setTimeout(() => setIsTransitioning(false), 160);
       }
     },
     []
   );
 
   useEffect(() => {
-    void runPipeline({
-      mode: "STRESS_TEST_MAINNET_MODE",
-      stressShockPct: -25,
-      presetId: "CASCADE_MINUS_25",
-    });
-  }, [runPipeline]);
+    fetchPipeline(mode, priceDropPct);
+  }, [mode, priceDropPct, fetchPipeline]);
 
-  const handleSimulateRogueAiHack = () => {
-    if (attacks.length === 0) return;
-    const nextIdx = (selectedAttackIdx + 1) % attacks.length;
-    setSelectedAttackIdx(nextIdx);
-    setActiveSimulationBanner(attacks[nextIdx]);
+  const handleSelectScenario = (
+    nextMode: "LIVE_MAINNET_MODE" | "STRESS_TEST_MAINNET_MODE",
+    nextDrop: number
+  ) => {
+    setMode(nextMode);
+    setPriceDropPct(nextDrop);
   };
 
-  const selectedAttack = attacks[selectedAttackIdx] ?? attacks[0] ?? null;
-
-  const regimeBadgeStyle = (regime?: string) => {
-    if (regime === "HOLD") {
-      return "bg-emerald-500/10 text-emerald-300 border-emerald-500/30";
+  const triggerAdversarialIntercept = (advId?: string) => {
+    if (advId) {
+      setSelectedAdvId(advId);
     }
-    if (regime === "MICRO_BUFFER_RESCUE") {
-      return "bg-amber-500/10 text-amber-300 border-amber-500/30";
-    }
-    return "bg-rose-500/15 text-rose-300 border-rose-500/40";
+    setActiveTab("redteam");
+    setAdvSimRunning(true);
+    setAdvFlashProtection(false);
+    setTimeout(() => {
+      setAdvSimRunning(false);
+      setAdvFlashProtection(true);
+    }, 180);
   };
 
-  const observedHf = report?.kaminoBefore.healthFactor ?? 1.0755;
-  const postRescueHf = report?.kaminoAfter.healthFactor ?? 1.45;
-  const triggerHf = (report?.policy.minTriggerHfBps ?? 11_500) / 10_000;
-  const isBreached =
-    (report?.kaminoBefore.healthFactorBps ?? 0) <
-    (report?.policy.minTriggerHfBps ?? 11_500);
+  const report = data?.report;
+  const backtest = data?.backtest;
+  const preflight = data?.preflight;
 
-  const showSection = (tab: AuditTabId) =>
-    activeTab === "ALL" || activeTab === tab;
+  const selectedAdvCase =
+    report?.adversarialSuite.find((c) => c.id === selectedAdvId) ??
+    report?.adversarialSuite[0];
+
+  const hfBefore = report?.positionBefore.healthFactor ?? 1.3323;
+  const hfAfter = report?.positionAfterRescue.healthFactor ?? hfBefore;
+  const triggerHf = report?.decision.triggerThresholdHf ?? 1.15;
+
+  // Map HF in [0.85, 1.60] to [0%, 100%]
+  const hfToPercent = (hf: number) =>
+    Math.max(2, Math.min(98, ((hf - 0.85) / (1.6 - 0.85)) * 100));
+
+  const isRescueTriggered = report?.decision.requiresAction ?? false;
 
   return (
-    <div className="min-h-[100dvh] flex flex-col text-zinc-100">
-      {/* 1. Top Tactical Institutional Status Bar */}
-      <header className="h-14 border-b border-white/[0.08] bg-[#060709]/90 backdrop-blur-md sticky top-0 z-30">
-        <div className="max-w-[1440px] mx-auto h-full px-4 sm:px-6 flex items-center justify-between gap-4">
+    <div className="min-h-dvh flex flex-col bg-background text-foreground">
+      {/* Sticky Top Navigation Bar (shadcn/ui + Emil Kowalski translucent chrome) */}
+      <header className="sticky top-0 z-40 h-14 w-full border-b border-border/80 bg-background/85 backdrop-blur-md">
+        <div className="mx-auto flex h-full max-w-[1360px] items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-md bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)]">
-              <ShieldCheck size={17} weight="duotone" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-secondary text-foreground shadow-xs">
+              <ShieldCheck className="h-4 w-4 text-emerald-400" weight="fill" />
             </div>
-            <div className="flex items-center gap-2.5">
-              <span className="font-mono text-sm font-semibold tracking-wider text-zinc-100">
-                INTERCEPT
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold tracking-[-0.015em] text-foreground">
+                Intercept
               </span>
-              <span className="hidden sm:inline-block text-[10px] font-mono uppercase tracking-[0.14em] px-2 py-0.5 rounded bg-white/[0.03] border border-white/[0.08] text-zinc-400">
-                NEAR AI TEE // v1.signer // 1-Click // KLend
+              <span className="text-zinc-700">/</span>
+              <span className="hidden sm:inline text-sm text-muted-foreground">
+                Kamino Liquidation Defense
               </span>
             </div>
-          </div>
-
-          <div className="flex items-center gap-2 font-mono text-[11px]">
-            <div className="hidden xl:flex items-center gap-2 px-2.5 py-1 rounded bg-white/[0.02] border border-white/[0.07] text-zinc-300">
+            <Badge
+              variant={
+                mode === "LIVE_MAINNET_MODE"
+                  ? "emerald"
+                  : isRescueTriggered
+                  ? "amber"
+                  : "secondary"
+              }
+              className="ml-1"
+            >
               <span
-                className={`w-1.5 h-1.5 rounded-full ${
-                  isRunning
-                    ? "bg-amber-400 animate-ping"
-                    : "bg-emerald-400"
+                className={`h-1.5 w-1.5 rounded-full ${
+                  mode === "LIVE_MAINNET_MODE" ? "bg-emerald-400" : "bg-amber-400"
                 }`}
               />
-              <span>
-                SOL SLOT{" "}
-                <strong className="text-zinc-100 font-medium">
-                  {report?.pythTelemetry.solanaSlot?.toLocaleString() ??
-                    "461,722,042"}
-                </strong>
-              </span>
-            </div>
+              {mode === "LIVE_MAINNET_MODE"
+                ? "Live Mainnet"
+                : `Stress Simulation (-${priceDropPct}%)`}
+            </Badge>
+          </div>
 
-            <div className="hidden md:flex items-center gap-2 px-2.5 py-1 rounded bg-white/[0.02] border border-white/[0.07] text-zinc-300">
-              <span className="text-zinc-500">PYTH SOL</span>
-              <span className="text-zinc-100 font-semibold">
-                ${report?.pythTelemetry.rawSpotSolUsd.toFixed(2) ?? "..."}
-              </span>
-            </div>
+          <div className="flex items-center gap-2.5">
+            {report && (
+              <div className="hidden lg:flex items-center gap-3 rounded-md border border-border/70 bg-secondary/40 px-3 py-1 text-xs text-muted-foreground tabular-nums">
+                <span>
+                  Slot{" "}
+                  <strong className="font-mono font-medium text-foreground">
+                    #{report.positionBefore.solanaSlot.toLocaleString()}
+                  </strong>
+                </span>
+                <span className="text-zinc-700">·</span>
+                <span>
+                  SOL{" "}
+                  <strong className="font-mono font-medium text-foreground">
+                    ${report.oracleSnapshot.solPriceUsd.toFixed(2)}
+                  </strong>
+                </span>
+                <span className="text-zinc-700">·</span>
+                <span>
+                  Latency{" "}
+                  <strong className="font-mono font-medium text-foreground">
+                    {report.totalMeasuredLatencyMs}ms
+                  </strong>
+                </span>
+              </div>
+            )}
 
-            <div
-              className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded border font-medium ${
-                report?.mode === "LIVE_MAINNET_MODE"
-                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
-                  : "bg-amber-500/10 border-amber-500/30 text-amber-300"
-              }`}
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => {
+                triggerAdversarialIntercept("ADV_01_BASE_RAW_ETH_DRAIN");
+                workspaceRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+              }}
             >
-              <span>{report?.mode ?? "INITIALIZING"}</span>
-            </div>
+              <Skull className="h-3.5 w-3.5" weight="fill" />
+              <span>Prompt-Inject Agent</span>
+            </Button>
 
-            <button
-              type="button"
-              onClick={handleSimulateRogueAiHack}
-              className="px-3 py-1.5 rounded bg-rose-500/15 hover:bg-rose-500/25 active:scale-[0.98] border border-rose-500/40 text-rose-200 font-mono text-[11px] font-medium flex items-center gap-1.5 transition cursor-pointer shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]"
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fetchPipeline(mode, priceDropPct)}
+              disabled={loading}
             >
-              <WarningOctagon size={14} weight="duotone" className="text-rose-400" />
-              <span>Prompt-Inject the AI</span>
-            </button>
+              <ArrowClockwise
+                className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
+              />
+              <span className="hidden sm:inline">Refresh</span>
+            </Button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-[1440px] w-full mx-auto px-4 sm:px-6 py-6 space-y-6 flex-1">
-        {/* 2. Double-Bezel Non-Custodial Isolation Architecture Banner */}
-        <section className="rounded-2xl bg-white/[0.02] p-1.5 border border-white/[0.07] shadow-[0_20px_50px_rgba(0,0,0,0.6)]">
-          <div className="rounded-[calc(1rem-2px)] bg-[#090b0e] border border-emerald-500/20 p-4 sm:p-5 space-y-4 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)]">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-              <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-md bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center text-emerald-400 shrink-0 mt-0.5">
-                  <LockKey size={17} weight="duotone" />
-                </div>
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-emerald-400 font-semibold">
-                      PILLAR 1 // NON-CUSTODIAL COLLATERAL ISOLATION
-                    </span>
-                    <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-white/[0.04] border border-white/[0.08] text-zinc-300">
-                      ZERO PRIVATE KEY CUSTODY
-                    </span>
-                  </div>
-                  <p className="text-xs sm:text-sm text-zinc-200 leading-relaxed max-w-4xl">
-                    Your Kamino collateral stays in your personal Solana wallet
-                    and can never be withdrawn by Intercept. Your idle Base
-                    rescue reserve is governed by decentralized NEAR MPC (
-                    <code className="font-mono text-emerald-300">
-                      v1.signer
-                    </code>
-                    ) and byte-level smart contract guardrails—no single
-                    custodian and no raw private keys.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 font-mono text-[11px] shrink-0">
-                <a
-                  href={`https://solscan.io/account/${
-                    report?.policy.userKaminoObligationPubkey ??
-                    "C5dZVpvpA39SNLDkojsi98nRePRRy8ELhtxak8m2vMq"
-                  }`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-2.5 py-1.5 rounded bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.08] text-zinc-200 flex items-center gap-1.5 transition"
-                >
-                  <span>Live Obligation on Solscan</span>
-                  <ArrowSquareOut size={13} className="text-emerald-400" />
-                </a>
-              </div>
+      <main className="mx-auto w-full max-w-[1360px] flex-1 px-4 py-6 sm:px-6 space-y-6">
+        {/* Top Command Header + Scenario Controller */}
+        <section className="grid gap-6 lg:grid-cols-12 items-start">
+          <div className="lg:col-span-7 space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline">NEAR AI Cloud TEE</Badge>
+              <Badge variant="outline">v1.signer MPC (domain_id: 0 & 1)</Badge>
+              <Badge variant="outline">NEAR Intents 1-Click</Badge>
             </div>
 
-            {/* 3-Node Hairline Architecture Matrix */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-px bg-white/[0.07] rounded-lg overflow-hidden border border-white/[0.07] font-mono text-xs">
-              <div className="bg-[#0b0d11] p-3.5 space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-zinc-100 font-semibold text-[11px] tracking-wide">
-                    [01] USER SOLANA WALLET (EOA)
-                  </span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-300">
-                    OBLIGATION OWNER
-                  </span>
-                </div>
-                <p className="text-zinc-400 text-[11px] leading-relaxed">
-                  Holds SOL collateral on Kamino PDA (
-                  <span className="text-zinc-200">
-                    {report?.policy.userKaminoObligationPubkey.slice(0, 8) ??
-                      "C5dZVpvp"}
-                    ...
-                  </span>
-                  ).{" "}
-                  <span className="text-emerald-300">
-                    withdraw_obligation_collateral_v2
-                  </span>{" "}
-                  requires User EOA signature and is blocked on-chain.
-                </p>
-              </div>
+            <h1 className="text-2xl sm:text-3xl font-semibold tracking-[-0.025em] text-foreground">
+              Zero-Trust Cross-Chain Liquidation Defense
+            </h1>
 
-              <div className="bg-[#0b0d11] p-3.5 space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-zinc-100 font-semibold text-[11px] tracking-wide">
-                    [02] NEAR POLICY GUARDRAIL (RUST)
-                  </span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/[0.05] border border-white/[0.1] text-zinc-200">
-                    4-STATE TOCTOU
-                  </span>
-                </div>
-                <p className="text-zinc-400 text-[11px] leading-relaxed">
-                  Enforces{" "}
-                  <span className="text-zinc-200">
-                    InFlightLeg1 → ReadyForLeg2 → InFlightLeg2 → Completed
-                  </span>
-                  , Ed25519 TEE receipt, 24h cap, EIP-1559 RLP, and 5-ix Kamino
-                  V0 layout before calling{" "}
-                  <span className="text-emerald-300">v1.signer</span>.
-                </p>
-              </div>
+            <p className="text-sm text-muted-foreground leading-relaxed max-w-[65ch]">
+              Autonomous Kamino Lend protection that holds idle USDC yield on Base and
+              executes cryptographic 2-leg cross-chain rescues onto Solana only when Pyth
+              oracle telemetry breaches volatility-adjusted health thresholds.
+            </p>
 
-              <div className="bg-[#0b0d11] p-3.5 space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-zinc-100 font-semibold text-[11px] tracking-wide">
-                    [03] BASE MPC → 1-CLICK → SOLANA MPC
-                  </span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-300">
-                    250 TGas MPC
-                  </span>
+            {/* Non-Custodial Isolation Guarantee Banner (clean shadcn callout, preserves mandatory copy) */}
+            <div className="rounded-lg border border-border bg-card/80 p-3.5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-2.5">
+                  <LockKey className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" weight="duotone" />
+                  <div className="space-y-1 text-xs text-muted-foreground leading-relaxed">
+                    <div className="font-medium text-foreground flex items-center gap-2">
+                      <span>Zero-Trust Non-Custodial Isolation</span>
+                      <span className="font-mono text-[11px] text-emerald-400">
+                        guardrail.intercept-defi.near
+                      </span>
+                    </div>
+                    <p className="max-w-[65ch]">
+                      The user’s Solana wallet holds the Kamino obligation (SOL collateral +
+                      USDC debt) and{" "}
+                      <strong className="text-foreground font-medium">
+                        never shares its private key
+                      </strong>
+                      . Kamino Lend natively permits third-party debt repayment (
+                      <code className="font-mono text-foreground">
+                        repay_obligation_liquidity_v2
+                      </code>
+                      ) on behalf of any obligation owner without granting collateral
+                      withdrawal rights.
+                    </p>
+                    {showCustodyDetail && (
+                      <p className="pt-1 text-muted-foreground max-w-[65ch] emil-enter">
+                        Because the user’s Solana wallet is NOT controlled by NEAR MPC, and
+                        the NEAR Guardrail contract strictly pins byte offsets for Base
+                        ERC-20 transfers and Solana Kamino repay instructions, even a 100%
+                        prompt-injected AI agent cannot withdraw collateral or redirect USDC.
+                      </p>
+                    )}
+                  </div>
                 </div>
-                <p className="text-zinc-400 text-[11px] leading-relaxed">
-                  Leg 1{" "}
-                  <span className="text-zinc-200">domain_id:0 (Secp256k1)</span>{" "}
-                  transfers Base USDC to 1-Click solver → Leg 2{" "}
-                  <span className="text-zinc-200">
-                    domain_id:1 (Ed25519 Raw V0)
-                  </span>{" "}
-                  executes same-slot refresh + third-party Kamino repay.
-                </p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowCustodyDetail((prev) => !prev)}
+                  className="shrink-0 h-7 px-2 text-xs"
+                >
+                  <span>{showCustodyDetail ? "Less" : "Details"}</span>
+                  <CaretDown
+                    className={`h-3 w-3 transition-transform duration-150 ${
+                      showCustodyDetail ? "rotate-180" : ""
+                    }`}
+                  />
+                </Button>
               </div>
             </div>
           </div>
-        </section>
 
-        {/* Active Rogue AI Hack Revert Banner (if triggered) */}
-        {activeSimulationBanner && (
-          <section className="rounded-xl border border-rose-500/50 bg-rose-950/25 p-4 space-y-2.5 shadow-[0_12px_32px_rgba(244,63,94,0.12)]">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div className="flex items-center gap-2 text-rose-200 font-mono text-xs font-semibold">
-                <XCircle size={18} weight="fill" className="text-rose-400" />
-                <span>
-                  NEAR POLICY CONTRACT REVERTED ROGUE AI PAYLOAD [
-                  {activeSimulationBanner.attackId}] IN{" "}
-                  {activeSimulationBanner.verificationTimeUs} µs
+          {/* Right: Scenario & Shock Controller Card */}
+          <Card className="lg:col-span-5">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-medium">
+                  Market Regime & Oracle Shock
+                </CardTitle>
+                <span className="font-mono text-xs text-muted-foreground tabular-nums">
+                  {mode === "LIVE_MAINNET_MODE"
+                    ? "0% Shock (Unmodified Pyth)"
+                    : `-${priceDropPct}% Simulated SOL Drop`}
                 </span>
               </div>
-              <div className="flex items-center gap-2 font-mono text-xs">
-                <button
-                  type="button"
-                  onClick={handleSimulateRogueAiHack}
-                  className="px-2.5 py-1 rounded bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-200 cursor-pointer"
+              <CardDescription className="text-xs">
+                Test live unmodified Solana Mainnet feeds or inject a flash crash to
+                trigger the 2-leg MPC rescue pipeline.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* 4 Segmented Presets */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 rounded-lg bg-secondary p-1 border border-border/60">
+                {[
+                  {
+                    label: "Live Oracle",
+                    sub: "0% Shock",
+                    targetMode: "LIVE_MAINNET_MODE" as const,
+                    drop: 0,
+                  },
+                  {
+                    label: "-20% Pullback",
+                    sub: "Micro-Rescue",
+                    targetMode: "STRESS_TEST_MAINNET_MODE" as const,
+                    drop: 20,
+                  },
+                  {
+                    label: "-25% Crash",
+                    sub: "Cascade Rescue",
+                    targetMode: "STRESS_TEST_MAINNET_MODE" as const,
+                    drop: 25,
+                  },
+                  {
+                    label: "-35% Collapse",
+                    sub: "Deep Rescue",
+                    targetMode: "STRESS_TEST_MAINNET_MODE" as const,
+                    drop: 35,
+                  },
+                ].map((preset) => {
+                  const isActive =
+                    preset.targetMode === mode &&
+                    (preset.targetMode === "LIVE_MAINNET_MODE" ||
+                      preset.drop === priceDropPct);
+                  return (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      onClick={() =>
+                        handleSelectScenario(preset.targetMode, preset.drop || 25)
+                      }
+                      className={`emil-press flex flex-col items-start rounded-md px-2.5 py-1.5 text-left cursor-pointer ${
+                        isActive
+                          ? "bg-background text-foreground shadow-xs border border-border"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <span className="text-xs font-medium leading-tight">
+                        {preset.label}
+                      </span>
+                      <span className="text-[11px] text-muted-foreground tabular-nums">
+                        {preset.sub}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Fine-Grained Slider */}
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground flex items-center gap-1.5">
+                    <SlidersHorizontal className="h-3.5 w-3.5" />
+                    <span>Custom SOL Shock Magnitude</span>
+                  </span>
+                  <span className="font-mono font-medium text-foreground tabular-nums">
+                    {mode === "LIVE_MAINNET_MODE" ? "0%" : `-${priceDropPct}%`}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={5}
+                  max={40}
+                  step={1}
+                  value={priceDropPct}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setMode("STRESS_TEST_MAINNET_MODE");
+                    setPriceDropPct(val);
+                  }}
+                  aria-label="Simulated SOL price drop percentage"
+                  className="shadcn-slider w-full"
+                />
+                <div className="flex justify-between text-[11px] text-muted-foreground tabular-nums">
+                  <span>-5% (Mild)</span>
+                  <span>-15% (Trigger)</span>
+                  <span>-25% (Flash Crash)</span>
+                  <span>-40% (Severe)</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </section>
+
+        {/* 4-Card shadcn KPI Summary Row */}
+        <section
+          data-transitioning={isTransitioning}
+          className="emil-crossfade grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
+        >
+          {/* KPI 1: Health Factor & Liquidation Bar */}
+          <Card className="emil-card-hover">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <span className="text-sm font-medium text-muted-foreground">
+                Health Factor
+              </span>
+              <Badge
+                variant={
+                  !isRescueTriggered
+                    ? "emerald"
+                    : hfBefore < 1.0
+                    ? "destructive"
+                    : "amber"
+                }
+              >
+                {!isRescueTriggered
+                  ? "Healthy"
+                  : hfBefore < 1.0
+                  ? "Critical -> Rescued"
+                  : "Buffer Restored"}
+              </Badge>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-baseline gap-2 tabular-nums">
+                <span
+                  className={`text-2xl font-semibold tracking-[-0.02em] ${
+                    hfBefore < 1.05
+                      ? "text-red-400"
+                      : hfBefore < triggerHf
+                      ? "text-amber-400"
+                      : "text-foreground"
+                  }`}
                 >
-                  Next Attack Vector →
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveSimulationBanner(null)}
-                  className="px-2 py-1 text-zinc-400 hover:text-zinc-200 cursor-pointer"
-                >
-                  Dismiss
-                </button>
+                  {hfBefore.toFixed(4)}
+                </span>
+                {isRescueTriggered && (
+                  <>
+                    <CaretRight className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="text-2xl font-semibold tracking-[-0.02em] text-emerald-400">
+                      {hfAfter.toFixed(4)}
+                    </span>
+                  </>
+                )}
               </div>
-            </div>
-            <p className="text-xs text-zinc-300 font-mono">
-              <span className="text-zinc-400">Vector:</span>{" "}
-              {activeSimulationBanner.title} —{" "}
-              {activeSimulationBanner.attackerGoal}
-            </p>
-            <div className="font-mono text-xs bg-[#060709] border border-rose-500/30 rounded-lg p-3 text-rose-300 overflow-x-auto">
-              {activeSimulationBanner.contractRevertMessage}
-            </div>
-          </section>
-        )}
 
-        {errorMsg && (
-          <div className="rounded-xl border border-rose-500/40 bg-rose-950/20 p-4 text-xs font-mono text-rose-300">
-            Error: {errorMsg}
-          </div>
-        )}
-
-        {report &&
-          (report.pythTelemetry.fallbackReason ||
-            report.kaminoBefore.fallbackReason ||
-            report.oneClickQuote?.fallbackReason) && (
-            <div className="rounded-xl border border-amber-500/35 bg-amber-950/20 p-3.5 text-xs font-mono text-amber-200 space-y-1">
-              {report.pythTelemetry.fallbackReason && (
-                <div>
-                  ⚠️ FALLBACK (Pyth RPC): {report.pythTelemetry.fallbackReason}
-                </div>
-              )}
-              {report.kaminoBefore.fallbackReason && (
-                <div>
-                  ⚠️ FALLBACK (Kamino RPC):{" "}
-                  {report.kaminoBefore.fallbackReason}
-                </div>
-              )}
-              {report.oneClickQuote?.fallbackReason && (
-                <div>
-                  ⚠️ FALLBACK (1-Click Quote — Dry-Run Only):{" "}
-                  {report.oneClickQuote.fallbackReason}
-                </div>
-              )}
-            </div>
-          )}
-
-        {/* 3. Above-the-Fold 12-Column Institutional Command Deck */}
-        <section className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-          {/* Left Primary Panel (8 Columns): Scenario Controls + Visual HF Spectrum + Kamino Telemetry */}
-          <div className="lg:col-span-8 rounded-2xl bg-white/[0.02] p-1.5 border border-white/[0.07] flex flex-col">
-            <div className="rounded-[calc(1rem-2px)] bg-[#090b0e] border border-white/[0.06] p-5 flex-1 flex flex-col justify-between space-y-5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)]">
-              {/* Header + Scenario Selector Buttons */}
-              <div className="space-y-3 pb-4 border-b border-white/[0.07]">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div>
-                    <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-400">
-                      SOLANA MAINNET // KAMINO LEND OBLIGATION TELEMETRY
-                    </div>
-                    <h1 className="text-lg sm:text-xl font-semibold tracking-tight text-zinc-100 mt-0.5">
-                      Dynamic De-Risking &amp; Liquidation Spectrum
-                    </h1>
-                  </div>
-                  <div className="font-mono text-xs text-zinc-400 flex items-center gap-2 bg-white/[0.02] border border-white/[0.07] px-3 py-1.5 rounded-md">
-                    <Timer size={15} className="text-emerald-400" />
-                    <span>Pipeline Stopwatch:</span>
-                    <strong className="text-zinc-100">
-                      {report ? `${report.totalMeasuredLatencyMs} ms` : "..."}
-                    </strong>
-                  </div>
-                </div>
-
-                {/* 4 Scenario Preset Buttons */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2 pt-1">
-                  <button
-                    type="button"
-                    disabled={isRunning}
-                    onClick={() => {
-                      setShockSliderPct(0);
-                      void runPipeline({
-                        mode: "LIVE_MAINNET_MODE",
-                        stressShockPct: 0,
-                        presetId: "LIVE_0",
-                      });
-                    }}
-                    className={`px-3 py-2 rounded-lg font-mono text-[11px] text-left border transition cursor-pointer disabled:opacity-50 flex items-center justify-between ${
-                      activePreset === "LIVE_0"
-                        ? "bg-emerald-500/15 border-emerald-500/50 text-emerald-200 font-semibold"
-                        : "bg-white/[0.02] hover:bg-white/[0.05] border-white/[0.08] text-zinc-300"
-                    }`}
-                  >
-                    <span>Live Mainnet (0%)</span>
-                    <Pulse size={14} className="text-emerald-400 shrink-0" />
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={isRunning}
-                    onClick={() => {
-                      setShockSliderPct(-21);
-                      void runPipeline({
-                        mode: "STRESS_TEST_MAINNET_MODE",
-                        stressShockPct: -21,
-                        presetId: "MILD_MINUS_21",
-                      });
-                    }}
-                    className={`px-3 py-2 rounded-lg font-mono text-[11px] text-left border transition cursor-pointer disabled:opacity-50 flex items-center justify-between ${
-                      activePreset === "MILD_MINUS_21"
-                        ? "bg-amber-500/15 border-amber-500/50 text-amber-200 font-semibold"
-                        : "bg-white/[0.02] hover:bg-white/[0.05] border-white/[0.08] text-zinc-300"
-                    }`}
-                  >
-                    <span>Mild Shock (-21% SOL)</span>
-                    <SlidersHorizontal
-                      size={14}
-                      className="text-amber-400 shrink-0"
-                    />
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={isRunning}
-                    onClick={() => {
-                      setShockSliderPct(-25);
-                      void runPipeline({
-                        mode: "STRESS_TEST_MAINNET_MODE",
-                        stressShockPct: -25,
-                        presetId: "CASCADE_MINUS_25",
-                      });
-                    }}
-                    className={`px-3 py-2 rounded-lg font-mono text-[11px] text-left border transition cursor-pointer disabled:opacity-50 flex items-center justify-between ${
-                      activePreset === "CASCADE_MINUS_25"
-                        ? "bg-emerald-500 text-zinc-950 border-emerald-400 font-semibold"
-                        : "bg-white/[0.02] hover:bg-white/[0.05] border-white/[0.08] text-zinc-300"
-                    }`}
-                  >
-                    <span>Cascade Crash (-25%)</span>
-                    <Lightning size={14} weight="fill" className="shrink-0" />
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={isRunning}
-                    onClick={() => {
-                      setShockSliderPct(0);
-                      void runPipeline({
-                        mode: "STRESS_TEST_MAINNET_MODE",
-                        stressShockPct: 0,
-                        minTriggerHfBpsOverride: 14_800,
-                        presetId: "OVERRIDE_148",
-                      });
-                    }}
-                    className={`px-3 py-2 rounded-lg font-mono text-[11px] text-left border transition cursor-pointer disabled:opacity-50 flex items-center justify-between ${
-                      activePreset === "OVERRIDE_148"
-                        ? "bg-emerald-500/15 border-emerald-500/50 text-emerald-200 font-semibold"
-                        : "bg-white/[0.02] hover:bg-white/[0.05] border-white/[0.08] text-zinc-300"
-                    }`}
-                  >
-                    <span>Override (Min HF 1.48)</span>
-                    <Play size={13} className="text-emerald-400 shrink-0" />
-                  </button>
-                </div>
-
-                {/* Custom Shock Scrubber */}
-                <div className="flex flex-col sm:flex-row sm:items-center gap-3 pt-1">
-                  <label
-                    htmlFor="sol-shock-slider"
-                    className="font-mono text-[11px] text-zinc-400 whitespace-nowrap"
-                  >
-                    Custom SOL Price Shock:
-                  </label>
-                  <input
-                    id="sol-shock-slider"
-                    type="range"
-                    min={-40}
-                    max={0}
-                    step={1}
-                    value={shockSliderPct}
-                    onChange={(e) =>
-                      setShockSliderPct(Number(e.target.value))
-                    }
-                    className="w-full accent-emerald-400 cursor-pointer h-1.5 bg-zinc-800 rounded-lg"
+              {/* Clean Spectrum Bar */}
+              <div className="space-y-1.5">
+                <div className="relative h-2 w-full rounded-full bg-secondary overflow-hidden">
+                  <div
+                    className="absolute inset-y-0 left-0 bg-red-500/35"
+                    style={{ width: `${hfToPercent(1.0)}%` }}
                   />
-                  <span className="font-mono text-xs font-semibold text-emerald-400 w-12 text-right">
-                    {shockSliderPct}%
-                  </span>
-                  <button
-                    type="button"
-                    disabled={isRunning}
-                    onClick={() =>
-                      runPipeline({
-                        mode:
-                          shockSliderPct === 0
-                            ? "LIVE_MAINNET_MODE"
-                            : "STRESS_TEST_MAINNET_MODE",
-                        stressShockPct: shockSliderPct,
-                        presetId: "CUSTOM",
-                      })
-                    }
-                    className="px-3 py-1 rounded bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.1] font-mono text-[11px] text-zinc-200 cursor-pointer disabled:opacity-50"
-                  >
-                    Execute Shock
-                  </button>
-                </div>
-              </div>
-
-              {/* Primary Quantitative Readout Row (4 Columns) */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-white/[0.07] rounded-xl overflow-hidden border border-white/[0.07]">
-                <div className="bg-[#0b0d11] p-4">
-                  <div className="font-mono text-[10px] uppercase tracking-wider text-zinc-400">
-                    Observed Health Factor
-                  </div>
                   <div
-                    className={`font-mono text-2xl sm:text-3xl font-bold mt-1 ${
-                      isBreached ? "text-rose-400" : "text-emerald-400"
-                    }`}
-                  >
-                    {report ? observedHf.toFixed(4) : "..."}
-                  </div>
-                  <div className="font-mono text-[11px] text-zinc-400 mt-1">
-                    Trigger Floor: {triggerHf.toFixed(4)}
-                  </div>
-                </div>
-
-                <div className="bg-[#0b0d11] p-4">
-                  <div className="font-mono text-[10px] uppercase tracking-wider text-zinc-400">
-                    Post-Rescue HF
-                  </div>
-                  <div className="font-mono text-2xl sm:text-3xl font-bold text-emerald-400 mt-1">
-                    {report ? postRescueHf.toFixed(4) : "..."}
-                  </div>
-                  <div className="font-mono text-[11px] text-zinc-400 mt-1">
-                    Target HF:{" "}
-                    {report
-                      ? (report.riskEvaluation.targetHfBps / 10_000).toFixed(2)
-                      : "1.45"}
-                  </div>
-                </div>
-
-                <div className="bg-[#0b0d11] p-4">
-                  <div className="font-mono text-[10px] uppercase tracking-wider text-zinc-400">
-                    Optimal USDC Repay
-                  </div>
-                  <div className="font-mono text-2xl sm:text-3xl font-bold text-zinc-100 mt-1">
-                    ${report?.riskEvaluation.repayAmountUsdcFormatted ?? "0.00"}
-                  </div>
-                  <div className="font-mono text-[11px] text-zinc-400 mt-1 truncate">
-                    {report?.riskEvaluation.repayAmountUsdcMicro ?? "0"} µUSDC
-                  </div>
-                </div>
-
-                <div className="bg-[#0b0d11] p-4">
-                  <div className="font-mono text-[10px] uppercase tracking-wider text-zinc-400">
-                    Penalty Avoided
-                  </div>
-                  <div className="font-mono text-2xl sm:text-3xl font-bold text-emerald-300 mt-1">
-                    {report
-                      ? `${(
-                          report.riskEvaluation
-                            .estimatedKaminoLiquidationPenaltyBps / 100
-                        ).toFixed(2)}%`
-                      : "..."}
-                  </div>
-                  <div className="font-mono text-[11px] text-zinc-400 mt-1">
-                    vs.{" "}
-                    {report
-                      ? (
-                          report.riskEvaluation.capitalOpportunityCostBps / 100
-                        ).toFixed(2)
-                      : "0.21"}
-                    % solver cost
-                  </div>
-                </div>
-              </div>
-
-              {/* Visual Health-Factor Liquidation Spectrum Bar */}
-              <div className="rounded-xl bg-[#060709] border border-white/[0.07] p-4 space-y-3">
-                <div className="flex items-center justify-between font-mono text-[11px]">
-                  <span className="text-zinc-300 font-medium">
-                    LIQUIDATION SPECTRUM // PRE-RESCUE vs. POST-RESCUE TRAJECTORY
-                  </span>
-                  <span className="text-emerald-400">
-                    {isBreached
-                      ? `Δ +${(postRescueHf - observedHf).toFixed(4)} HF Restored`
-                      : "Position Above Trigger Threshold"}
-                  </span>
-                </div>
-
-                <div className="relative h-8 rounded-lg bg-zinc-950 border border-white/[0.08] overflow-hidden">
-                  {/* Danger Zone (< 1.00 HF) */}
-                  <div
-                    className="absolute inset-y-0 left-0 bg-rose-500/20 border-r border-rose-500/50"
-                    style={{ width: `${hfToSpectrumPct(1.0)}%` }}
-                  />
-                  {/* Warning Zone (1.00 -> Trigger HF) */}
-                  <div
-                    className="absolute inset-y-0 bg-amber-500/10 border-r border-amber-500/40"
+                    className="absolute inset-y-0 bg-amber-500/30"
                     style={{
-                      left: `${hfToSpectrumPct(1.0)}%`,
-                      width: `${
-                        hfToSpectrumPct(triggerHf) - hfToSpectrumPct(1.0)
-                      }%`,
+                      left: `${hfToPercent(1.0)}%`,
+                      width: `${hfToPercent(triggerHf) - hfToPercent(1.0)}%`,
                     }}
                   />
-                  {/* Safe Zone (> Trigger HF) */}
                   <div
-                    className="absolute inset-y-0 right-0 bg-emerald-500/[0.06]"
-                    style={{ left: `${hfToSpectrumPct(triggerHf)}%` }}
+                    className="absolute inset-y-0 right-0 bg-emerald-500/25"
+                    style={{ left: `${hfToPercent(triggerHf)}%` }}
                   />
-
-                  {/* Bridge bar connecting Observed HF -> Post-Rescue HF when breached */}
-                  {isBreached && postRescueHf > observedHf && (
+                  {/* Pre-Rescue Marker */}
+                  <div
+                    className="absolute top-0 bottom-0 w-1 rounded-full bg-amber-400 transition-[left] duration-200"
+                    style={{ left: `${hfToPercent(hfBefore)}%` }}
+                    title={`Observed HF: ${hfBefore.toFixed(4)}`}
+                  />
+                  {/* Post-Rescue Marker */}
+                  {isRescueTriggered && (
                     <div
-                      className="absolute top-1/2 -translate-y-1/2 h-2 bg-emerald-400/35 rounded-full transition-all duration-500"
-                      style={{
-                        left: `${hfToSpectrumPct(observedHf)}%`,
-                        width: `${
-                          hfToSpectrumPct(postRescueHf) -
-                          hfToSpectrumPct(observedHf)
-                        }%`,
-                      }}
+                      className="absolute top-0 bottom-0 w-1 rounded-full bg-emerald-400 transition-[left] duration-200"
+                      style={{ left: `${hfToPercent(hfAfter)}%` }}
+                      title={`Post-Rescue HF: ${hfAfter.toFixed(4)}`}
                     />
                   )}
+                </div>
+                <div className="flex justify-between text-[11px] text-muted-foreground tabular-nums">
+                  <span>1.00 Liq</span>
+                  <span>{triggerHf.toFixed(2)} Trigger</span>
+                  <span>1.45 Target</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
-                  {/* Observed HF Marker */}
-                  <div
-                    className="absolute inset-y-0 flex items-center transition-all duration-500"
-                    style={{ left: `${hfToSpectrumPct(observedHf)}%` }}
-                  >
-                    <div
-                      className={`w-3 h-3 -ml-1.5 rounded-full border-2 border-zinc-950 shadow ${
-                        isBreached ? "bg-rose-400" : "bg-emerald-400"
-                      }`}
-                      title={`Observed HF: ${observedHf.toFixed(4)}`}
-                    />
-                  </div>
+          {/* KPI 2: Kamino Obligation */}
+          <Card className="emil-card-hover">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <span className="text-sm font-medium text-muted-foreground">
+                Kamino Obligation
+              </span>
+              {report && (
+                <CopyChip
+                  value={report.positionBefore.obligationAddress}
+                  display={`${report.positionBefore.obligationAddress.slice(
+                    0,
+                    5
+                  )}...${report.positionBefore.obligationAddress.slice(-4)}`}
+                  label="Kamino Obligation Address"
+                />
+              )}
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div className="flex items-baseline justify-between tabular-nums">
+                <div>
+                  <span className="text-2xl font-semibold tracking-[-0.02em] text-foreground">
+                    ${report ? report.positionBefore.collateralValueUsd.toFixed(2) : "16.40"}
+                  </span>
+                  <span className="ml-1.5 text-xs text-muted-foreground">
+                    ({report ? report.positionBefore.depositedSol.toFixed(4) : "0.1847"} SOL)
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center justify-between text-xs text-muted-foreground tabular-nums pt-1 border-t border-border/60">
+                <span>
+                  Debt:{" "}
+                  <strong className="text-foreground font-medium">
+                    ${report ? report.positionBefore.borrowedUsdc.toFixed(2) : "9.23"} USDC
+                  </strong>
+                </span>
+                <span>
+                  After:{" "}
+                  <strong className="text-emerald-400 font-medium">
+                    $
+                    {report
+                      ? report.positionAfterRescue.remainingDebtUsdc.toFixed(2)
+                      : "9.23"}{" "}
+                    USDC
+                  </strong>
+                </span>
+              </div>
+            </CardContent>
+          </Card>
 
-                  {/* Post-Rescue HF Marker */}
-                  {isBreached && (
-                    <div
-                      className="absolute inset-y-0 flex items-center transition-all duration-500"
-                      style={{ left: `${hfToSpectrumPct(postRescueHf)}%` }}
-                    >
-                      <div
-                        className="w-3.5 h-3.5 -ml-1.5 rounded-full bg-emerald-400 border-2 border-zinc-950 shadow-[0_0_12px_rgba(16,185,129,0.8)]"
-                        title={`Post-Rescue HF: ${postRescueHf.toFixed(4)}`}
+          {/* KPI 3: Pyth SOL/USD Push Oracle */}
+          <Card className="emil-card-hover">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <span className="text-sm font-medium text-muted-foreground">
+                Pyth SOL/USD Oracle
+              </span>
+              <Badge variant="outline">Push Feed</Badge>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div className="flex items-baseline gap-2 tabular-nums">
+                <span className="text-2xl font-semibold tracking-[-0.02em] text-foreground">
+                  ${report ? report.oracleSnapshot.solPriceUsd.toFixed(2) : "88.76"}
+                </span>
+                <span className="text-xs font-mono text-muted-foreground">
+                  ±${report ? report.oracleSnapshot.confidenceUsd.toFixed(4) : "0.0302"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs text-muted-foreground tabular-nums pt-1 border-t border-border/60">
+                <span>
+                  Vol:{" "}
+                  <strong className="text-foreground font-medium">
+                    {report ? report.oracleSnapshot.realizedVolatilityBps : 3336} bps
+                  </strong>
+                </span>
+                <span>
+                  Regime:{" "}
+                  <strong className="text-foreground font-medium">
+                    {report?.decision.regime ?? "HOLD"}
+                  </strong>
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* KPI 4: Cross-Chain Rescue Settlement */}
+          <Card className="emil-card-hover">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <span className="text-sm font-medium text-muted-foreground">
+                2-Leg MPC Settlement
+              </span>
+              <Badge variant={isRescueTriggered ? "emerald" : "secondary"}>
+                {isRescueTriggered ? "Rescue Active" : "Standby (Hold)"}
+              </Badge>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div className="flex items-baseline gap-2 tabular-nums">
+                <span className="text-2xl font-semibold tracking-[-0.02em] text-foreground">
+                  $
+                  {report
+                    ? report.decision.repayAmountUsdc.toFixed(4)
+                    : "0.0000"}{" "}
+                </span>
+                <span className="text-xs text-muted-foreground">USDC</span>
+              </div>
+              <div className="flex items-center justify-between text-xs text-muted-foreground tabular-nums pt-1 border-t border-border/60">
+                <span>Base 8453 → Solana</span>
+                <span>
+                  Cap:{" "}
+                  <strong className="text-foreground font-medium">
+                    ${report?.policy.maxSingleRescueUsdc ?? 2500}/tx
+                  </strong>
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+        </section>
+
+        {/* Main Tabbed Workspace (shadcn/ui Tabs + Force-Mounted Panels for Zero-Latency & Full Auditability) */}
+        <div ref={workspaceRef} className="pt-1">
+          <Tabs
+            value={activeTab}
+            onValueChange={(val) => triggerSmoothTransition(() => setActiveTab(val))}
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-3">
+              <TabsList>
+                <TabsTrigger value="overview">
+                  <Pulse className="h-3.5 w-3.5" />
+                  <span>Rescue Pipeline</span>
+                </TabsTrigger>
+                <TabsTrigger value="inspector">
+                  <Code className="h-3.5 w-3.5" />
+                  <span>Byte Inspector</span>
+                </TabsTrigger>
+                <TabsTrigger value="redteam">
+                  <Skull className="h-3.5 w-3.5 text-red-400" />
+                  <span>Red-Team Simulator (11/11)</span>
+                </TabsTrigger>
+                <TabsTrigger value="backtest">
+                  <ChartLineUp className="h-3.5 w-3.5" />
+                  <span>Historical Backtest</span>
+                </TabsTrigger>
+                <TabsTrigger value="vaults">
+                  <TerminalWindow className="h-3.5 w-3.5" />
+                  <span>Mainnet Vaults & Pre-Flight</span>
+                </TabsTrigger>
+                <TabsTrigger value="all">
+                  <span>All Sections</span>
+                </TabsTrigger>
+              </TabsList>
+
+              {report && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span>TEE Signer:</span>
+                  <CopyChip
+                    value={report.teeAttestation.enclavePublicKeyHex}
+                    display={`ed25519:${report.teeAttestation.enclavePublicKeyHex.slice(
+                      0,
+                      10
+                    )}...`}
+                    label="TEE Enclave Public Key"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* =====================================================================
+                TAB 1: OVERVIEW & 5-STAGE PIPELINE
+               ===================================================================== */}
+            <TabsContent value="overview" className="space-y-6">
+              {/* 3-Domain Non-Custodial Topology Cards */}
+              <div className="grid gap-4 md:grid-cols-3">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-sm font-medium">
+                        1. User Solana Wallet
+                      </CardTitle>
+                      <Badge variant="outline">Isolated Owner</Badge>
+                    </div>
+                    <CardDescription className="text-xs">
+                      Holds Kamino obligation collateral & debt; private key is never
+                      shared with NEAR or the AI agent.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="pt-2 space-y-2 text-xs">
+                    <div className="flex items-center justify-between py-1 border-t border-border/60">
+                      <span className="text-muted-foreground">Kamino Obligation</span>
+                      {report && (
+                        <CopyChip
+                          value={report.policy.userKaminoObligationPubkey}
+                          display={`${report.policy.userKaminoObligationPubkey.slice(
+                            0,
+                            6
+                          )}...${report.policy.userKaminoObligationPubkey.slice(-4)}`}
+                        />
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between py-1 border-t border-border/60">
+                      <span className="text-muted-foreground">Withdrawal Authority</span>
+                      <span className="font-medium text-emerald-400">
+                        None (Repay-Only)
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-sm font-medium">
+                        2. NEAR Policy Guardrail
+                      </CardTitle>
+                      <Badge variant="emerald">Deterministic Rust</Badge>
+                    </div>
+                    <CardDescription className="text-xs">
+                      Verifies TEE Ed25519 receipts and inspects raw EIP-1559 & Solana
+                      V0 bytes before invoking <code className="font-mono">v1.signer</code>.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="pt-2 space-y-2 text-xs">
+                    <div className="flex items-center justify-between py-1 border-t border-border/60">
+                      <span className="text-muted-foreground">Contract ID</span>
+                      <CopyChip
+                        value={
+                          report?.policy.nearContractId ??
+                          "guardrail.intercept-defi.near"
+                        }
                       />
                     </div>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-4 font-mono text-[10px] text-zinc-400">
-                  <div>
-                    <span className="text-rose-400 font-semibold">1.0000</span>{" "}
-                    Liquidation Cliff
-                  </div>
-                  <div>
-                    <span className="text-amber-300 font-semibold">
-                      {triggerHf.toFixed(4)}
-                    </span>{" "}
-                    Policy Trigger
-                  </div>
-                  <div>
-                    <span className="text-zinc-200 font-semibold">1.2000</span>{" "}
-                    Micro Buffer
-                  </div>
-                  <div className="text-right">
-                    <span className="text-emerald-400 font-semibold">
-                      1.4500
-                    </span>{" "}
-                    Cascade Target
-                  </div>
-                </div>
-              </div>
-
-              {/* 6-Cell Hairline Kamino On-Chain Position Details */}
-              {report && (
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-px bg-white/[0.07] rounded-xl overflow-hidden border border-white/[0.07] font-mono text-xs">
-                  <div className="bg-[#0b0d11] p-3">
-                    <div className="text-[10px] text-zinc-500">
-                      KAMINO OBLIGATION PDA
-                    </div>
-                    <div className="text-zinc-200 mt-0.5 flex items-center justify-between gap-1">
-                      <span className="truncate">
-                        {report.policy.userKaminoObligationPubkey.slice(0, 10)}
-                        ...
-                        {report.policy.userKaminoObligationPubkey.slice(-6)}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          copyToClipboard(
-                            "obligation",
-                            report.policy.userKaminoObligationPubkey
-                          )
-                        }
-                        className="text-zinc-400 hover:text-zinc-200 cursor-pointer shrink-0"
-                        title="Copy Obligation Pubkey"
-                      >
-                        {copiedId === "obligation" ? (
-                          <Check size={13} className="text-emerald-400" />
-                        ) : (
-                          <Copy size={13} />
-                        )}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="bg-[#0b0d11] p-3">
-                    <div className="text-[10px] text-zinc-500">
-                      USER SOLANA EOA (OWNER)
-                    </div>
-                    <div className="text-zinc-200 mt-0.5 truncate">
-                      {report.policy.userSolanaEoaPubkey.slice(0, 10)}...
-                      {report.policy.userSolanaEoaPubkey.slice(-6)}
-                    </div>
-                  </div>
-
-                  <div className="bg-[#0b0d11] p-3">
-                    <div className="text-[10px] text-zinc-500">
-                      TELEMETRY SOURCE
-                    </div>
-                    <div className="text-emerald-300 mt-0.5 truncate">
-                      {report.kaminoBefore.source}
-                    </div>
-                  </div>
-
-                  <div className="bg-[#0b0d11] p-3">
-                    <div className="text-[10px] text-zinc-500">
-                      DEPOSITED SOL COLLATERAL
-                    </div>
-                    <div className="text-zinc-100 mt-0.5">
-                      {report.kaminoBefore.depositedSol} SOL ($
-                      {report.kaminoBefore.collateralValueUsd.toFixed(2)})
-                    </div>
-                  </div>
-
-                  <div className="bg-[#0b0d11] p-3">
-                    <div className="text-[10px] text-zinc-500">
-                      BORROWED DEBT (BEFORE → AFTER)
-                    </div>
-                    <div className="text-emerald-300 mt-0.5">
-                      {report.kaminoBefore.borrowedUsdc.toFixed(2)} →{" "}
-                      {report.kaminoAfter.borrowedUsdc.toFixed(2)} USDC
-                    </div>
-                  </div>
-
-                  <div className="bg-[#0b0d11] p-3">
-                    <div className="text-[10px] text-zinc-500">
-                      SOL LIQUIDATION PRICE (75% LTV)
-                    </div>
-                    <div className="text-amber-300 mt-0.5">
-                      ${report.kaminoBefore.liquidationSolPriceUsd.toFixed(2)}{" "}
-                      ({report.kaminoBefore.distanceToLiquidationPct.toFixed(1)}%
-                      buffer)
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Right Telemetry Stack (4 Columns): Pyth Oracle + NEAR AI Cloud TEE Enclave */}
-          <div className="lg:col-span-4 flex flex-col gap-6">
-            {/* Card A: Pyth Solana Mainnet Push Oracle */}
-            <div className="rounded-2xl bg-white/[0.02] p-1.5 border border-white/[0.07]">
-              <div className="rounded-[calc(1rem-2px)] bg-[#090b0e] border border-white/[0.06] p-4 space-y-3.5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)]">
-                <div className="flex items-center justify-between">
-                  <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-400">
-                    PYTH PUSH ORACLE // SOL/USD
-                  </span>
-                  {report && (
-                    <a
-                      href={`https://solscan.io/account/${report.pythTelemetry.solanaAccountPubkey}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="font-mono text-[11px] text-emerald-400 hover:underline flex items-center gap-1"
-                    >
-                      <span>PriceUpdateV2</span>
-                      <ArrowSquareOut size={12} />
-                    </a>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-2 gap-px bg-white/[0.07] rounded-lg overflow-hidden border border-white/[0.07] font-mono">
-                  <div className="bg-[#0b0d11] p-3">
-                    <div className="text-[10px] text-zinc-400">
-                      Effective SOL/USD
-                    </div>
-                    <div className="text-xl font-bold text-zinc-100 mt-0.5">
-                      $
-                      {report
-                        ? report.pythTelemetry.effectiveSolUsd.toFixed(2)
-                        : "..."}
-                    </div>
-                    <div className="text-[10px] text-zinc-400 mt-0.5">
-                      Spot $
-                      {report?.pythTelemetry.rawSpotSolUsd.toFixed(2) ?? "..."} (
-                      {report?.pythTelemetry.stressShockPctApplied ?? 0}%)
-                    </div>
-                  </div>
-
-                  <div className="bg-[#0b0d11] p-3">
-                    <div className="text-[10px] text-zinc-400">
-                      Realized Volatility (σ)
-                    </div>
-                    <div className="text-xl font-bold text-amber-300 mt-0.5">
-                      {report
-                        ? `${(
-                            report.pythTelemetry.realizedVolatilityBps / 100
-                          ).toFixed(2)}%`
-                        : "..."}
-                    </div>
-                    <div className="text-[10px] text-zinc-400 mt-0.5">
-                      {report?.pythTelemetry.realizedVolatilityBps ?? 0} bps ·
-                      Vel {report?.pythTelemetry.emaVelocityBps ?? 0} bps
-                    </div>
-                  </div>
-                </div>
-
-                {report && (
-                  <div className="space-y-1.5 font-mono text-[11px] pt-1">
-                    <div className="flex justify-between">
-                      <span className="text-zinc-400">Oracle Source:</span>
-                      <span className="text-emerald-300">
-                        {report.pythTelemetry.source}
+                    <div className="flex items-center justify-between py-1 border-t border-border/60">
+                      <span className="text-muted-foreground">TEE Hardware Quote</span>
+                      <span className="font-medium text-foreground">
+                        {report?.teeAttestation.model ?? "deepseek-ai/DeepSeek-V3.1"}
                       </span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-zinc-400">
-                        EMA Price ± Confidence:
-                      </span>
-                      <span className="text-zinc-200">
-                        ${report.pythTelemetry.emaSolUsd.toFixed(2)} ± $
-                        {report.pythTelemetry.confidenceUsd.toFixed(4)}
-                      </span>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-sm font-medium">
+                        3. Cross-Chain MPC & 1-Click
+                      </CardTitle>
+                      <Badge variant="secondary">Base → Solana</Badge>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-zinc-400">
-                        Proof Hash (SHA-256):
-                      </span>
-                      <span className="text-zinc-300">
-                        {report.pythTelemetry.priceProofHash.slice(0, 14)}... (
-                        {report.pythTelemetry.fetchLatencyMs} ms)
-                      </span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Card B: NEAR AI Cloud Confidential TEE Risk Engine */}
-            <div className="rounded-2xl bg-white/[0.02] p-1.5 border border-white/[0.07] flex-1 flex flex-col">
-              <div className="rounded-[calc(1rem-2px)] bg-[#090b0e] border border-white/[0.06] p-4 flex-1 flex flex-col justify-between space-y-3.5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)]">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-400 flex items-center gap-1.5">
-                    <Cpu size={14} className="text-emerald-400" />
-                    NEAR AI CLOUD // TEE RISK ENGINE
-                  </span>
-                  {report && (
-                    <span
-                      className={`font-mono text-[10px] px-2 py-0.5 rounded border font-semibold ${regimeBadgeStyle(
-                        report.riskEvaluation.regime
-                      )}`}
-                    >
-                      {report.riskEvaluation.regime}
-                    </span>
-                  )}
-                </div>
-
-                <div className="font-mono text-[11px] text-zinc-300 leading-relaxed bg-[#060709] border border-white/[0.07] rounded-lg p-3">
-                  {report?.riskEvaluation.reasoningSummary ??
-                    "Evaluating live Pyth volatility and Kamino obligation health..."}
-                </div>
-
-                {report && (
-                  <div className="space-y-1.5 font-mono text-[11px] pt-1 border-t border-white/[0.07]">
-                    <div className="flex justify-between">
-                      <span className="text-zinc-400">Enclave Model:</span>
-                      <span className="text-emerald-300">
-                        {report.nearAiCloudAttestation.model}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-zinc-400">TEE Hardware:</span>
-                      <span className="text-zinc-200">
-                        {
-                          report.nearAiCloudAttestation.hardwareAttestation
-                            .gpuArchitecture
-                        }
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-zinc-400">
-                        TDX + NRAS Chain of Trust:
-                      </span>
-                      <span className="text-emerald-400 font-semibold">
-                        {report.nearAiCloudAttestation.verifiedChainOfTrust
-                          ? "VERIFIED (Ed25519)"
-                          : "UNVERIFIED"}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-zinc-400">
-                        Scoped FunctionCall Key:
-                      </span>
-                      <span className="text-zinc-200">
-                        2 Allowed / 3 Admin Blocked
-                      </span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* 4. Segmented Deep-Audit Workspace Bar */}
-        <nav
-          aria-label="Audit Workspace Views"
-          className="rounded-xl bg-[#090b0e] border border-white/[0.08] p-1.5 flex flex-wrap items-center justify-between gap-2"
-        >
-          <div className="flex flex-wrap items-center gap-1.5">
-            {(
-              [
-                {
-                  id: "ALL",
-                  label: "ALL PANELS (FULL AUDIT VIEW)",
-                  icon: <TerminalWindow size={14} />,
-                },
-                {
-                  id: "EXECUTION_AND_BYTES",
-                  label: "[01] 5-STAGE PIPELINE & BYTE INSPECTOR",
-                  icon: <Code size={14} />,
-                },
-                {
-                  id: "RED_TEAM_SIMULATOR",
-                  label: `[02] RED-TEAM SIMULATOR (${attacks.length}/${attacks.length} BLOCKED)`,
-                  icon: <WarningOctagon size={14} />,
-                },
-                {
-                  id: "BACKTEST_LAB",
-                  label: "[03] HISTORICAL BACKTEST LAB (100% SURVIVAL)",
-                  icon: <ChartBar size={14} />,
-                },
-                {
-                  id: "MPC_PREFLIGHT",
-                  label: "[04] MPC VAULTS & PRE-FLIGHT",
-                  icon: <Vault size={14} />,
-                },
-              ] as const
-            ).map((tab) => {
-              const active = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`px-3 py-1.5 rounded-lg font-mono text-[11px] flex items-center gap-1.5 transition cursor-pointer ${
-                    active
-                      ? "bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 font-semibold"
-                      : "text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.03] border border-transparent"
-                  }`}
-                >
-                  {tab.icon}
-                  <span>{tab.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </nav>
-
-        {/* SECTION [01]: 5-Stage Cross-Chain Execution Pipeline & Annotated Byte-Level Guardrail Inspector */}
-        {showSection("EXECUTION_AND_BYTES") && report && (
-          <div className="space-y-6">
-            {/* 5-Stage Cross-Chain Execution Trace Table */}
-            <section className="rounded-2xl bg-white/[0.02] p-1.5 border border-white/[0.07]">
-              <div className="rounded-[calc(1rem-2px)] bg-[#090b0e] border border-white/[0.06] p-5 space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div>
-                    <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-emerald-400">
-                      CROSS-CHAIN EXECUTION TRACE // 4-STATE ASYNC TOCTOU MACHINE
-                    </div>
-                    <h2 className="text-base font-semibold text-zinc-100 flex items-center gap-2 mt-0.5">
-                      <ArrowsLeftRight size={17} className="text-emerald-400" />
-                      5-Stage Rescue Telemetry (Base 8453 → NEAR Intents 1-Click
-                      → Solana Kamino Lend)
-                    </h2>
-                  </div>
-                  <span className="font-mono text-xs px-3 py-1 rounded bg-[#060709] border border-white/[0.08] text-emerald-300">
-                    Total Measured Time: {report.totalMeasuredLatencyMs} ms
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 gap-2.5">
-                  {report.stages.map((stage) => {
-                    const pctOfTotal = clampPct(
-                      Math.round(
-                        (stage.measuredLatencyMs /
-                          Math.max(1, report.totalMeasuredLatencyMs)) *
-                          100
-                      ),
-                      4,
-                      100
-                    );
-                    return (
-                      <div
-                        key={stage.stageId}
-                        className="rounded-xl border border-white/[0.07] bg-[#0b0d11] p-3.5 space-y-2"
-                      >
-                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
-                          <div className="flex items-start gap-3">
-                            <span
-                              className={`w-6 h-6 rounded-md font-mono text-xs flex items-center justify-center shrink-0 mt-0.5 ${
-                                stage.status === "COMPLETED"
-                                  ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/40"
-                                  : "bg-zinc-900 text-zinc-400 border border-zinc-800"
-                              }`}
-                            >
-                              0{stage.stageIndex}
-                            </span>
-                            <div>
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-sm font-medium text-zinc-100">
-                                  {stage.label}
-                                </span>
-                                <span
-                                  className={`font-mono text-[10px] px-2 py-0.5 rounded border ${
-                                    stage.status === "COMPLETED"
-                                      ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/30"
-                                      : "bg-zinc-900 text-zinc-400 border-zinc-800"
-                                  }`}
-                                >
-                                  {stage.status}
-                                </span>
-                              </div>
-                              <p className="font-mono text-xs text-zinc-400 mt-1 break-all">
-                                {stage.detail}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-3 shrink-0 self-end md:self-center">
-                            <span className="font-mono text-xs text-zinc-200 bg-[#060709] border border-white/[0.08] px-2.5 py-1 rounded">
-                              {stage.measuredLatencyMs} ms ({pctOfTotal}%)
-                            </span>
-                            <a
-                              href={stage.explorerUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="font-mono text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1 px-2.5 py-1 rounded bg-emerald-500/10 border border-emerald-500/25"
-                            >
-                              <span>{stage.explorerLabel}</span>
-                              <ArrowSquareOut size={13} />
-                            </a>
-                          </div>
-                        </div>
-
-                        {/* Proportional Latency Bar */}
-                        <div className="h-1 w-full bg-zinc-900 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-emerald-500/60 rounded-full"
-                            style={{ width: `${pctOfTotal}%` }}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </section>
-
-            {/* Annotated Byte-Level Guardrail Inspector (Leg 1 EIP-1559 + Leg 2 Solana V0) */}
-            <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Left: Leg 1 Base EVM RLP & TEE Receipt Inspector */}
-              <div className="rounded-2xl bg-white/[0.02] p-1.5 border border-white/[0.07]">
-                <div className="rounded-[calc(1rem-2px)] bg-[#090b0e] border border-white/[0.06] p-5 space-y-4 h-full">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-400">
-                        ORIGIN LEG // BASE MAINNET (CHAIN ID 8453)
-                      </div>
-                      <h3 className="text-sm font-mono font-semibold text-zinc-100 flex items-center gap-2 mt-0.5">
-                        <Code size={16} className="text-emerald-400" />
-                        LEG 1 EIP-1559 RLP GUARDRAIL (domain_id: 0 · Secp256k1)
-                      </h3>
-                    </div>
-                    <span className="font-mono text-[11px] px-2.5 py-1 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 flex items-center gap-1">
-                      <CheckCircle size={13} weight="fill" />
-                      RLP + Ed25519 Verified
-                    </span>
-                  </div>
-
-                  {report.teeReceipt && report.leg1BaseVerification ? (
-                    <div className="space-y-3 font-mono text-xs">
-                      {/* Annotated Byte Offset Table */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-px bg-white/[0.07] rounded-lg overflow-hidden border border-white/[0.07] text-[11px]">
-                        <div className="bg-[#0b0d11] p-2.5">
-                          <span className="text-zinc-500">
-                            [Byte 0] Tx Type
-                          </span>
-                          <div className="text-zinc-100 mt-0.5">
-                            0x02 (Canonical EIP-1559)
-                          </div>
-                        </div>
-                        <div className="bg-[#0b0d11] p-2.5">
-                          <span className="text-zinc-500">
-                            [RLP 0, 5] Chain &amp; Token
-                          </span>
-                          <div className="text-emerald-300 mt-0.5 truncate">
-                            8453 · USDC 0x8335...2913
-                          </div>
-                        </div>
-                        <div className="bg-[#0b0d11] p-2.5">
-                          <span className="text-zinc-500">
-                            [RLP 2..4] Gas &amp; Fee Caps
-                          </span>
-                          <div className="text-zinc-200 mt-0.5">
-                            ≤ 250k gas · ≤ 50 gwei maxFee
-                          </div>
-                        </div>
-                        <div className="bg-[#0b0d11] p-2.5">
-                          <span className="text-zinc-500">
-                            [data 0..4] Selector
-                          </span>
-                          <div className="text-emerald-300 mt-0.5">
-                            0xa9059cbb (approve blocked)
-                          </div>
-                        </div>
-                        <div className="bg-[#0b0d11] p-2.5">
-                          <span className="text-zinc-500">
-                            [data 16..36] 1-Click Deposit
-                          </span>
-                          <div className="text-zinc-200 mt-0.5 truncate">
-                            {report.oneClickQuote?.depositAddress}
-                          </div>
-                        </div>
-                        <div className="bg-[#0b0d11] p-2.5">
-                          <span className="text-zinc-500">
-                            [data 52..68] Exact Amount
-                          </span>
-                          <div className="text-amber-300 mt-0.5">
-                            {report.riskEvaluation.repayAmountUsdcMicro} µUSDC
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Canonical TEE Decision Receipt */}
-                      <div className="p-3 rounded-lg bg-[#060709] border border-white/[0.07] space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className="text-zinc-400 text-[11px]">
-                            Canonical TeeDecisionReceipt ASCII Pre-Image:
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              copyToClipboard(
-                                "tee-receipt",
-                                report.teeReceipt?.canonicalPayload ?? ""
-                              )
-                            }
-                            className="text-[11px] text-zinc-400 hover:text-zinc-200 flex items-center gap-1 cursor-pointer"
-                          >
-                            {copiedId === "tee-receipt" ? (
-                              <Check size={12} className="text-emerald-400" />
-                            ) : (
-                              <Copy size={12} />
-                            )}
-                            <span>Copy</span>
-                          </button>
-                        </div>
-                        <div className="text-emerald-300 break-all text-[11px] leading-relaxed">
-                          {report.teeReceipt.canonicalPayload}
-                        </div>
-                        <div className="text-zinc-500 text-[10px] pt-1">
-                          Ed25519 Signature (64B): 0x
-                          {report.teeReceipt.receipt.enclave_signature_hex.slice(
+                    <CardDescription className="text-xs">
+                      Threshold Secp256k1 (<code className="font-mono">domain_id: 0</code>)
+                      and Ed25519 (<code className="font-mono">domain_id: 1</code>)
+                      vaults settle via NEAR Intents.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="pt-2 space-y-2 text-xs">
+                    <div className="flex items-center justify-between py-1 border-t border-border/60">
+                      <span className="text-muted-foreground">Base Vault (0)</span>
+                      {report && (
+                        <CopyChip
+                          value={report.policy.mpcBaseVaultAddress}
+                          display={`${report.policy.mpcBaseVaultAddress.slice(
                             0,
-                            44
-                          )}
-                          ...
-                        </div>
-                      </div>
-
-                      {/* Raw Unsigned EIP-1559 Hex & Keccak-256 Digest */}
-                      <div className="p-3 rounded-lg bg-[#060709] border border-white/[0.07] space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className="text-zinc-400 text-[11px]">
-                            Unsigned EIP-1559 Pre-Image (0x02 || rlp):
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              copyToClipboard(
-                                "leg1-hex",
-                                report.leg1BaseVerification?.rawUnsignedTxHex ??
-                                  ""
-                              )
-                            }
-                            className="text-[11px] text-zinc-400 hover:text-zinc-200 flex items-center gap-1 cursor-pointer"
-                          >
-                            {copiedId === "leg1-hex" ? (
-                              <Check size={12} className="text-emerald-400" />
-                            ) : (
-                              <Copy size={12} />
-                            )}
-                            <span>Copy Hex</span>
-                          </button>
-                        </div>
-                        <div className="text-zinc-300 break-all text-[11px]">
-                          {report.leg1BaseVerification.rawUnsignedTxHex}
-                        </div>
-                        <div className="text-zinc-400 text-[11px] pt-1">
-                          Keccak-256 Digest → v1.signer (payload_v2::Ecdsa):
-                        </div>
-                        <div className="text-emerald-300 break-all text-[11px]">
-                          {report.leg1BaseVerification.signingHashKeccak256Hex}
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="p-4 rounded-lg bg-[#060709] border border-white/[0.07] font-mono text-xs text-zinc-400">
-                      Position is currently in HOLD regime. Select a Stress-Test
-                      preset above (-21% or -25%) to inspect live signed TEE
-                      receipts and EIP-1559 RLP bytes.
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Right: Leg 2 Solana V0 Message & Kamino Repay Inspector */}
-              <div className="rounded-2xl bg-white/[0.02] p-1.5 border border-white/[0.07]">
-                <div className="rounded-[calc(1rem-2px)] bg-[#090b0e] border border-white/[0.06] p-5 space-y-4 h-full">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-zinc-400">
-                        DESTINATION LEG // SOLANA MAINNET (KAMINO LEND)
-                      </div>
-                      <h3 className="text-sm font-mono font-semibold text-zinc-100 flex items-center gap-2 mt-0.5">
-                        <Code size={16} className="text-emerald-400" />
-                        LEG 2 SOLANA V0 MESSAGE GUARDRAIL (domain_id: 1 ·
-                        Ed25519)
-                      </h3>
-                    </div>
-                    <span className="font-mono text-[11px] px-2.5 py-1 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 flex items-center gap-1">
-                      <CheckCircle size={13} weight="fill" />
-                      5-Ix V0 Verified
-                    </span>
-                  </div>
-
-                  {report.leg2SolanaVerification ? (
-                    <div className="space-y-3 font-mono text-xs">
-                      {/* 5-Instruction Same-Slot Sequence Table */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-px bg-white/[0.07] rounded-lg overflow-hidden border border-white/[0.07] text-[11px]">
-                        <div className="bg-[#0b0d11] p-2.5">
-                          <span className="text-zinc-500">
-                            [Header] V0 &amp; Signer
-                          </span>
-                          <div className="text-zinc-100 mt-0.5">
-                            1 Signer · 0 Readonly · 0 ALTs
-                          </div>
-                        </div>
-                        <div className="bg-[#0b0d11] p-2.5">
-                          <span className="text-zinc-500">
-                            [Ix 0] ComputeBudget
-                          </span>
-                          <div className="text-zinc-200 mt-0.5">
-                            ≤ 1.4M CU · ≤ 5M µLamports/CU
-                          </div>
-                        </div>
-                        <div className="bg-[#0b0d11] p-2.5">
-                          <span className="text-zinc-500">
-                            [Ix 1..2] refresh_reserve
-                          </span>
-                          <div className="text-emerald-300 mt-0.5">
-                            0x02da8aeb4fc91966 (SOL &amp; USDC)
-                          </div>
-                        </div>
-                        <div className="bg-[#0b0d11] p-2.5">
-                          <span className="text-zinc-500">
-                            [Ix 3] refresh_obligation
-                          </span>
-                          <div className="text-emerald-300 mt-0.5">
-                            0x218493e497c04859 ([SOL, USDC])
-                          </div>
-                        </div>
-                        <div className="bg-[#0b0d11] p-2.5 sm:col-span-2">
-                          <span className="text-zinc-500">
-                            [Ix 4] repay_obligation_liquidity_v2 (Anchor SHA-256
-                            Discriminator)
-                          </span>
-                          <div className="text-emerald-300 mt-0.5">
-                            0x74aed54cb435d290 ([116, 174, 213, 76, 180, 53,
-                            210, 144])
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Pinned Account Invariants */}
-                      <div className="p-3 rounded-lg bg-[#060709] border border-white/[0.07] space-y-1 text-[11px]">
-                        <div className="text-zinc-400">
-                          Pinned Kamino Repayment Account Array (ix.accounts):
-                        </div>
-                        <div className="text-zinc-200 truncate">
-                          [0] owner/payer: {report.policy.mpcSolanaPayerPubkey}
-                        </div>
-                        <div className="text-zinc-200 truncate">
-                          [1] obligation:{" "}
-                          {report.policy.userKaminoObligationPubkey}
-                        </div>
-                        <div className="text-emerald-300 truncate">
-                          [3] repay_reserve:{" "}
-                          {report.leg2SolanaVerification.repayReservePubkey}
-                        </div>
-                        <div className="text-zinc-300 truncate">
-                          [5] user_source_ata:{" "}
-                          {
-                            report.leg2SolanaVerification
-                              .userSourceLiquidityAtaPubkey
-                          }
-                        </div>
-                      </div>
-
-                      {/* Raw 394-Byte Solana V0 Message Hex */}
-                      <div className="p-3 rounded-lg bg-[#060709] border border-white/[0.07] space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className="text-zinc-400 text-[11px]">
-                            Raw Serialized Solana V0 Message (
-                            {report.leg2SolanaVerification.rawMessageHex
-                              .length / 2}{" "}
-                            bytes → payload_v2::Eddsa):
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              copyToClipboard(
-                                "leg2-hex",
-                                `0x${
-                                  report.leg2SolanaVerification
-                                    ?.rawMessageHex ?? ""
-                                }`
-                              )
-                            }
-                            className="text-[11px] text-zinc-400 hover:text-zinc-200 flex items-center gap-1 cursor-pointer"
-                          >
-                            {copiedId === "leg2-hex" ? (
-                              <Check size={12} className="text-emerald-400" />
-                            ) : (
-                              <Copy size={12} />
-                            )}
-                            <span>Copy Hex</span>
-                          </button>
-                        </div>
-                        <div className="text-zinc-300 break-all text-[11px] max-h-28 overflow-y-auto">
-                          0x{report.leg2SolanaVerification.rawMessageHex}
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="p-4 rounded-lg bg-[#060709] border border-white/[0.07] font-mono text-xs text-zinc-400">
-                      Position is currently in HOLD regime. Select a Stress-Test
-                      preset above to inspect the 394-byte Solana V0 message.
-                    </div>
-                  )}
-                </div>
-              </div>
-            </section>
-          </div>
-        )}
-
-        {/* SECTION [02]: Interactive Split-Pane Red-Team Adversarial Simulator */}
-        {showSection("RED_TEAM_SIMULATOR") && (
-          <section className="rounded-2xl bg-white/[0.02] p-1.5 border border-white/[0.07]">
-            <div className="rounded-[calc(1rem-2px)] bg-[#090b0e] border border-white/[0.06] p-5 space-y-5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-white/[0.07]">
-                <div>
-                  <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-rose-400">
-                    PILLAR 2 // ZERO-TRUST ADVERSARIAL RED-TEAM VERIFICATION
-                  </div>
-                  <h2 className="text-base font-semibold text-zinc-100 flex items-center gap-2 mt-0.5">
-                    <WarningOctagon
-                      size={18}
-                      weight="duotone"
-                      className="text-rose-400"
-                    />
-                    Prompt-Inject the AI — {attacks.length} Byte-Level &amp;
-                    Async TOCTOU Attack Vectors
-                  </h2>
-                </div>
-                <span className="font-mono text-xs px-3 py-1.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-300">
-                  {attacks.length} / {attacks.length} Rogue Payloads
-                  Deterministically Reverted
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-                {/* Left Selector List (5 Cols) */}
-                <div className="lg:col-span-5 grid grid-cols-1 gap-1.5 max-h-[520px] overflow-y-auto pr-1">
-                  {attacks.map((atk, idx) => {
-                    const isSelected = idx === selectedAttackIdx;
-                    return (
-                      <button
-                        key={atk.attackId}
-                        type="button"
-                        onClick={() => {
-                          setSelectedAttackIdx(idx);
-                          setActiveSimulationBanner(atk);
-                        }}
-                        className={`w-full text-left rounded-lg p-3 border font-mono transition cursor-pointer flex items-center justify-between gap-2 ${
-                          isSelected
-                            ? "bg-rose-950/25 border-rose-500/50 text-zinc-100"
-                            : "bg-[#0b0d11] hover:bg-white/[0.03] border-white/[0.07] text-zinc-300"
-                        }`}
-                      >
-                        <div className="min-w-0">
-                          <div className="text-[10px] text-zinc-500 flex items-center gap-2">
-                            <span>{atk.attackId}</span>
-                            <span>·</span>
-                            <span className="text-emerald-400">
-                              {atk.verificationTimeUs} µs
-                            </span>
-                          </div>
-                          <div className="text-xs font-medium truncate mt-0.5">
-                            {atk.title}
-                          </div>
-                        </div>
-                        <CaretRight
-                          size={14}
-                          className={
-                            isSelected
-                              ? "text-rose-400 shrink-0"
-                              : "text-zinc-600 shrink-0"
-                          }
+                            8
+                          )}...${report.policy.mpcBaseVaultAddress.slice(-6)}`}
                         />
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Right Live Inspection Deck (7 Cols) */}
-                {selectedAttack && (
-                  <div className="lg:col-span-7 rounded-xl border border-white/[0.08] bg-[#0b0d11] p-5 space-y-4 font-mono">
-                    <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-white/[0.07]">
-                      <div>
-                        <span className="text-[10px] uppercase tracking-wider text-rose-400">
-                          {selectedAttack.attackId} //{" "}
-                          {selectedAttack.targetLeg}
-                        </span>
-                        <h3 className="text-sm font-semibold text-zinc-100 mt-0.5">
-                          {selectedAttack.title}
-                        </h3>
-                      </div>
-                      <span className="text-xs px-2.5 py-1 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-semibold">
-                        BLOCKED IN {selectedAttack.verificationTimeUs} µs
-                      </span>
+                      )}
                     </div>
-
-                    <div className="space-y-1">
-                      <div className="text-[10px] uppercase tracking-wider text-zinc-500">
-                        Attacker Objective (Compromised Function-Call Key /
-                        Prompt Injection):
-                      </div>
-                      <p className="text-xs text-zinc-200 font-sans leading-relaxed">
-                        {selectedAttack.attackerGoal}
-                      </p>
+                    <div className="flex items-center justify-between py-1 border-t border-border/60">
+                      <span className="text-muted-foreground">Solana Payer (1)</span>
+                      {report && (
+                        <CopyChip
+                          value={report.policy.mpcSolanaPayerPubkey}
+                          display={`${report.policy.mpcSolanaPayerPubkey.slice(
+                            0,
+                            6
+                          )}...${report.policy.mpcSolanaPayerPubkey.slice(-6)}`}
+                        />
+                      )}
                     </div>
-
-                    <div className="space-y-1.5">
-                      <div className="text-[10px] uppercase tracking-wider text-zinc-500">
-                        Injected Malicious Payload Pre-Image:
-                      </div>
-                      <div className="text-xs text-zinc-200 bg-[#060709] border border-white/[0.07] rounded-lg p-3 break-all">
-                        {selectedAttack.injectedPayloadSummary}
-                      </div>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <div className="text-[10px] uppercase tracking-wider text-rose-400">
-                        Deterministic NEAR Policy Guardrail Contract Revert:
-                      </div>
-                      <div className="text-xs text-rose-300 bg-rose-950/25 border border-rose-500/35 rounded-lg p-3.5 break-all leading-relaxed">
-                        {selectedAttack.contractRevertMessage}
-                      </div>
-                    </div>
-                  </div>
-                )}
+                  </CardContent>
+                </Card>
               </div>
-            </div>
-          </section>
-        )}
 
-        {/* SECTION [03]: Quantitative Historical Backtest Lab */}
-        {showSection("BACKTEST_LAB") && backtest && (
-          <section className="rounded-2xl bg-white/[0.02] p-1.5 border border-white/[0.07]">
-            <div className="rounded-[calc(1rem-2px)] bg-[#090b0e] border border-white/[0.06] p-5 space-y-5">
-              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-white/[0.07]">
-                <div>
-                  <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-emerald-400">
-                    PILLAR 3 // QUANTITATIVE MULTI-REGIME HISTORICAL BACKTEST
-                  </div>
-                  <h2 className="text-base font-semibold text-zinc-100 flex items-center gap-2 mt-0.5">
-                    <ChartBar size={18} className="text-emerald-400" />
-                    Why Volatility-Aware TEE Sizing Beats Static Threshold Bots
-                    (100 SOL / $6,000 USDC Position)
-                  </h2>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
-                  <span className="px-3 py-1.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-300">
-                    Intercept Survival:{" "}
-                    {backtest.aggregateSummary.interceptSurvivalRatePct}% (vs.{" "}
-                    {backtest.aggregateSummary.naiveMicroBotSurvivalRatePct}%
-                    Naive Bot)
-                  </span>
-                  <span className="px-3 py-1.5 rounded bg-white/[0.03] border border-white/[0.08] text-zinc-200">
-                    Penalty Prevented: $
-                    {backtest.aggregateSummary.totalLiquidationLossPreventedUsd.toFixed(
-                      2
+              {/* 5-Stage Execution Pipeline Card */}
+              <Card>
+                <CardHeader>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <CardTitle className="text-base">
+                        5-Stage Cryptographic Rescue Pipeline
+                      </CardTitle>
+                      <CardDescription className="text-xs mt-1">
+                        Click any stage row to inspect its cryptographic attestation,
+                        Anchor SHA-256 discriminator, or <code className="font-mono">v1.signer</code>{" "}
+                        payload.
+                      </CardDescription>
+                    </div>
+                    {report && (
+                      <Badge variant="outline" className="self-start sm:self-auto">
+                        AI Rationale: {report.decision.regime}
+                      </Badge>
                     )}
-                  </span>
-                  <span className="px-3 py-1.5 rounded bg-white/[0.03] border border-white/[0.08] text-emerald-300">
-                    Base Capital Saved:{" "}
-                    {
-                      backtest.aggregateSummary
-                        .capitalEfficiencySavingsVsConservativePct
-                    }
-                    %
-                  </span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                {backtest.scenarios.map((scen) => (
-                  <div
-                    key={scen.scenarioId}
-                    className="rounded-xl border border-white/[0.07] bg-[#0b0d11] p-4 flex flex-col justify-between space-y-4"
-                  >
-                    <div className="space-y-2">
-                      <div className="font-mono text-[10px] text-zinc-500">
-                        {scen.scenarioId}
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {/* TEE AI Reasoning Summary Bar */}
+                  {report && (
+                    <div className="rounded-lg border border-border/80 bg-secondary/40 p-3.5 text-xs space-y-1.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-medium text-foreground flex items-center gap-1.5">
+                          <Cpu className="h-4 w-4 text-emerald-400" />
+                          <span>NEAR AI Cloud TEE Reasoning ({report.teeAttestation.model})</span>
+                        </span>
+                        <CopyChip
+                          value={report.teeAttestation.receiptHashHex}
+                          display={`Receipt: ${report.teeAttestation.receiptHashHex.slice(
+                            0,
+                            14
+                          )}...`}
+                        />
                       </div>
-                      <div className="font-mono text-xs font-semibold text-zinc-100">
-                        {scen.title}
-                      </div>
-                      <p className="text-xs text-zinc-400 leading-relaxed">
-                        {scen.description}
+                      <p className="text-muted-foreground leading-relaxed max-w-[85ch]">
+                        {report.teeAttestation.aiReasoningSummary}
                       </p>
+                    </div>
+                  )}
 
-                      <div className="space-y-1.5 pt-2">
-                        {scen.outcomes.map((o) => {
-                          const isIntercept =
-                            o.strategyId === "INTERCEPT_VOLATILITY_TEE_ENGINE";
-                          return (
-                            <div
-                              key={o.strategyId}
-                              className={`rounded-lg border px-3 py-2 font-mono text-[11px] flex items-center justify-between gap-2 ${
-                                isIntercept
-                                  ? "border-emerald-500/40 bg-emerald-950/20 text-emerald-200 font-medium"
-                                  : o.survivedWithoutLiquidation
-                                    ? "border-white/[0.06] bg-[#060709] text-zinc-300"
-                                    : "border-rose-500/35 bg-rose-950/20 text-rose-300"
-                              }`}
-                            >
-                              <span className="truncate">{o.strategyName}</span>
-                              <span className="shrink-0">
-                                {o.survivedWithoutLiquidation
-                                  ? `HF ${o.finalHf.toFixed(2)} · $${o.totalBaseUsdcDeployed.toFixed(0)}`
-                                  : `LIQUIDATED (-$${o.netCostUsd.toFixed(0)})`}
+                  {/* Stages Accordion List */}
+                  <div className="divide-y divide-border rounded-lg border border-border">
+                    {report?.stages.map((stage) => {
+                      const isExpanded = expandedStage === stage.stageNumber;
+                      return (
+                        <div key={stage.stageNumber} className="bg-card">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedStage(isExpanded ? null : stage.stageNumber)
+                            }
+                            className="emil-row-hover flex w-full items-center justify-between gap-4 px-4 py-3.5 text-left cursor-pointer"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border bg-secondary font-mono text-xs font-medium text-foreground">
+                                {stage.stageNumber}
                               </span>
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="text-sm font-medium text-foreground">
+                                    {stage.title}
+                                  </span>
+                                  <Badge variant="secondary" className="font-mono text-[11px]">
+                                    {stage.chain}
+                                  </Badge>
+                                </div>
+                                <p className="text-xs text-muted-foreground truncate mt-0.5">
+                                  {stage.summary}
+                                </p>
+                              </div>
                             </div>
-                          );
-                        })}
-                      </div>
-                    </div>
 
-                    <div className="font-mono text-[11px] text-emerald-300 bg-emerald-950/15 border border-emerald-500/20 rounded-lg p-3 leading-relaxed">
-                      {scen.interceptEdgeSummary}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
-        )}
+                            <div className="flex items-center gap-3 shrink-0">
+                              <span className="hidden sm:inline font-mono text-xs text-muted-foreground tabular-nums">
+                                {stage.latencyMs} ms
+                              </span>
+                              <Badge
+                                variant={
+                                  stage.status === "SKIPPED_HOLD"
+                                    ? "outline"
+                                    : "emerald"
+                                }
+                              >
+                                {stage.status}
+                              </Badge>
+                              <CaretDown
+                                className={`h-4 w-4 text-muted-foreground transition-transform duration-150 ${
+                                  isExpanded ? "rotate-180" : ""
+                                }`}
+                              />
+                            </div>
+                          </button>
 
-        {/* SECTION [04]: Deterministic MPC Vault Inspector & Pre-Flight Readiness */}
-        {showSection("MPC_PREFLIGHT") && preflight && (
-          <section className="rounded-2xl bg-white/[0.02] p-1.5 border border-white/[0.07]">
-            <div className="rounded-[calc(1rem-2px)] bg-[#090b0e] border border-white/[0.06] p-5 space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div>
-                  <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-400">
-                    NEAR MAINNET CHAIN SIGNATURES // v1.signer::derived_public_key
+                          {isExpanded && (
+                            <div className="emil-enter border-t border-border/60 bg-secondary/25 px-4 py-3.5">
+                              <div className="grid gap-2 sm:grid-cols-2">
+                                {Object.entries(stage.cryptographicProof).map(
+                                  ([k, v]) => (
+                                    <div
+                                      key={k}
+                                      className="flex flex-col justify-between rounded-md border border-border/60 bg-background/80 p-2.5 text-xs"
+                                    >
+                                      <span className="text-muted-foreground font-mono text-[11px]">
+                                        {k}
+                                      </span>
+                                      <span className="font-mono text-foreground break-all mt-1">
+                                        {String(v)}
+                                      </span>
+                                    </div>
+                                  )
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
-                  <h2 className="text-base font-semibold text-zinc-100 flex items-center gap-2 mt-0.5">
-                    <Vault size={18} className="text-emerald-400" />
-                    Deterministic Cross-Chain MPC Vaults &amp; Mainnet Readiness
-                  </h2>
-                </div>
-                <span className="font-mono text-xs px-3 py-1 rounded bg-[#060709] border border-white/[0.08] text-emerald-300">
-                  {preflight.derivedMpc.source} (
-                  {preflight.derivedMpc.latencyMs} ms)
-                </span>
-              </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-px bg-white/[0.07] rounded-xl overflow-hidden border border-white/[0.07] font-mono text-xs">
-                <div className="bg-[#0b0d11] p-4 space-y-1.5">
-                  <div className="text-zinc-400 text-[10px] uppercase tracking-wider">
-                    MPC_Base_Vault (domain_id: 0 · Secp256k1 · Base 8453)
-                  </div>
-                  <div className="text-emerald-300 break-all text-[11px]">
-                    {preflight.derivedMpc.mpcBaseVaultAddress}
-                  </div>
-                  <div className="text-zinc-300 text-[11px] pt-1 flex items-center justify-between">
-                    <span>
-                      ETH: {preflight.baseState.ethBalanceFormatted} · USDC:{" "}
-                      {preflight.baseState.usdcBalanceFormatted}
-                    </span>
-                    <span className="text-zinc-500">
-                      Nonce: {preflight.baseState.nonce}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="bg-[#0b0d11] p-4 space-y-1.5">
-                  <div className="text-zinc-400 text-[10px] uppercase tracking-wider">
-                    MPC_Solana_Payer (domain_id: 1 · Ed25519 · Solana)
-                  </div>
-                  <div className="text-emerald-300 break-all text-[11px]">
-                    {preflight.derivedMpc.mpcSolanaPayerPubkey}
-                  </div>
-                  <div className="text-zinc-300 text-[11px] pt-1 flex items-center justify-between">
-                    <span>SOL: {preflight.solanaState.solBalanceFormatted}</span>
-                    <span className="text-zinc-500">
-                      Blockhash:{" "}
-                      {preflight.solanaState.recentBlockhashBase58.slice(0, 8)}
-                      ...
-                    </span>
-                  </div>
-                </div>
-
-                <div className="bg-[#0b0d11] p-4 space-y-1.5">
-                  <div className="text-zinc-400 text-[10px] uppercase tracking-wider">
-                    Derived MPC_Solana_Payer_USDC_ATA (bump=
-                    {preflight.solanaState.usdcAtaBump})
-                  </div>
-                  <div className="text-emerald-300 break-all text-[11px]">
-                    {preflight.solanaState.usdcAtaPubkey}
-                  </div>
-                  <div className="text-zinc-300 text-[11px] pt-1 flex items-center justify-between">
-                    <span>
-                      USDC: {preflight.solanaState.usdcBalanceFormatted}
-                    </span>
-                    <span
-                      className={
-                        preflight.solanaState.usdcAtaExistsOnChain
-                          ? "text-emerald-400"
-                          : "text-amber-300"
+            {/* =====================================================================
+                TAB 2: BYTE-LEVEL GUARDRAIL INSPECTOR (LEG 1 & LEG 2)
+               ===================================================================== */}
+            <TabsContent value="inspector" className="space-y-6">
+              {!report?.unsignedTransactions ? (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">
+                      Byte-Level Inspector (Currently in Hold Regime)
+                    </CardTitle>
+                    <CardDescription>
+                      In Live Unmodified Pyth mode, Health Factor ({hfBefore.toFixed(4)}) is
+                      above the {triggerHf.toFixed(2)} trigger threshold, so 0 transactions
+                      are generated. Switch to{" "}
+                      <strong className="text-foreground">-25% Crash</strong> to inspect
+                      live Leg 1 & Leg 2 unsigned byte payloads.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={() =>
+                        handleSelectScenario("STRESS_TEST_MAINNET_MODE", 25)
                       }
                     >
-                      ATA:{" "}
-                      {preflight.solanaState.usdcAtaExistsOnChain
-                        ? "INITIALIZED"
-                        : "CREATE_IDEMPOTENT READY"}
-                    </span>
-                  </div>
+                      <Lightning className="h-3.5 w-3.5" weight="fill" />
+                      <span>Load -25% Flash Crash Payloads</span>
+                    </Button>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="grid gap-6 lg:grid-cols-2">
+                  {/* Leg 1 Base EIP-1559 Card */}
+                  <Card>
+                    <CardHeader>
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-base">
+                          Leg 1 — Base EIP-1559 RLP Byte Parser
+                        </CardTitle>
+                        <Badge variant="emerald">domain_id: 0 (Secp256k1)</Badge>
+                      </div>
+                      <CardDescription className="text-xs">
+                        <code className="font-mono">verify_and_sign_origin_leg</code>{" "}
+                        parses the raw RLP envelope before hashing with{" "}
+                        <code className="font-mono">keccak256</code> for{" "}
+                        <code className="font-mono">Payload::V2::Ecdsa</code>.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Field</TableHead>
+                            <TableHead>Guardrail Rule</TableHead>
+                            <TableHead>Decoded Value</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          <TableRow>
+                            <TableCell className="font-medium">Envelope & Chain</TableCell>
+                            <TableCell className="font-mono text-xs text-muted-foreground">
+                              0x02 · Chain 8453
+                            </TableCell>
+                            <TableCell className="font-mono text-xs text-emerald-400">
+                              Chain {report.unsignedTransactions.leg1GuardrailCheck.decodedChainId}
+                            </TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell className="font-medium">Target Contract</TableCell>
+                            <TableCell className="font-mono text-xs text-muted-foreground">
+                              Base USDC (value == 0)
+                            </TableCell>
+                            <TableCell className="font-mono text-xs">
+                              {report.unsignedTransactions.leg1GuardrailCheck.decodedToAddress.slice(
+                                0,
+                                10
+                              )}
+                              ...
+                            </TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell className="font-medium">ERC-20 Selector</TableCell>
+                            <TableCell className="font-mono text-xs text-muted-foreground">
+                              0xa9059cbb (68B)
+                            </TableCell>
+                            <TableCell className="font-mono text-xs text-emerald-400">
+                              0x
+                              {
+                                report.unsignedTransactions.leg1GuardrailCheck
+                                  .decodedSelectorHex
+                              }
+                            </TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell className="font-medium">1-Click Deposit</TableCell>
+                            <TableCell className="font-mono text-xs text-muted-foreground">
+                              Calldata [4..36]
+                            </TableCell>
+                            <TableCell className="font-mono text-xs">
+                              {report.unsignedTransactions.leg1GuardrailCheck.decodedRecipientAddress.slice(
+                                0,
+                                12
+                              )}
+                              ...
+                            </TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell className="font-medium">USDC Amount</TableCell>
+                            <TableCell className="font-mono text-xs text-muted-foreground">
+                              Calldata [36..68]
+                            </TableCell>
+                            <TableCell className="font-mono text-xs text-emerald-400">
+                              {
+                                report.unsignedTransactions.leg1GuardrailCheck
+                                  .decodedAmountBaseUnits
+                              }{" "}
+                              units
+                            </TableCell>
+                          </TableRow>
+                        </TableBody>
+                      </Table>
+
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-muted-foreground font-medium">
+                            Raw Unsigned EIP-1559 Payload
+                          </span>
+                          <CopyChip
+                            value={report.unsignedTransactions.leg1BaseEip1559TxHex}
+                            display="Copy Hex"
+                          />
+                        </div>
+                        <pre className="rounded-lg border border-border bg-secondary/50 p-3 font-mono text-[11px] text-muted-foreground overflow-x-auto leading-relaxed">
+                          {report.unsignedTransactions.leg1BaseEip1559TxHex}
+                        </pre>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Leg 2 Solana V0 Card */}
+                  <Card>
+                    <CardHeader>
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-base">
+                          Leg 2 — Solana V0 Kamino Instruction Parser
+                        </CardTitle>
+                        <Badge variant="emerald">domain_id: 1 (Ed25519)</Badge>
+                      </div>
+                      <CardDescription className="text-xs">
+                        <code className="font-mono">verify_and_sign_destination_leg</code>{" "}
+                        verifies the raw V0 message (180–1232 bytes, never pre-hashed)
+                        and pins Kamino accounts.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Field</TableHead>
+                            <TableHead>Guardrail Rule</TableHead>
+                            <TableHead>Decoded Value</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          <TableRow>
+                            <TableCell className="font-medium">Header & Signers</TableCell>
+                            <TableCell className="font-mono text-xs text-muted-foreground">
+                              0x80 · Signers == 1
+                            </TableCell>
+                            <TableCell className="font-mono text-xs text-emerald-400">
+                              {
+                                report.unsignedTransactions.leg2GuardrailCheck
+                                  .numInstructions
+                              }{" "}
+                              Instructions
+                            </TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell className="font-medium">Instruction DAG</TableCell>
+                            <TableCell className="font-mono text-xs text-muted-foreground">
+                              Refresh → Repay Final
+                            </TableCell>
+                            <TableCell className="font-mono text-xs">
+                              {report.unsignedTransactions.leg2GuardrailCheck.instructionSequence.join(
+                                " → "
+                              )}
+                            </TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell className="font-medium">Repay Discriminator</TableCell>
+                            <TableCell className="font-mono text-xs text-muted-foreground">
+                              0x74aed54cb435d290
+                            </TableCell>
+                            <TableCell className="font-mono text-xs text-emerald-400">
+                              0x
+                              {
+                                report.unsignedTransactions.leg2GuardrailCheck
+                                  .discriminatorHex
+                              }
+                            </TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell className="font-medium">Pinned Obligation</TableCell>
+                            <TableCell className="font-mono text-xs text-muted-foreground">
+                              Account [1] == User
+                            </TableCell>
+                            <TableCell className="font-mono text-xs">
+                              {report.unsignedTransactions.leg2GuardrailCheck.obligationPubkeyHex.slice(
+                                0,
+                                16
+                              )}
+                              ...
+                            </TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell className="font-medium">Pinned USDC Reserve</TableCell>
+                            <TableCell className="font-mono text-xs text-muted-foreground">
+                              Account [3] == Reserve
+                            </TableCell>
+                            <TableCell className="font-mono text-xs">
+                              {report.unsignedTransactions.leg2GuardrailCheck.destinationReservePubkeyHex.slice(
+                                0,
+                                16
+                              )}
+                              ...
+                            </TableCell>
+                          </TableRow>
+                        </TableBody>
+                      </Table>
+
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-muted-foreground font-medium">
+                            Raw Unsigned Solana V0 Message
+                          </span>
+                          <CopyChip
+                            value={
+                              report.unsignedTransactions
+                                .leg2SolanaKaminoV0MessageHex
+                            }
+                            display="Copy Hex"
+                          />
+                        </div>
+                        <pre className="rounded-lg border border-border bg-secondary/50 p-3 font-mono text-[11px] text-muted-foreground overflow-x-auto leading-relaxed">
+                          {
+                            report.unsignedTransactions
+                              .leg2SolanaKaminoV0MessageHex
+                          }
+                        </pre>
+                      </div>
+                    </CardContent>
+                  </Card>
                 </div>
+              )}
+            </TabsContent>
+
+            {/* =====================================================================
+                TAB 3: ADVERSARIAL RED-TEAM SIMULATOR (11/11 BLOCKED)
+               ===================================================================== */}
+            <TabsContent value="redteam" className="space-y-6">
+              <div className="grid gap-6 lg:grid-cols-12 items-start">
+                {/* Left Column: 11 Attack Vectors */}
+                <Card className="lg:col-span-5">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-base">
+                        Adversarial Attack Vectors
+                      </CardTitle>
+                      <Badge variant="emerald">11 / 11 Blocked</Badge>
+                    </div>
+                    <CardDescription className="text-xs">
+                      Select any rogue AI / prompt-injection exploit vector to test
+                      against the NEAR Policy Guardrail.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <div className="divide-y divide-border border-t border-border">
+                      {report?.adversarialSuite.map((adv, idx) => {
+                        const isSelected = adv.id === selectedAdvCase?.id;
+                        return (
+                          <button
+                            key={adv.id}
+                            type="button"
+                            onClick={() => triggerAdversarialIntercept(adv.id)}
+                            className={`emil-row-hover flex w-full items-center justify-between gap-3 px-4 py-3 text-left cursor-pointer ${
+                              isSelected ? "bg-secondary/90" : ""
+                            }`}
+                          >
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-xs text-muted-foreground">
+                                  #{String(idx + 1).padStart(2, "0")}
+                                </span>
+                                <span className="text-xs font-medium text-foreground truncate">
+                                  {adv.title}
+                                </span>
+                              </div>
+                              <div className="mt-1 flex items-center gap-2">
+                                <span className="font-mono text-[11px] text-muted-foreground">
+                                  {adv.targetLeg}
+                                </span>
+                                <span className="text-zinc-700">·</span>
+                                <span className="font-mono text-[11px] text-muted-foreground tabular-nums">
+                                  {adv.executionTimeUs} µs
+                                </span>
+                              </div>
+                            </div>
+                            <Badge variant="destructive" className="shrink-0">
+                              Blocked
+                            </Badge>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Right Column: Live Attack Inspector */}
+                {selectedAdvCase && (
+                  <Card className="lg:col-span-7 sticky top-20">
+                    <CardHeader>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="destructive">
+                            <WarningOctagon className="h-3.5 w-3.5" weight="fill" />
+                            <span>Guardrail Revert Verified</span>
+                          </Badge>
+                          <Badge variant="outline" className="font-mono">
+                            {selectedAdvCase.targetLeg}
+                          </Badge>
+                        </div>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() =>
+                            triggerAdversarialIntercept(selectedAdvCase.id)
+                          }
+                        >
+                          <Lightning className="h-3.5 w-3.5" />
+                          <span>
+                            {advSimRunning
+                              ? "Inspecting Bytes..."
+                              : "Re-Run Exploit Vector"}
+                          </span>
+                        </Button>
+                      </div>
+                      <CardTitle className="text-lg pt-2">
+                        {selectedAdvCase.title}
+                      </CardTitle>
+                      <CardDescription className="text-xs">
+                        {selectedAdvCase.attackVectorDescription}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="space-y-1.5">
+                        <span className="text-xs font-medium text-muted-foreground">
+                          Injected Rogue AI Payload
+                        </span>
+                        <div className="rounded-lg border border-border bg-secondary/40 p-3 font-mono text-xs text-foreground break-all">
+                          {selectedAdvCase.injectedPayloadSummary}
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-medium text-red-400">
+                            Deterministic Rust Smart Contract Panic (env::panic_str)
+                          </span>
+                          <span className="font-mono text-muted-foreground tabular-nums">
+                            Rejected in {selectedAdvCase.executionTimeUs} µs
+                          </span>
+                        </div>
+                        <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3.5 font-mono text-xs text-red-300 leading-relaxed">
+                          {selectedAdvCase.exactRevertReason}
+                        </div>
+                      </div>
+
+                      <div
+                        className={`rounded-lg border p-3.5 text-xs transition-colors duration-200 ${
+                          advFlashProtection
+                            ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                            : "border-border bg-secondary/30 text-muted-foreground"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 font-medium text-foreground mb-1">
+                          <CheckCircle
+                            className="h-4 w-4 text-emerald-400"
+                            weight="fill"
+                          />
+                          <span>
+                            Zero Signatures Issued — User Funds 100% Intact
+                          </span>
+                        </div>
+                        <p className="leading-relaxed">
+                          The NEAR Policy Guardrail aborted execution before{" "}
+                          <code className="font-mono">v1.signer::sign</code> could be
+                          scheduled. Neither <code className="font-mono">MPC_Base_Vault</code>{" "}
+                          nor <code className="font-mono">MPC_Solana_Payer</code> signed the
+                          rogue payload.
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
               </div>
-            </div>
-          </section>
-        )}
+            </TabsContent>
+
+            {/* =====================================================================
+                TAB 4: HISTORICAL BACKTEST LAB
+               ===================================================================== */}
+            <TabsContent value="backtest" className="space-y-6">
+              {backtest && (
+                <>
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <span className="text-xs font-medium text-muted-foreground">
+                          Intercept Survival Rate
+                        </span>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-semibold tracking-[-0.02em] text-emerald-400 tabular-nums">
+                          {backtest.aggregateSummary.interceptSurvivalRatePct}%
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          vs. {backtest.aggregateSummary.naiveStaticSurvivalRatePct}% for
+                          Naive Static 1.20x Bot
+                        </p>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <span className="text-xs font-medium text-muted-foreground">
+                          Cascade Liquidation Loss Prevented
+                        </span>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-semibold tracking-[-0.02em] text-foreground tabular-nums">
+                          $
+                          {backtest.aggregateSummary.cascadeLiquidationLossSavedUsd.toFixed(
+                            2
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Saved on a 100 SOL / $6,000 USDC position during -34% crash
+                        </p>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <span className="text-xs font-medium text-muted-foreground">
+                          Calm Dip Capital Efficiency Gain
+                        </span>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-semibold tracking-[-0.02em] text-foreground tabular-nums">
+                          {backtest.aggregateSummary.calmDipCapitalSavedVsOverConservativePct.toFixed(
+                            1
+                          )}
+                          %
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Less Base USDC deployed vs. Over-Conservative 1.45x Bot
+                        </p>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  <div className="space-y-4">
+                    {backtest.scenarios.map((scen) => (
+                      <Card key={scen.scenarioId}>
+                        <CardHeader className="pb-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <CardTitle className="text-base">{scen.title}</CardTitle>
+                            <span className="font-mono text-xs text-muted-foreground tabular-nums">
+                              SOL Path:{" "}
+                              {scen.pricePathUsd.map((p) => `$${p}`).join(" → ")}
+                            </span>
+                          </div>
+                          <CardDescription className="text-xs">
+                            {scen.subtitle}
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Strategy</TableHead>
+                                <TableHead>Outcome</TableHead>
+                                <TableHead>Min HF</TableHead>
+                                <TableHead>USDC Deployed</TableHead>
+                                <TableHead>Total Net Cost</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {scen.outcomes.map((o) => {
+                                const isIntercept =
+                                  o.strategyId === "INTERCEPT_VOLATILITY_AWARE";
+                                return (
+                                  <TableRow
+                                    key={o.strategyId}
+                                    className={
+                                      isIntercept ? "bg-emerald-500/5 font-medium" : ""
+                                    }
+                                  >
+                                    <TableCell className="font-medium">
+                                      {o.strategyName}
+                                    </TableCell>
+                                    <TableCell>
+                                      <Badge
+                                        variant={
+                                          o.survivedLiquidations
+                                            ? "emerald"
+                                            : "destructive"
+                                        }
+                                      >
+                                        {o.survivedLiquidations
+                                          ? "Survived"
+                                          : "Liquidated"}
+                                      </Badge>
+                                    </TableCell>
+                                    <TableCell className="font-mono text-xs">
+                                      {o.minObservedHealthFactor.toFixed(4)}
+                                    </TableCell>
+                                    <TableCell className="font-mono text-xs">
+                                      ${o.totalUsdcDeployed.toFixed(2)}
+                                    </TableCell>
+                                    <TableCell className="font-mono text-xs">
+                                      ${o.totalNetCostUsd.toFixed(2)}
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              })}
+                            </TableBody>
+                          </Table>
+
+                          <div className="rounded-md border border-border/60 bg-secondary/30 px-3.5 py-2.5 text-xs text-muted-foreground">
+                            <strong className="text-foreground font-medium">
+                              Quantitative Edge:{" "}
+                            </strong>
+                            {scen.interceptEdgeSummary}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                </>
+              )}
+            </TabsContent>
+
+            {/* =====================================================================
+                TAB 5: MAINNET VAULTS & PRE-FLIGHT CHECKLIST
+               ===================================================================== */}
+            <TabsContent value="vaults" className="space-y-6">
+              {preflight && (
+                <>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <div className="flex items-center justify-between">
+                          <CardTitle className="text-sm font-medium">
+                            Base Mainnet MPC Vault (domain_id: 0)
+                          </CardTitle>
+                          <Badge variant="emerald">Secp256k1 Live</Badge>
+                        </div>
+                        <CardDescription className="text-xs">
+                          Derived via{" "}
+                          <code className="font-mono">
+                            v1.signer::derived_public_key
+                          </code>{" "}
+                          for path{" "}
+                          <code className="font-mono">
+                            &quot;{preflight.nearMpcDerivation.baseDomain0Path}&quot;
+                          </code>
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-2 pt-2 text-xs">
+                        <div className="flex items-center justify-between py-1.5 border-t border-border/60">
+                          <span className="text-muted-foreground">EVM Address</span>
+                          <CopyChip
+                            value={
+                              preflight.nearMpcDerivation.derivedMpcBaseVaultAddress
+                            }
+                          />
+                        </div>
+                        <div className="flex items-center justify-between py-1.5 border-t border-border/60">
+                          <span className="text-muted-foreground">Base Balances</span>
+                          <span className="font-mono text-foreground tabular-nums">
+                            {preflight.baseMainnetState.usdcBalanceFormatted} USDC ·{" "}
+                            {preflight.baseMainnetState.ethBalanceFormatted} ETH
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between py-1.5 border-t border-border/60">
+                          <span className="text-muted-foreground">Nonce & Fee Cap</span>
+                          <span className="font-mono text-muted-foreground tabular-nums">
+                            nonce={preflight.baseMainnetState.nonce} ·{" "}
+                            {preflight.baseMainnetState.suggestedMaxFeePerGasWei} wei
+                          </span>
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <div className="flex items-center justify-between">
+                          <CardTitle className="text-sm font-medium">
+                            Solana Mainnet MPC Payer (domain_id: 1)
+                          </CardTitle>
+                          <Badge variant="emerald">Ed25519 Live</Badge>
+                        </div>
+                        <CardDescription className="text-xs">
+                          Derived via{" "}
+                          <code className="font-mono">
+                            v1.signer::derived_public_key
+                          </code>{" "}
+                          for path{" "}
+                          <code className="font-mono">
+                            &quot;{preflight.nearMpcDerivation.solanaDomain1Path}&quot;
+                          </code>
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-2 pt-2 text-xs">
+                        <div className="flex items-center justify-between py-1.5 border-t border-border/60">
+                          <span className="text-muted-foreground">Solana Pubkey</span>
+                          <CopyChip
+                            value={
+                              preflight.nearMpcDerivation
+                                .derivedMpcSolanaPayerPubkey
+                            }
+                          />
+                        </div>
+                        <div className="flex items-center justify-between py-1.5 border-t border-border/60">
+                          <span className="text-muted-foreground">Derived USDC ATA</span>
+                          <CopyChip
+                            value={
+                              preflight.nearMpcDerivation.derivedMpcSolanaUsdcAta
+                            }
+                          />
+                        </div>
+                        <div className="flex items-center justify-between py-1.5 border-t border-border/60">
+                          <span className="text-muted-foreground">Solana Balances</span>
+                          <span className="font-mono text-foreground tabular-nums">
+                            {preflight.solanaMainnetState.usdcAtaBalanceFormatted} USDC
+                            · {preflight.solanaMainnetState.solBalanceFormatted} SOL
+                          </span>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base">
+                        Live Mainnet Rescue Readiness Checklist
+                      </CardTitle>
+                      <CardDescription className="text-xs">
+                        Real-time verification of NEAR <code className="font-mono">v1.signer</code>{" "}
+                        derivation, Base 8453 RPC, and Solana Mainnet state.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Check</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Live Telemetry Detail</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {preflight.readinessChecklist.map((item) => (
+                            <TableRow key={item.id}>
+                              <TableCell className="font-medium text-xs">
+                                {item.label}
+                              </TableCell>
+                              <TableCell>
+                                <Badge
+                                  variant={
+                                    item.status === "READY" ? "emerald" : "secondary"
+                                  }
+                                >
+                                  {item.status}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="font-mono text-xs text-muted-foreground">
+                                {item.detail}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  </Card>
+                </>
+              )}
+            </TabsContent>
+          </Tabs>
+        </div>
       </main>
+
+      {/* Clean Minimalist Footer */}
+      <footer className="mt-12 border-t border-border/70 py-6 text-xs text-muted-foreground">
+        <div className="mx-auto flex max-w-[1360px] flex-col sm:flex-row items-center justify-between gap-4 px-4 sm:px-6">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-emerald-400" weight="fill" />
+            <span className="font-medium text-foreground">Intercept</span>
+            <span>·</span>
+            <span>
+              NEAR AI Cloud TEE + near-sdk-rs Guardrail + v1.signer MPC + NEAR Intents
+              1-Click
+            </span>
+          </div>
+          <div className="font-mono text-[11px] tabular-nums">
+            guardrail.intercept-defi.near · Kamino Mainnet (KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD)
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }
