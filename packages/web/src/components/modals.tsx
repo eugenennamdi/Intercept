@@ -194,8 +194,8 @@ export function WalkthroughModal({
       open={open}
       onClose={onClose}
       title="How Intercept Works"
-      subtitle="A clear 4-step walkthrough of the zero-trust architecture and what happens when you proceed."
-      badge="Product Walkthrough"
+      subtitle="A 4-step breakdown of the zero-trust architecture and what happens when you proceed."
+      badge="How It Works"
       maxWidth="max-w-2xl"
     >
       {/* Step Selector Pills */}
@@ -487,7 +487,7 @@ export function ConfigurePolicyModal({
           }}
           className="font-medium text-zinc-900 underline underline-offset-4 hover:text-zinc-600 shrink-0 cursor-pointer"
         >
-          Read Walkthrough
+          How It Works
         </button>
       </div>
 
@@ -763,7 +763,7 @@ export function FaqModal({
     },
     {
       q: "How does a user configure `update_policy` on NEAR?",
-      a: "Click 'Configure Policy' in the top bar. You can connect Phantom/Solflare (read-only) or paste your Kamino Obligation address, choose your Trigger Health Factor (e.g. 1.15x) and USDC spend caps, and click 'Apply Policy to Live Telemetry Engine' or copy the one-line `near-cli-rs` transaction command to sign `update_policy` on NEAR Mainnet.",
+      a: "Click 'Configure Protection Policy' on the dashboard. You can connect Phantom/Solflare (read-only) or paste your Kamino Obligation address, choose your Trigger Health Factor (e.g. 1.15x) and USDC spend caps, and click 'Apply Policy to Live Telemetry Engine' or copy the one-line `near-cli-rs` transaction command to sign `update_policy` on NEAR Mainnet.",
     },
     {
       q: "Why use a Volatility-Aware TEE Engine instead of a simple static bot?",

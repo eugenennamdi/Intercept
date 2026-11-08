@@ -276,8 +276,8 @@ export default function InterceptDocsPage() {
               approving unlimited token allowances, Intercept onboarding takes{" "}
               <strong className="text-foreground">three non-custodial steps</strong>{" "}
               via the{" "}
-              <strong className="text-foreground">Configure Policy</strong> modal on the
-              dashboard:
+              <strong className="text-foreground">Configure Protection Policy</strong>{" "}
+              modal on the dashboard:
             </p>
 
             <div className="space-y-3">
@@ -289,8 +289,11 @@ export default function InterceptDocsPage() {
                   <Badge variant="outline">No Solana Signature Needed</Badge>
                 </div>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  Click <strong className="text-foreground">Configure Policy</strong> in
-                  the navbar and either click{" "}
+                  Click{" "}
+                  <strong className="text-foreground">
+                    Configure Protection Policy
+                  </strong>{" "}
+                  on the dashboard and either click{" "}
                   <strong className="text-foreground">Detect Phantom / Solflare</strong>{" "}
                   (read-only public key detection) or paste your Kamino Obligation Base58
                   address. Because Kamino Lend natively allows third-party debt repayment

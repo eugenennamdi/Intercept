@@ -662,8 +662,8 @@ export default function InterceptDashboardPage() {
               </span>
             </div>
 
-            {/* Clean Top Navigation Links (Walkthrough, FAQ, Docs) */}
-            <nav className="hidden sm:flex items-center gap-1">
+            {/* Single Canonical Top Navigation (How It Works, FAQ, Docs) */}
+            <nav className="flex items-center gap-0.5 sm:gap-1">
               <button
                 type="button"
                 onClick={() => setWalkthroughOpen(true)}
@@ -713,15 +713,6 @@ export default function InterceptDashboardPage() {
                 </span>
               </div>
             )}
-
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setConfigureOpen(true)}
-            >
-              <ShieldCheck className="h-3.5 w-3.5" weight="duotone" />
-              <span>Configure Policy</span>
-            </Button>
 
             <Button
               variant="destructive"
@@ -784,8 +775,8 @@ export default function InterceptDashboardPage() {
                 .
               </p>
 
-              {/* Clear Onboarding & Walkthrough Actions */}
-              <div className="flex flex-wrap items-center gap-2.5 pt-1">
+              {/* Single Primary Action in Hero (No Duplicate Navbar Links) */}
+              <div className="flex flex-wrap items-center gap-3 pt-1">
                 <Button
                   variant="default"
                   size="sm"
@@ -795,23 +786,16 @@ export default function InterceptDashboardPage() {
                   <span>Configure Protection Policy</span>
                 </Button>
 
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setWalkthroughOpen(true)}
-                >
-                  <Sparkle className="h-3.5 w-3.5" />
-                  <span>Product Walkthrough</span>
-                </Button>
-
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setFaqOpen(true)}
-                >
-                  <Question className="h-3.5 w-3.5" />
-                  <span>FAQ</span>
-                </Button>
+                <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-secondary/60 px-2.5 py-1.5 font-mono text-[11px] text-muted-foreground">
+                  <span>Active Policy:</span>
+                  <strong className="text-foreground font-medium">
+                    HF &lt; {triggerHf.toFixed(2)}x
+                  </strong>
+                  <span>·</span>
+                  <strong className="text-foreground font-medium">
+                    ${(customPolicy?.maxPerActionUsdc ?? 2500).toLocaleString()} Cap
+                  </strong>
+                </span>
               </div>
             </div>
 
