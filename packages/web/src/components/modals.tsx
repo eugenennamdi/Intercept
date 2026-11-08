@@ -777,10 +777,6 @@ export function FaqModal({
       q: "What is the minimum USD amount required to test a live rescue on Mainnet?",
       a: "As little as $1.00 to $2.00 USDC on Base! Base EIP-1559 gas costs less than $0.001, Solana transaction fees cost $0.0013 (plus ~0.002 SOL refundable ATA rent), and NEAR contract storage stake is refundable.",
     },
-    {
-      q: "How should a Hackathon Judge evaluate and verify Intercept?",
-      a: "1) Use the Simulation Controller on the main dashboard to switch between Live Pyth (0% shock) and -25% Flash Crash. 2) Click 'Test Exploit' in the top bar to watch all 11 Red-Team attack vectors get blocked by the Rust byte parser. 3) Run `npm run verify` and `cargo test` in the terminal to verify all 22 Rust contract tests and live Mainnet RPC preflight checks.",
-    },
   ];
 
   return (
@@ -788,7 +784,7 @@ export function FaqModal({
       open={open}
       onClose={onClose}
       title="Frequently Asked Questions"
-      subtitle="Key architectural, security, and onboarding answers for users and hackathon judges."
+      subtitle="Key architectural, security, and onboarding answers for DeFi borrowers and security auditors."
       badge="FAQ"
       maxWidth="max-w-2xl"
     >
@@ -800,7 +796,7 @@ export function FaqModal({
               <button
                 type="button"
                 onClick={() => setOpenIdx(isOpen ? null : idx)}
-                className="emil-row-hover flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left cursor-pointer"
+                className="emil-row-hover flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-zinc-900"
               >
                 <span className="text-xs sm:text-sm font-medium text-foreground">
                   {item.q}

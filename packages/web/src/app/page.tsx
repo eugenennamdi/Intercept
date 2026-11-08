@@ -315,7 +315,7 @@ interface InterceptApiResponse {
 }
 
 /**
- * Reusable Section Header for clear visual hierarchy and judge scannability
+ * Reusable Section Header for clear visual hierarchy and scannability
  */
 function SectionHeader({
   index,
@@ -1349,7 +1349,7 @@ export default function InterceptDashboardPage() {
         </section>
 
         {/* =====================================================================
-            SECTION 03: JUDGE VERIFICATION SUITE (4 FOCUSED TABS)
+            SECTION 03: CRYPTOGRAPHIC & ADVERSARIAL VERIFICATION (5 FOCUSED TABS)
            ===================================================================== */}
         <section ref={workspaceRef} className="space-y-4">
           <SectionHeader

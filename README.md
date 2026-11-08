@@ -2,10 +2,9 @@
 
 **Zero-Trust Cross-Chain Kamino Liquidation Defense Powered by NEAR AI Cloud (TEE), NEAR Policy Guardrail Contracts, NEAR Chain Signatures (`v1.signer`), and NEAR Intents (`1-Click Swap API`).**
 
-- **Hackathon:** NEAR HACKATHON (November 1–14, 2026) — Built 100% from scratch within the official hackathon window (`Q-001` post-announcement commits `50f3750..HEAD`)
-- **License:** [MIT License](file:///Users/apple/Desktop/Intercept/LICENSE) (`Q-014`)
-- **Live Production Demo (Zero-Install Command Center):** https://intercept-inky.vercel.app
-- **Tracks (`HACKATHON.md` IDs):** `defi` (Unstoppable DeFi), `security` (AI Security & Defense), `privacy` (Privacy & Private AI), `agents` (Agent Economy)
+- **License:** [MIT License](file:///Users/apple/Desktop/Intercept/LICENSE)
+- **Live Production App (Zero-Install Command Center):** https://intercept-inky.vercel.app
+- **Technical Documentation Portal:** https://intercept-inky.vercel.app/docs
 - **NEAR Ecosystem Technologies Used:** NEAR Intents (`1-Click Swap API` `/v0/tokens`, `/v0/quote`, `/v0/deposit/submit`, `/v0/status`), NEAR Chain Signatures (`v1.signer` `domain_id: 0` Secp256k1 & `domain_id: 1` Ed25519), NEAR AI Cloud (`https://cloud-api.near.ai/v1` Intel TDX + NVIDIA NRAS Hardware Attestation & Signed Chat Verification), Scoped NEAR Function Call Keys (`AccessKeyPermission::FunctionCall`), `near-sdk-rs` v5.x Byte-Level Policy Guardrails with NEP-297 Structured Events.
 
 ---
@@ -25,9 +24,9 @@ Existing automated protection bots force an unacceptable security trade-off:
 
 ---
 
-## 2. Do X — See Y (Deterministic Verification Steps for Judges)
+## 2. Deterministic Security & Mainnet Verification
 
-Every claim in this repository is verifiable locally in under 60 seconds with zero secret keys required.
+Every architectural guarantee in this repository is verifiable locally in under 60 seconds with zero secret keys required.
 
 ### Step A: Verify the Rust Smart Contract & Adversarial Unit Tests (`contracts/policy-guardrail`)
 
@@ -110,8 +109,7 @@ Then open `http://localhost:3000`.
 ```text
 Intercept/
 ├── .github/workflows/ci.yml      # Automated CI pipeline (cargo test, npm test, verify, build)
-├── HACKATHON.md                  # Official NEAR Hackathon instructions
-├── README.md                     # Judge verification guide ("Do X, See Y")
+├── README.md                     # Protocol overview & deterministic verification guide
 ├── ARCHITECTURE.md               # Byte-level parser & cryptographic specification
 ├── scripts/
 │   └── deploy-near.sh            # 1-command WASM build & NEAR contract deployment script
@@ -137,10 +135,11 @@ Intercept/
     │       ├── mainnet-broadcaster.ts # Live NEAR v1.signer, Base & Solana RPC broadcaster
     │       ├── orchestrator.ts   # 5-stage rescue state machine & 11-vector adversarial suite
     │       ├── backtest.ts       # Multi-regime historical quantitative backtest engine
-    │       ├── cli-verify.ts     # 1-command deterministic judge verifier
+    │       ├── cli-verify.ts     # 1-command deterministic security & RPC verifier
     │       └── test.ts           # Unit & adversarial test suite
     └── web/                      # Next.js + Tailwind Institutional DeFi Command Center
         └── src/app/
             ├── api/intercept/    # Server route executing live agent-tee pipeline
+            ├── docs/             # Dedicated technical documentation portal
             └── page.tsx          # Interactive Command Center UI
 ```

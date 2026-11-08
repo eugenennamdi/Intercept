@@ -84,7 +84,7 @@ function CodeBlock({
 const DOC_SECTIONS = [
   { id: "overview", num: "01", label: "Executive Overview", group: "Getting Started" },
   { id: "onboarding", num: "02", label: "User Onboarding & UX", group: "Getting Started" },
-  { id: "judges", num: "03", label: "Judge Evaluation Guide", group: "Getting Started" },
+  { id: "verification", num: "03", label: "Security & Audit Verification", group: "Getting Started" },
   { id: "isolation", num: "04", label: "3-Domain Isolation Model", group: "Core Architecture" },
   { id: "tee-engine", num: "05", label: "Volatility-Aware TEE Engine", group: "Core Architecture" },
   { id: "guardrail", num: "06", label: "Rust Byte-Level Guardrail", group: "Core Architecture" },
@@ -342,22 +342,22 @@ export default function InterceptDocsPage() {
             </div>
           </section>
 
-          {/* 03. JUDGE EVALUATION GUIDE */}
-          <section id="judges" className="scroll-m-20 space-y-4 pt-6 border-t border-border">
+          {/* 03. SECURITY & AUDIT VERIFICATION */}
+          <section id="verification" className="scroll-m-20 space-y-4 pt-6 border-t border-border">
             <div className="flex items-center gap-2">
               <span className="inline-flex h-5 items-center rounded border border-zinc-300 bg-secondary px-1.5 font-mono text-[10px] font-semibold">
                 03
               </span>
               <h2 className="text-xl font-semibold tracking-[-0.025em]">
-                2-Minute Hackathon Judge Evaluation Guide
+                End-to-End Security & Telemetry Verification
               </h2>
             </div>
 
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Judges can verify all four layers of Intercept (Live Mainnet Telemetry,
-              NEAR AI Cloud TEE Reasoning, Deterministic Rust Byte Guardrails, and
-              Quantitative Backtests) either in the browser or via a single terminal
-              command:
+              Borrowers, risk teams, and security auditors can independently verify all
+              four layers of Intercept (Live Mainnet Telemetry, NEAR AI Cloud TEE
+              Reasoning, Deterministic Rust Byte Guardrails, and Quantitative Backtests)
+              either in the browser or via the CLI verification suite:
             </p>
 
             <Table>
