@@ -3,21 +3,11 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
   X,
-  LockKey,
-  ShieldCheck,
-  Cpu,
-  Pulse,
-  Wallet,
   Check,
   Copy,
   CaretDown,
   CaretRight,
   ArrowSquareOut,
-  SlidersHorizontal,
-  Question,
-  Sparkle,
-  TerminalWindow,
-  CheckCircle,
 } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -35,8 +25,9 @@ export interface CustomPolicyConfig {
 interface SolanaProvider {
   isPhantom?: boolean;
   isSolflare?: boolean;
+  publicKey?: { toString(): string };
   connect: (opts?: { onlyIfTrusted?: boolean }) => Promise<{
-    publicKey: { toString: () => string };
+    publicKey: { toString(): string };
   }>;
 }
 
@@ -54,25 +45,22 @@ declare global {
 }
 
 /**
- * Shared accessible modal shell with Emil Kowalski @starting-style scale(0.97) entry
- * and Escape key dismissal.
+ * Shared accessible modal shell with concentric bezel framing and ESC / backdrop close
  */
 function ModalShell({
   open,
   onClose,
   title,
   subtitle,
-  badge,
-  maxWidth = "max-w-2xl",
   children,
+  maxWidth = "max-w-2xl",
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   subtitle?: string;
-  badge?: string;
-  maxWidth?: string;
   children: React.ReactNode;
+  maxWidth?: string;
 }) {
   useEffect(() => {
     if (!open) return;
@@ -98,7 +86,7 @@ function ModalShell({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="bezel-core flex flex-col max-h-[calc(90dvh-8px)] overflow-hidden">
-          {/* Modal Header */}
+          {/* Modal Header (Clean Title without redundant badge) */}
           <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4 bg-white">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
@@ -108,7 +96,6 @@ function ModalShell({
                 <h2 className="text-base font-semibold tracking-[-0.02em] text-foreground">
                   {title}
                 </h2>
-                {badge && <Badge variant="secondary">{badge}</Badge>}
               </div>
               {subtitle && (
                 <p className="text-xs text-muted-foreground">{subtitle}</p>
@@ -135,7 +122,7 @@ function ModalShell({
 }
 
 /**
- * 1. WALKTHROUGH MODAL ("How Intercept Works & What Happens When You Proceed")
+ * 1. WALKTHROUGH MODAL ("How Intercept Works")
  */
 export function WalkthroughModal({
   open,
@@ -151,39 +138,47 @@ export function WalkthroughModal({
   const steps = [
     {
       index: "01",
-      title: "Read-Only Solana Position (Zero Key Sharing)",
+      shortLabel: "Keep Self-Custody",
+      title: "Keep Full Self-Custody of Your Solana Position",
       summary:
-        "Your Kamino Lend obligation (SOL collateral + USDC debt) stays 100% inside your personal Solana wallet.",
+        "Your SOL collateral and USDC loan stay inside your personal Solana wallet at all times.",
       whatYouDo:
-        "You only provide your public Solana address or Kamino Obligation pubkey. Because Kamino Lend natively allows third-party debt repayment (repay_obligation_liquidity_v2), Intercept never requests your Solana private key or withdrawal authority.",
-      guarantee: "Impossible for the AI agent or NEAR MPC to withdraw your SOL collateral.",
+        "You only provide your public Solana address or Kamino position address. Because Kamino Lend allows any authorized third party to pay down a loan's debt without granting withdrawal access, Intercept never asks for your private key or permission to touch your collateral.",
+      guarantee:
+        "Neither Intercept nor any automated agent can ever withdraw your SOL collateral.",
     },
     {
       index: "02",
-      title: "Lock Your Policy on NEAR (update_policy)",
+      shortLabel: "Set Protection Rules",
+      title: "Set Your Protection Rules & Spending Caps",
       summary:
-        "You set strict mathematical rules on guardrail.intercept-defi.near that govern when and how a rescue can occur.",
+        "You define strict rules that control exactly when a rescue triggers and the maximum USDC that can be spent.",
       whatYouDo:
-        "By proceeding, you configure four parameters: (1) your pinned Kamino Obligation address, (2) your Health Factor trigger threshold (default 1.15x), (3) your max per-rescue USDC cap, and (4) your max daily USDC spend limit.",
-      guarantee: "Only the policy owner can modify these bounds; the AI agent cannot alter them.",
+        "You choose four settings: (1) the Kamino position to protect, (2) the Health Factor threshold that triggers a rescue (default 1.15x), (3) your maximum USDC limit per rescue, and (4) your maximum daily USDC limit.",
+      guarantee:
+        "Only you control these limits; the automated risk engine cannot override or raise them.",
     },
     {
       index: "03",
-      title: "Fund Your Derived Base MPC Vault (v1.signer)",
+      shortLabel: "Hold Reserve on Base",
+      title: "Hold Idle Reserve USDC on Base",
       summary:
-        "NEAR’s threshold MPC network derives a deterministic Base Mainnet vault (domain_id: 0) bound to the Guardrail contract.",
+        "A dedicated Base reserve vault holds your standby USDC until a market crash occurs.",
       whatYouDo:
-        "You deposit idle USDC on Base (Chain 8453) into the derived MPC vault address (0x72fa...). While your Kamino position is healthy (HF >= 1.15x), 100% of your USDC remains untouched on Base.",
-      guarantee: "Base USDC can only be transferred to a verified NEAR Intents 1-Click bridge quote.",
+        "You fund your Base reserve vault with USDC. As long as your Kamino Health Factor stays safely above your trigger threshold (e.g. 1.15x), 100% of your USDC remains untouched on Base.",
+      guarantee:
+        "Reserve funds are locked by on-chain rules to only pay down your specific Kamino loan.",
     },
     {
       index: "04",
-      title: "Autonomous 2-Leg Rescue During a Flash Crash",
+      shortLabel: "Automatic Rescue",
+      title: "Automatic Cross-Chain Rescue During a Crash",
       summary:
-        "When a SOL crash pushes your Health Factor below 1.15x, the TEE + Guardrail execute a 2-leg cross-chain rescue in ~1.8 seconds.",
+        "When a SOL price drop pushes your Health Factor below your threshold, Intercept bridges USDC from Base and repays your Solana debt in ~1.8 seconds.",
       whatYouDo:
-        "Nothing manually — the NEAR AI Cloud TEE (DeepSeek-V3.1 in Intel TDX) signs an Ed25519 rescue receipt, the Rust Guardrail verifies every raw byte of Leg 1 (Base EIP-1559) and Leg 2 (Solana V0 Kamino Repay), and v1.signer signs both legs.",
-      guarantee: "Any tampered destination, selector, or gas-griefing fee triggers an instant Rust panic.",
+        "Nothing manually — the risk engine measures the severity of the market drop, calculates the exact USDC repayment needed to restore a safe buffer (1.20x for mild dips or 1.45x for severe cascades), and settles the repayment automatically.",
+      guarantee:
+        "Every transaction is verified on-chain against your spending limits and destination address before execution.",
     },
   ];
 
@@ -194,8 +189,7 @@ export function WalkthroughModal({
       open={open}
       onClose={onClose}
       title="How Intercept Works"
-      subtitle="A 4-step breakdown of the zero-trust architecture and what happens when you proceed."
-      badge="How It Works"
+      subtitle="A 4-step overview of how your position is protected without giving up custody."
       maxWidth="max-w-2xl"
     >
       {/* Step Selector Pills */}
@@ -217,7 +211,7 @@ export function WalkthroughModal({
                 STEP {s.index}
               </span>
               <span className="text-xs font-medium truncate w-full mt-0.5">
-                {s.title.split(" (")[0]}
+                {s.shortLabel}
               </span>
             </button>
           );
@@ -228,8 +222,8 @@ export function WalkthroughModal({
       <div className="rounded-xl border border-border bg-secondary/40 p-4 space-y-3.5">
         <div className="flex items-center justify-between">
           <Badge variant="contrast">Step {current.index} of 04</Badge>
-          <span className="font-mono text-[11px] text-muted-foreground">
-            guardrail.intercept-defi.near
+          <span className="text-[11px] font-medium text-muted-foreground">
+            Non-Custodial Protection
           </span>
         </div>
 
@@ -242,48 +236,40 @@ export function WalkthroughModal({
         </p>
 
         <div className="rounded-lg border border-border bg-white p-3.5 space-y-1.5 text-xs">
-          <div className="font-semibold text-zinc-900 flex items-center gap-1.5">
-            <Sparkle className="h-3.5 w-3.5" weight="fill" />
-            <span>What you are doing in this step:</span>
+          <div className="font-semibold text-zinc-900">
+            What you do in this step
           </div>
           <p className="text-muted-foreground leading-relaxed">
             {current.whatYouDo}
           </p>
         </div>
 
-        <div className="flex items-center gap-2 rounded-lg border border-zinc-300 bg-zinc-100/80 px-3 py-2 text-xs text-zinc-900 font-medium">
-          <ShieldCheck className="h-4 w-4 shrink-0" weight="fill" />
-          <span>Security Guarantee: {current.guarantee}</span>
+        <div className="rounded-lg border border-zinc-300 bg-zinc-100/80 px-3.5 py-2.5 text-xs text-zinc-900">
+          <span className="font-semibold">Security Guarantee: </span>
+          <span className="text-zinc-700">{current.guarantee}</span>
         </div>
       </div>
 
       {/* Summary Checklist of Proceeding */}
       <div className="rounded-lg border border-border p-3.5 space-y-2 text-xs">
         <div className="font-semibold text-foreground">
-          Summary — By proceeding to Configure Protection, you:
+          What happens when you configure a policy:
         </div>
-        <ul className="space-y-1.5 text-muted-foreground">
-          <li className="flex items-center gap-2">
-            <CheckCircle className="h-3.5 w-3.5 text-zinc-900 shrink-0" weight="fill" />
-            <span>
-              <strong className="text-foreground">Never share</strong> your Solana
-              private key or collateral withdrawal authority.
-            </span>
+        <ul className="space-y-1.5 text-muted-foreground list-disc pl-4">
+          <li>
+            <strong className="text-foreground">Zero key sharing:</strong> You
+            never share your Solana private key or grant collateral withdrawal
+            permissions.
           </li>
-          <li className="flex items-center gap-2">
-            <CheckCircle className="h-3.5 w-3.5 text-zinc-900 shrink-0" weight="fill" />
-            <span>
-              <strong className="text-foreground">Pin your exact policy rules</strong>{" "}
-              (Obligation pubkey, Trigger HF, USDC spend caps) in the live engine or on
-              NEAR Mainnet.
-            </span>
+          <li>
+            <strong className="text-foreground">Custom limits:</strong> You set
+            the exact Health Factor trigger and USDC spending caps for your
+            position.
           </li>
-          <li className="flex items-center gap-2">
-            <CheckCircle className="h-3.5 w-3.5 text-zinc-900 shrink-0" weight="fill" />
-            <span>
-              <strong className="text-foreground">Can test everything safely</strong>{" "}
-              with simulated SOL flash crashes before depositing a single dollar.
-            </span>
+          <li>
+            <strong className="text-foreground">Risk-free simulation:</strong>{" "}
+            You can test how your policy responds to simulated SOL flash crashes
+            before depositing any funds.
           </li>
         </ul>
       </div>
@@ -317,7 +303,7 @@ export function WalkthroughModal({
             onProceedToConfigure();
           }}
         >
-          <span>Proceed to Configure Policy</span>
+          <span>Configure Protection Policy</span>
           <CaretRight className="h-3.5 w-3.5" />
         </Button>
       </div>
@@ -364,7 +350,7 @@ export function ConfigurePolicyModal({
 
   const [walletStatus, setWalletStatus] = useState<string | null>(null);
   const [evmAddress, setEvmAddress] = useState<string | null>(null);
-  const [copiedCli, setCopiedCli] = useState(false);
+  const [copiedVault, setCopiedVault] = useState(false);
   const [appliedSuccess, setAppliedSuccess] = useState(false);
 
   useEffect(() => {
@@ -376,13 +362,13 @@ export function ConfigurePolicyModal({
     setSlippageBps(currentConfig.maxSlippageBps);
   }, [currentConfig, open]);
 
-  // Native Read-Only Phantom / Solflare detection (0 npm bloat)
+  // Native Read-Only Phantom / Solflare detection
   const handleConnectSolana = useCallback(async () => {
     const provider =
       window.phantom?.solana ?? window.solana ?? window.solflare;
     if (!provider) {
       setWalletStatus(
-        "No Solana extension detected in this browser. Paste any Kamino Obligation address below or use the Mainnet preset."
+        "No Solana wallet extension found. Paste any Kamino position address below or use the Mainnet preset."
       );
       return;
     }
@@ -390,7 +376,9 @@ export function ConfigurePolicyModal({
       const resp = await provider.connect({ onlyIfTrusted: false });
       const pubkey = resp.publicKey.toString();
       setSolanaWallet(pubkey);
-      setWalletStatus(`Connected Solana Wallet (Read-Only): ${pubkey.slice(0, 8)}...${pubkey.slice(-6)}`);
+      setWalletStatus(
+        `Connected Solana Wallet (Read-Only): ${pubkey.slice(0, 8)}...${pubkey.slice(-6)}`
+      );
     } catch (err) {
       setWalletStatus(`Wallet connection cancelled: ${(err as Error).message}`);
     }
@@ -400,7 +388,7 @@ export function ConfigurePolicyModal({
   const handleConnectBaseEvm = useCallback(async () => {
     if (!window.ethereum) {
       setWalletStatus(
-        "No EVM wallet detected. Copy the Base MPC Vault address below to transfer USDC from any wallet."
+        "No EVM wallet detected. Copy the Base Reserve Address below to transfer USDC from any wallet."
       );
       return;
     }
@@ -410,7 +398,6 @@ export function ConfigurePolicyModal({
       })) as string[];
       if (accounts?.[0]) {
         setEvmAddress(accounts[0]);
-        // Request Base Mainnet (Chain ID 8453 = 0x2105)
         await window.ethereum
           .request({
             method: "wallet_switchEthereumChain",
@@ -424,23 +411,11 @@ export function ConfigurePolicyModal({
   }, []);
 
   const minTriggerHfBps = Math.round(triggerHf * 10000);
-  const maxPerActionMicro = String(Math.round(maxPerAction * 1_000_000));
-  const maxDailyMicro = String(Math.round(maxDaily * 1_000_000));
 
-  const updatePolicyArgsJson = JSON.stringify({
-    user_kamino_obligation_pubkey: obligation.trim(),
-    min_trigger_hf_bps: minTriggerHfBps,
-    max_single_rescue_usdc: maxPerActionMicro,
-    max_daily_rescue_usdc: maxDailyMicro,
-    max_slippage_bps: slippageBps,
-  });
-
-  const nearCliCommand = `near contract call-function as-transaction ${nearContractId} update_policy json-args '${updatePolicyArgsJson}' prepaid-gas '30.0 Tgas' attached-deposit '0 NEAR' sign-as <YOUR_NEAR_ACCOUNT.near> network-config mainnet sign-with-keychain send`;
-
-  const handleCopyCli = () => {
-    navigator.clipboard.writeText(nearCliCommand);
-    setCopiedCli(true);
-    setTimeout(() => setCopiedCli(false), 1800);
+  const handleCopyVault = () => {
+    navigator.clipboard.writeText(derivedBaseVault);
+    setCopiedVault(true);
+    setTimeout(() => setCopiedVault(false), 1800);
   };
 
   const handleApplyLive = () => {
@@ -465,20 +440,16 @@ export function ConfigurePolicyModal({
       open={open}
       onClose={onClose}
       title="Configure Protection Policy"
-      subtitle="Connect your Solana position, set your NEAR Guardrail bounds, and apply them to the live engine."
-      badge="Zero-Trust Setup"
+      subtitle="Link your Solana position, choose your rescue thresholds, and set your USDC spending limits."
       maxWidth="max-w-2xl"
     >
       {/* Clear Context Banner Explaining What Proceeding Does */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-lg border border-border bg-secondary/60 px-3.5 py-2.5 text-xs">
-        <div className="flex items-center gap-2 text-muted-foreground">
-          <LockKey className="h-4 w-4 text-zinc-900 shrink-0" weight="duotone" />
-          <span>
-            <strong className="text-foreground">Non-Custodial:</strong> Connecting or
-            applying a policy only pins public addresses & thresholds. No private keys
-            are shared.
-          </span>
-        </div>
+        <span className="text-muted-foreground">
+          <strong className="text-foreground">Non-Custodial:</strong> Linking a
+          position only registers public addresses and safety thresholds. No
+          private keys are shared.
+        </span>
         <button
           type="button"
           onClick={() => {
@@ -499,7 +470,7 @@ export function ConfigurePolicyModal({
               STEP 1
             </span>
             <span className="text-sm font-semibold text-foreground">
-              Target Kamino Obligation (Solana Mainnet)
+              Your Kamino Position (Solana)
             </span>
           </div>
           <Button
@@ -507,11 +478,10 @@ export function ConfigurePolicyModal({
             size="sm"
             onClick={() => void handleConnectSolana()}
           >
-            <Wallet className="h-3.5 w-3.5" />
             <span>
               {solanaWallet
                 ? `Connected: ${solanaWallet.slice(0, 6)}...`
-                : "Detect Phantom / Solflare"}
+                : "Connect Phantom / Solflare"}
             </span>
           </Button>
         </div>
@@ -524,14 +494,14 @@ export function ConfigurePolicyModal({
 
         <div className="space-y-1.5">
           <label className="text-xs font-medium text-muted-foreground block">
-            Kamino Obligation Pubkey (Base58)
+            Kamino Position Address
           </label>
           <div className="flex gap-2">
             <input
               type="text"
               value={obligation}
               onChange={(e) => setObligation(e.target.value)}
-              placeholder="Enter Kamino Obligation Base58 address..."
+              placeholder="Enter your Solana Kamino position address..."
               className="flex-1 rounded-md border border-border bg-secondary/40 px-3 py-1.5 font-mono text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-zinc-900"
             />
             <Button
@@ -547,7 +517,7 @@ export function ConfigurePolicyModal({
         </div>
       </div>
 
-      {/* STEP 2: Guardrail Policy Bounds (update_policy) */}
+      {/* STEP 2: Protection Threshold & Spending Limits */}
       <div className="space-y-4 rounded-xl border border-border p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -555,23 +525,22 @@ export function ConfigurePolicyModal({
               STEP 2
             </span>
             <span className="text-sm font-semibold text-foreground">
-              NEAR Guardrail Policy Parameters (update_policy)
+              Protection Threshold & Spending Limits
             </span>
           </div>
           <span className="font-mono text-xs text-muted-foreground">
-            {minTriggerHfBps} bps
+            Trigger &lt; {triggerHf.toFixed(2)}x
           </span>
         </div>
 
         {/* Trigger HF Slider */}
         <div className="space-y-1.5">
           <div className="flex items-center justify-between text-xs">
-            <span className="text-muted-foreground flex items-center gap-1.5">
-              <SlidersHorizontal className="h-3.5 w-3.5" />
-              <span>Trigger Health Factor Threshold</span>
+            <span className="text-muted-foreground">
+              Minimum Health Factor Trigger
             </span>
             <span className="font-mono font-semibold text-foreground tabular-nums">
-              {triggerHf.toFixed(2)}x ({minTriggerHfBps} bps)
+              {triggerHf.toFixed(2)}x
             </span>
           </div>
           <input
@@ -602,28 +571,28 @@ export function ConfigurePolicyModal({
               onChange={(e) => setMaxPerAction(Number(e.target.value))}
               className="w-full rounded-md border border-border bg-secondary/40 px-2.5 py-1.5 font-mono text-xs text-foreground"
             >
-              <option value={2}>2.00 USDC ($2 Micro Test)</option>
-              <option value={10}>10.00 USDC ($10 Test)</option>
-              <option value={500}>500.00 USDC</option>
-              <option value={2500}>2,500.00 USDC (Default)</option>
-              <option value={10000}>10,000.00 USDC</option>
+              <option value={2}>$2.00 USDC (Micro Test)</option>
+              <option value={10}>$10.00 USDC (Small Test)</option>
+              <option value={500}>$500.00 USDC</option>
+              <option value={2500}>$2,500.00 USDC (Default)</option>
+              <option value={10000}>$10,000.00 USDC</option>
             </select>
           </div>
 
           <div className="space-y-1">
             <label className="text-[11px] font-medium text-muted-foreground block">
-              Max Daily Cap (USDC)
+              Max Daily Limit (USDC)
             </label>
             <select
               value={maxDaily}
               onChange={(e) => setMaxDaily(Number(e.target.value))}
               className="w-full rounded-md border border-border bg-secondary/40 px-2.5 py-1.5 font-mono text-xs text-foreground"
             >
-              <option value={10}>10.00 USDC</option>
-              <option value={50}>50.00 USDC</option>
-              <option value={1000}>1,000.00 USDC</option>
-              <option value={5000}>5,000.00 USDC (Default)</option>
-              <option value={25000}>25,000.00 USDC</option>
+              <option value={10}>$10.00 USDC</option>
+              <option value={50}>$50.00 USDC</option>
+              <option value={1000}>$1,000.00 USDC</option>
+              <option value={5000}>$5,000.00 USDC (Default)</option>
+              <option value={25000}>$25,000.00 USDC</option>
             </select>
           </div>
 
@@ -636,15 +605,15 @@ export function ConfigurePolicyModal({
               onChange={(e) => setSlippageBps(Number(e.target.value))}
               className="w-full rounded-md border border-border bg-secondary/40 px-2.5 py-1.5 font-mono text-xs text-foreground"
             >
-              <option value={25}>25 bps (0.25%)</option>
-              <option value={50}>50 bps (0.50% Default)</option>
-              <option value={100}>100 bps (1.00%)</option>
+              <option value={25}>0.25%</option>
+              <option value={50}>0.50% (Default)</option>
+              <option value={100}>1.00%</option>
             </select>
           </div>
         </div>
       </div>
 
-      {/* STEP 3: On-Chain NEAR Command & Derived Base Vault */}
+      {/* STEP 3: Reserve & Settlement Accounts */}
       <div className="space-y-3 rounded-xl border border-border p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
@@ -652,33 +621,29 @@ export function ConfigurePolicyModal({
               STEP 3
             </span>
             <span className="text-sm font-semibold text-foreground">
-              On-Chain NEAR Call & Derived Base MPC Vault
+              Reserve & Settlement Accounts
             </span>
           </div>
-          <Button variant="outline" size="sm" onClick={handleCopyCli}>
-            {copiedCli ? (
+          <Button variant="outline" size="sm" onClick={handleCopyVault}>
+            {copiedVault ? (
               <>
                 <Check className="h-3.5 w-3.5" weight="bold" />
-                <span>Copied NEAR CLI</span>
+                <span>Copied Base Vault</span>
               </>
             ) : (
               <>
                 <Copy className="h-3.5 w-3.5" />
-                <span>Copy update_policy CLI</span>
+                <span>Copy Base Vault Address</span>
               </>
             )}
           </Button>
         </div>
 
-        <pre className="rounded-md border border-border bg-secondary/60 p-2.5 font-mono text-[11px] text-muted-foreground overflow-x-auto leading-relaxed">
-          {nearCliCommand}
-        </pre>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1 text-xs">
-          <div className="flex items-center justify-between rounded-md border border-border bg-secondary/30 px-3 py-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+          <div className="flex items-center justify-between rounded-md border border-border bg-secondary/30 px-3 py-2.5">
             <div>
-              <div className="text-[10px] font-mono text-muted-foreground">
-                DERIVED BASE VAULT (domain_id: 0)
+              <div className="text-[11px] text-muted-foreground">
+                Base USDC Reserve Vault
               </div>
               <div className="font-mono font-medium text-foreground mt-0.5">
                 {derivedBaseVault.slice(0, 10)}...{derivedBaseVault.slice(-8)}
@@ -689,17 +654,20 @@ export function ConfigurePolicyModal({
               size="sm"
               onClick={() => void handleConnectBaseEvm()}
             >
-              {evmAddress ? `EVM: ${evmAddress.slice(0, 6)}...` : "Connect Base EVM"}
+              {evmAddress
+                ? `Base: ${evmAddress.slice(0, 6)}...`
+                : "Connect Base Wallet"}
             </Button>
           </div>
 
-          <div className="flex items-center justify-between rounded-md border border-border bg-secondary/30 px-3 py-2">
+          <div className="flex items-center justify-between rounded-md border border-border bg-secondary/30 px-3 py-2.5">
             <div>
-              <div className="text-[10px] font-mono text-muted-foreground">
-                DERIVED SOLANA PAYER (domain_id: 1)
+              <div className="text-[11px] text-muted-foreground">
+                Solana Repayment Account
               </div>
               <div className="font-mono font-medium text-foreground mt-0.5">
-                {derivedSolanaPayer.slice(0, 10)}...{derivedSolanaPayer.slice(-8)}
+                {derivedSolanaPayer.slice(0, 10)}...
+                {derivedSolanaPayer.slice(-8)}
               </div>
             </div>
             <a
@@ -708,7 +676,7 @@ export function ConfigurePolicyModal({
               rel="noreferrer"
               className="inline-flex items-center gap-1 font-medium text-zinc-900 hover:underline"
             >
-              <span>NEARBlocks</span>
+              <span>Explorer</span>
               <ArrowSquareOut className="h-3.5 w-3.5" />
             </a>
           </div>
@@ -724,13 +692,10 @@ export function ConfigurePolicyModal({
           {appliedSuccess ? (
             <>
               <Check className="h-3.5 w-3.5" weight="bold" />
-              <span>Policy Applied to Live Engine!</span>
+              <span>Policy Saved</span>
             </>
           ) : (
-            <>
-              <ShieldCheck className="h-4 w-4" weight="fill" />
-              <span>Apply Policy to Live Telemetry Engine</span>
-            </>
+            <span>Save Protection Policy</span>
           )}
         </Button>
       </div>
@@ -755,27 +720,27 @@ export function FaqModal({
   const faqs = [
     {
       q: "Do I ever share my Solana private key or grant collateral withdrawal permissions?",
-      a: "Never. Your Solana wallet holds your Kamino Lend obligation (SOL collateral + USDC debt) in complete self-custody. Kamino Lend’s smart contract (`KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD`) natively permits any third party to call `repay_obligation_liquidity_v2` to pay down an obligation’s debt without granting any right to withdraw collateral.",
+      a: "Never. Your Solana wallet holds your SOL collateral and USDC loan in complete self-custody. Kamino Lend natively allows any third-party account to pay down a loan's debt without granting any permission to withdraw collateral or borrow additional funds.",
     },
     {
-      q: "What happens if the AI agent inside the TEE hallucinates or is 100% prompt-injected?",
-      a: "Zero user funds can be stolen. Before NEAR’s `v1.signer` MPC network signs any transaction, `guardrail.intercept-defi.near` parses the raw unsigned bytes of both Leg 1 (Base EIP-1559 RLP) and Leg 2 (Solana V0 message). If the AI tries to change the ERC-20 selector, alter the recipient address, call Kamino `withdraw`, or set an excessive gas fee (> 50 gwei on Base or > 5M micro-lamports/CU on Solana), the Rust contract deterministically panics in under 1.5 milliseconds.",
+      q: "What happens if the automated risk engine makes a bad decision or is compromised?",
+      a: "Your funds remain protected by strict on-chain rules. Before any transaction is signed, the smart contract independently checks the destination address, token amount, and network fees. Any attempt to send funds to an unauthorized address, exceed your spending cap, or withdraw collateral is automatically rejected.",
     },
     {
-      q: "How does a user configure `update_policy` on NEAR?",
-      a: "Click 'Configure Protection Policy' on the dashboard. You can connect Phantom/Solflare (read-only) or paste your Kamino Obligation address, choose your Trigger Health Factor (e.g. 1.15x) and USDC spend caps, and click 'Apply Policy to Live Telemetry Engine' or copy the one-line `near-cli-rs` transaction command to sign `update_policy` on NEAR Mainnet.",
+      q: "How do I set up protection for my Kamino position?",
+      a: "Click 'Configure Protection Policy' on the dashboard. Connect your wallet (read-only) or paste your Kamino position address, choose your minimum Health Factor trigger (such as 1.15x) and USDC spending limits, and click 'Save Protection Policy'.",
     },
     {
-      q: "Why use a Volatility-Aware TEE Engine instead of a simple static bot?",
-      a: "Our 3-regime backtest proves the flaw of static bots: a naive static bot that always buffers Health Factor to 1.20x gets liquidated during a violent -34% multi-candle cascade (-21.4% single candle exceeds a 1.20x buffer). Conversely, a static bot that always repays to 1.45x wastes 73.9% more idle Base USDC during calm pullbacks. Intercept reads Pyth confidence spread widening and EMA velocity inside the NEAR AI Cloud TEE to dynamically select between HOLD, MICRO_BUFFER_RESCUE (1.20x), and CASCADE_DEEP_RESCUE (1.45x).",
+      q: "Why use an adaptive risk engine instead of a fixed repayment bot?",
+      a: "Fixed bots fail in one of two ways: a bot that always tops up your Health Factor to 1.20x can still get liquidated during a sharp multi-candle crash, while a bot that always repays to 1.45x locks up 73.9% more USDC than needed during minor pullbacks. Intercept measures real-time market volatility to choose the right buffer automatically.",
     },
     {
-      q: "How does `v1.signer` handle both Base (EVM) and Solana signatures from one NEAR contract?",
-      a: "Intercept uses NEAR Chain Signatures (`v1.signer`) multi-domain derivation: `domain_id: 0` (Secp256k1 / `Payload::V2::Ecdsa`) signs the 32-byte `keccak256(0x02 || RLP)` hash for the Base USDC transfer, while `domain_id: 1` (Ed25519 / `Payload::V2::Eddsa`) signs the raw 180–1232 byte Solana V0 message for the Kamino same-slot refresh + repayment.",
+      q: "How does Intercept move USDC from Base to Solana without a centralized custodian?",
+      a: "Intercept uses decentralized multi-party computation (MPC) accounts bound to your on-chain policy rules. When your Health Factor drops below your threshold, the Base reserve vault bridges the exact required USDC to Solana and immediately pays down your Kamino loan.",
     },
     {
-      q: "What is the minimum USD amount required to test a live rescue on Mainnet?",
-      a: "As little as $1.00 to $2.00 USDC on Base! Base EIP-1559 gas costs less than $0.001, Solana transaction fees cost $0.0013 (plus ~0.002 SOL refundable ATA rent), and NEAR contract storage stake is refundable.",
+      q: "What is the minimum amount needed to test a live rescue on Mainnet?",
+      a: "As little as $1.00 to $2.00 USDC on Base. Network transaction fees on Base and Solana cost less than $0.01 combined, and you can also simulate any market crash on the dashboard for free before funding a reserve.",
     },
   ];
 
@@ -784,8 +749,7 @@ export function FaqModal({
       open={open}
       onClose={onClose}
       title="Frequently Asked Questions"
-      subtitle="Key architectural, security, and onboarding answers for DeFi borrowers and security auditors."
-      badge="FAQ"
+      subtitle="Clear answers on custody, security limits, and how cross-chain protection works."
       maxWidth="max-w-2xl"
     >
       <div className="divide-y divide-border rounded-xl border border-border overflow-hidden">
@@ -822,7 +786,7 @@ export function FaqModal({
           href="/docs"
           className="text-xs font-medium text-zinc-900 underline underline-offset-4 hover:text-zinc-600"
         >
-          Read Full Technical Documentation (/docs) →
+          Read Technical Documentation →
         </a>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={onClose}>
@@ -836,7 +800,7 @@ export function FaqModal({
               onOpenConfigure();
             }}
           >
-            Configure Policy
+            Configure Protection Policy
           </Button>
         </div>
       </div>

@@ -3,27 +3,12 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import Link from "next/link";
 import {
-  Pulse,
-  Cpu,
-  LockKey,
-  CheckCircle,
-  WarningOctagon,
-  SlidersHorizontal,
   ArrowClockwise,
-  Code,
-  ChartLineUp,
-  Skull,
   CaretRight,
   CaretDown,
   Copy,
   Check,
-  TerminalWindow,
-  Lightning,
   ArrowSquareOut,
-  ShieldCheck,
-  Question,
-  BookOpen,
-  Sparkle,
 } from "@phosphor-icons/react";
 import { InterceptLogoMark } from "@/components/brand-logo";
 import {
@@ -428,18 +413,24 @@ function CopyChip({
 }
 
 const SHORT_STAGE_LABELS: Record<number, string> = {
-  1: "Pyth & Kamino State",
-  2: "TEE Risk Evaluation",
-  3: "NEAR Guardrail Receipt",
-  4: "Leg 1 · Base MPC Sign",
-  5: "Leg 2 · Solana Kamino Repay",
+  1: "Position & Market Check",
+  2: "Risk & Buffer Sizing",
+  3: "Spending Policy Check",
+  4: "Base USDC Bridge",
+  5: "Solana Loan Repayment",
 };
 
 const SHORT_LEG_BADGE: Record<string, string> = {
-  LEG_1_BASE_EVM: "EVM · Leg 1",
-  LEG_2_SOLANA_KAMINO: "SOL · Leg 2",
-  TEE_ATTESTATION: "TEE Enclave",
-  ASYNC_TOCTOU_STATE: "Async State",
+  LEG_1_BASE_EVM: "Base Transfer",
+  LEG_2_SOLANA_KAMINO: "Solana Repay",
+  TEE_ATTESTATION: "Risk Engine",
+  ASYNC_TOCTOU_STATE: "Order Guard",
+};
+
+const REGIME_LABELS: Record<string, string> = {
+  HOLD: "Hold — Position Healthy",
+  MICRO_BUFFER_RESCUE: "Micro Buffer Rescue (1.20x)",
+  CASCADE_DEEP_RESCUE: "Deep Cascade Rescue (1.45x)",
 };
 
 export default function InterceptDashboardPage() {
@@ -662,32 +653,29 @@ export default function InterceptDashboardPage() {
               </span>
             </div>
 
-            {/* Single Canonical Top Navigation (How It Works, FAQ, Docs) */}
+            {/* Single Canonical Top Navigation (How It Works, FAQ, Docs) — Pure Typography */}
             <nav className="flex items-center gap-0.5 sm:gap-1">
               <button
                 type="button"
                 onClick={() => setWalkthroughOpen(true)}
-                className="emil-press inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/70 cursor-pointer"
+                className="emil-press inline-flex items-center rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/70 cursor-pointer"
               >
-                <Sparkle className="h-3.5 w-3.5" />
-                <span>How It Works</span>
+                How It Works
               </button>
 
               <button
                 type="button"
                 onClick={() => setFaqOpen(true)}
-                className="emil-press inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/70 cursor-pointer"
+                className="emil-press inline-flex items-center rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/70 cursor-pointer"
               >
-                <Question className="h-3.5 w-3.5" />
-                <span>FAQ</span>
+                FAQ
               </button>
 
               <Link
                 href="/docs"
-                className="emil-press inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/70"
+                className="emil-press inline-flex items-center rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/70"
               >
-                <BookOpen className="h-3.5 w-3.5" />
-                <span>Docs</span>
+                Docs
               </Link>
             </nav>
           </div>
@@ -715,7 +703,7 @@ export default function InterceptDashboardPage() {
             )}
 
             <Button
-              variant="destructive"
+              variant="outline"
               size="sm"
               onClick={() => {
                 triggerAdversarialIntercept(adversarialSuite[0]?.attackId);
@@ -725,8 +713,8 @@ export default function InterceptDashboardPage() {
                 });
               }}
             >
-              <Skull className="h-3.5 w-3.5" weight="fill" />
-              <span className="hidden md:inline">Test Exploit</span>
+              <span className="hidden md:inline">Security Tests</span>
+              <span className="md:hidden">Security</span>
             </Button>
 
             <Button
@@ -759,7 +747,7 @@ export default function InterceptDashboardPage() {
             <div className="space-y-3">
               <div className="inline-flex items-center gap-2 rounded-full border border-border bg-white px-3 py-1 text-[11px] font-mono text-muted-foreground shadow-2xs">
                 <span className="h-1.5 w-1.5 rounded-full bg-zinc-900" />
-                <span>NEAR AI CLOUD TEE · V1.SIGNER MPC · NEAR INTENTS 1-CLICK</span>
+                <span>NON-CUSTODIAL LIQUIDATION PROTECTION · BASE TO SOLANA</span>
               </div>
 
               <h1 className="scroll-m-20 text-2xl sm:text-3xl lg:text-4xl font-semibold tracking-[-0.035em] leading-[1.08] text-foreground">
@@ -767,23 +755,22 @@ export default function InterceptDashboardPage() {
               </h1>
 
               <p className="text-sm text-muted-foreground leading-relaxed max-w-[60ch]">
-                Holds idle USDC on Base and executes byte-verified cross-chain Kamino
-                debt rescues onto Solana only when Pyth health drops below{" "}
+                Holds your standby USDC on Base and automatically pays down your
+                Solana Kamino loan only when your Health Factor drops below{" "}
                 <span className="font-mono font-medium text-zinc-900">
                   {triggerHf.toFixed(2)}x
                 </span>
                 .
               </p>
 
-              {/* Single Primary Action in Hero (No Duplicate Navbar Links) */}
+              {/* Single Primary Action in Hero (Pure Typography, No Slop Icons) */}
               <div className="flex flex-wrap items-center gap-3 pt-1">
                 <Button
                   variant="default"
                   size="sm"
                   onClick={() => setConfigureOpen(true)}
                 >
-                  <ShieldCheck className="h-4 w-4" weight="fill" />
-                  <span>Configure Protection Policy</span>
+                  Configure Protection Policy
                 </Button>
 
                 <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-secondary/60 px-2.5 py-1.5 font-mono text-[11px] text-muted-foreground">
@@ -793,7 +780,7 @@ export default function InterceptDashboardPage() {
                   </strong>
                   <span>·</span>
                   <strong className="text-foreground font-medium">
-                    ${(customPolicy?.maxPerActionUsdc ?? 2500).toLocaleString()} Cap
+                    ${(customPolicy?.maxPerActionUsdc ?? 2500).toLocaleString()} Limit
                   </strong>
                 </span>
               </div>
@@ -804,50 +791,44 @@ export default function InterceptDashboardPage() {
               <div className="bezel-core p-3.5 space-y-3">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                   <div className="rounded-md border border-border bg-secondary/60 px-3 py-2">
-                    <div className="flex items-center justify-between text-[11px] font-mono text-muted-foreground">
-                      <span>01 · CUSTODY</span>
-                      <LockKey className="h-3.5 w-3.5 text-zinc-700" />
+                    <div className="text-[11px] font-mono text-muted-foreground">
+                      01 · SELF-CUSTODY
                     </div>
                     <div className="mt-1 text-xs font-medium text-foreground">
-                      Solana Key Never Shared
+                      Solana Keys Never Shared
                     </div>
                   </div>
 
                   <div className="rounded-md border border-border bg-secondary/60 px-3 py-2">
-                    <div className="flex items-center justify-between text-[11px] font-mono text-muted-foreground">
-                      <span>02 · GUARDRAIL</span>
-                      <Code className="h-3.5 w-3.5 text-zinc-700" />
+                    <div className="text-[11px] font-mono text-muted-foreground">
+                      02 · ON-CHAIN RULES
                     </div>
-                    <div className="mt-1 text-xs font-medium text-foreground truncate font-mono">
-                      guardrail.intercept-defi.near
+                    <div className="mt-1 text-xs font-medium text-foreground">
+                      Strict Spending & Route Caps
                     </div>
                   </div>
 
                   <div className="rounded-md border border-border bg-secondary/60 px-3 py-2">
-                    <div className="flex items-center justify-between text-[11px] font-mono text-muted-foreground">
-                      <span>03 · SETTLEMENT</span>
-                      <Pulse className="h-3.5 w-3.5 text-zinc-700" />
+                    <div className="text-[11px] font-mono text-muted-foreground">
+                      03 · SETTLEMENT
                     </div>
                     <div className="mt-1 text-xs font-medium text-foreground">
-                      Base (0) → Solana (1)
+                      Base USDC → Solana Loan
                     </div>
                   </div>
                 </div>
 
                 <div className="flex items-center justify-between pt-0.5 text-xs">
                   <span className="text-muted-foreground">
-                    Third-party Kamino{" "}
-                    <code className="font-mono font-medium text-zinc-800">
-                      repay_obligation_liquidity_v2
-                    </code>{" "}
-                    with zero collateral withdrawal rights.
+                    Authorized third-party loan repayment with zero access to withdraw
+                    your SOL collateral.
                   </span>
                   <button
                     type="button"
                     onClick={() => setShowCustodyDetail((prev) => !prev)}
                     className="emil-press inline-flex items-center gap-1 font-medium text-zinc-900 hover:text-zinc-600 shrink-0 ml-3 cursor-pointer"
                   >
-                    <span>{showCustodyDetail ? "Hide Proof" : "Custody Proof"}</span>
+                    <span>{showCustodyDetail ? "Hide Details" : "Custody Guarantee"}</span>
                     <CaretDown
                       className={`h-3 w-3 transition-transform duration-150 ${
                         showCustodyDetail ? "rotate-180" : ""
@@ -856,7 +837,7 @@ export default function InterceptDashboardPage() {
                   </button>
                 </div>
 
-                {/* Preserved in DOM for zero-trust auditability; collapsed by default for clean visual hierarchy */}
+                {/* Preserved in DOM; collapsed by default for clean visual hierarchy */}
                 <div
                   hidden={!showCustodyDetail}
                   className={
@@ -865,20 +846,17 @@ export default function InterceptDashboardPage() {
                       : "hidden"
                   }
                 >
-                  The user’s Solana wallet holds the Kamino obligation (SOL collateral +
-                  USDC debt) and{" "}
+                  Your personal Solana wallet holds your Kamino position (SOL
+                  collateral and USDC loan) and{" "}
                   <strong className="text-foreground font-medium">
                     never shares its private key
                   </strong>
-                  . Kamino Lend natively permits third-party debt repayment (
-                  <code className="font-mono text-zinc-800">
-                    repay_obligation_liquidity_v2
-                  </code>
-                  ) on behalf of any obligation owner without granting collateral
-                  withdrawal rights. Because the user’s Solana wallet is NOT controlled by
-                  NEAR MPC, and the NEAR Guardrail contract strictly pins byte offsets for
-                  Base ERC-20 transfers and Solana Kamino repay instructions, even a 100%
-                  prompt-injected AI agent cannot withdraw collateral or redirect USDC.
+                  . Kamino Lend natively allows any third-party account to pay down a
+                  loan’s debt on behalf of the borrower without granting permission to
+                  withdraw collateral. Because your Solana wallet remains independent
+                  and every rescue transaction is checked against your on-chain spending
+                  limits, even a compromised agent cannot touch your collateral or
+                  redirect your USDC.
                 </div>
               </div>
             </div>
@@ -890,7 +868,7 @@ export default function InterceptDashboardPage() {
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-sm font-medium">
-                    Simulation Controller
+                    Market Stress Simulator
                   </CardTitle>
                   <Badge variant={mode === "LIVE_MAINNET_MODE" ? "outline" : "contrast"}>
                     {mode === "LIVE_MAINNET_MODE"
@@ -899,7 +877,8 @@ export default function InterceptDashboardPage() {
                   </Badge>
                 </div>
                 <CardDescription className="text-xs">
-                  Select a market preset or drag the shock slider to test the TEE response.
+                  Select a market scenario or adjust the slider to see how your policy
+                  responds.
                 </CardDescription>
               </CardHeader>
 
@@ -907,7 +886,7 @@ export default function InterceptDashboardPage() {
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 rounded-[10px] bg-secondary p-1 border border-border">
                   {[
                     {
-                      label: "Live Pyth",
+                      label: "Live Market",
                       sub: "0% Shock",
                       targetMode: "LIVE_MAINNET_MODE" as const,
                       drop: 0,
@@ -961,10 +940,7 @@ export default function InterceptDashboardPage() {
 
                 <div className="space-y-2 pt-1">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground flex items-center gap-1.5">
-                      <SlidersHorizontal className="h-3.5 w-3.5" />
-                      <span>SOL Price Shock</span>
-                    </span>
+                    <span className="text-muted-foreground">SOL Price Shock</span>
                     <span className="font-mono font-medium text-foreground tabular-nums">
                       {mode === "LIVE_MAINNET_MODE" ? "0%" : `-${priceDropPct}%`}
                     </span>
@@ -1001,18 +977,18 @@ export default function InterceptDashboardPage() {
         <section className="space-y-4">
           <SectionHeader
             index="01"
-            title="Position & Oracle Telemetry"
+            title="Position Overview"
             rightSlot={
               report && (
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span>Obligation:</span>
+                  <span>Position:</span>
                   <CopyChip
                     value={report.kaminoBefore.obligationPubkey}
                     display={`${report.kaminoBefore.obligationPubkey.slice(
                       0,
                       6
                     )}...${report.kaminoBefore.obligationPubkey.slice(-4)}`}
-                    label="Kamino Obligation Address"
+                    label="Kamino Position Address"
                   />
                 </div>
               )
@@ -1071,7 +1047,7 @@ export default function InterceptDashboardPage() {
                   </div>
                   <div className="flex justify-between text-[11px] font-mono text-muted-foreground tabular-nums">
                     <span>1.00 Liq</span>
-                    <span>{triggerHf.toFixed(2)} Trig</span>
+                    <span>{triggerHf.toFixed(2)} Trigger</span>
                     <span>1.45 Safe</span>
                   </div>
                 </div>
@@ -1082,7 +1058,7 @@ export default function InterceptDashboardPage() {
             <Card className="emil-card-hover flex flex-col justify-between">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  Kamino Position
+                  Kamino Collateral
                 </span>
                 <span className="font-mono text-xs text-muted-foreground tabular-nums">
                   {report ? report.kaminoBefore.depositedSol.toFixed(3) : "0.185"} SOL
@@ -1098,7 +1074,7 @@ export default function InterceptDashboardPage() {
                   />
                 </div>
                 <div className="flex items-center justify-between text-xs text-muted-foreground tabular-nums pt-2 border-t border-border/60">
-                  <span>USDC Debt</span>
+                  <span>USDC Loan</span>
                   <span className="font-mono text-foreground font-medium">
                     ${report ? report.kaminoBefore.borrowedUsdc.toFixed(2) : "9.23"} → $
                     {report ? report.kaminoAfter.borrowedUsdc.toFixed(2) : "9.23"}
@@ -1111,7 +1087,7 @@ export default function InterceptDashboardPage() {
             <Card className="emil-card-hover flex flex-col justify-between">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  Pyth SOL / USD
+                  SOL / USD Price
                 </span>
                 <span className="font-mono text-xs text-muted-foreground tabular-nums">
                   ±${report ? report.pythTelemetry.confidenceUsd.toFixed(2) : "0.09"}
@@ -1127,9 +1103,13 @@ export default function InterceptDashboardPage() {
                   />
                 </div>
                 <div className="flex items-center justify-between text-xs text-muted-foreground tabular-nums pt-2 border-t border-border/60">
-                  <span>Realized Vol</span>
+                  <span>Annualized Volatility</span>
                   <span className="font-mono text-foreground font-medium">
-                    {report ? report.pythTelemetry.realizedVolatilityBps : 3320} bps
+                    {(
+                      (report ? report.pythTelemetry.realizedVolatilityBps : 3320) /
+                      100
+                    ).toFixed(1)}
+                    %
                   </span>
                 </div>
               </CardContent>
@@ -1139,11 +1119,11 @@ export default function InterceptDashboardPage() {
             <Card className="emil-card-hover flex flex-col justify-between">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  2-Leg Settlement
+                  Rescue Repayment
                 </span>
                 <Badge variant={isRescueTriggered ? "contrast" : "outline"}>
                   {report?.riskEvaluation.regime === "CASCADE_DEEP_RESCUE"
-                    ? "Cascade Rescue"
+                    ? "Deep Rescue"
                     : report?.riskEvaluation.regime === "MICRO_BUFFER_RESCUE"
                     ? "Micro Rescue"
                     : "Standby"}
@@ -1158,9 +1138,9 @@ export default function InterceptDashboardPage() {
                   <span className="text-xs font-mono text-muted-foreground">USDC</span>
                 </div>
                 <div className="flex items-center justify-between text-xs text-muted-foreground tabular-nums pt-2 border-t border-border/60">
-                  <span>Guardrail Cap</span>
+                  <span>Per-Rescue Limit</span>
                   <span className="font-mono text-foreground font-medium">
-                    {report?.policy.maxPerActionUsdcFormatted ?? "$2,500.00"}/tx
+                    {report?.policy.maxPerActionUsdcFormatted ?? "$2,500.00"}
                   </span>
                 </div>
               </CardContent>
@@ -1174,11 +1154,11 @@ export default function InterceptDashboardPage() {
         <section className="space-y-4">
           <SectionHeader
             index="02"
-            title="Trajectory & 5-Stage Rescue Pipeline"
+            title="Health Trajectory & Execution Flow"
             rightSlot={
               report && (
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span>TEE Enclave:</span>
+                  <span>Enclave Signer:</span>
                   <CopyChip
                     value={report.nearAiCloudAttestation.signingAddress}
                     display={`${report.nearAiCloudAttestation.signingAddress.slice(
@@ -1209,17 +1189,16 @@ export default function InterceptDashboardPage() {
                   triggerHf={triggerHf}
                 />
 
-                {/* Concise 1-line TEE Decision Bar */}
+                {/* Concise 1-line Decision Summary Bar */}
                 {report && (
                   <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-secondary/60 px-3 py-2 text-xs">
                     <div className="flex items-center gap-2 min-w-0">
-                      <Cpu className="h-3.5 w-3.5 text-zinc-700 shrink-0" />
                       <span className="font-medium text-foreground truncate">
-                        {report.nearAiCloudAttestation.model}
+                        Decision Mode:
                       </span>
-                      <span className="text-zinc-300">·</span>
-                      <span className="font-mono text-muted-foreground">
-                        {report.riskEvaluation.regime}
+                      <span className="text-muted-foreground">
+                        {REGIME_LABELS[report.riskEvaluation.regime] ??
+                          report.riskEvaluation.regime}
                       </span>
                     </div>
                     {report.teeReceipt && (
@@ -1241,10 +1220,10 @@ export default function InterceptDashboardPage() {
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base">
-                    5-Stage Execution Pipeline
+                    5-Step Rescue Execution
                   </CardTitle>
                   <span className="font-mono text-xs text-muted-foreground tabular-nums">
-                    Click stage to inspect
+                    Click step to inspect
                   </span>
                 </div>
               </CardHeader>
@@ -1256,7 +1235,7 @@ export default function InterceptDashboardPage() {
                       SHORT_STAGE_LABELS[stage.stageIndex] ?? stage.label;
                     const statusLabel =
                       stage.status === "COMPLETED"
-                        ? "Verified"
+                        ? "Completed"
                         : stage.status === "SKIPPED_HEALTHY"
                         ? "Standby"
                         : "Blocked";
@@ -1304,9 +1283,6 @@ export default function InterceptDashboardPage() {
 
                         {isExpanded && (
                           <div className="emil-enter border-t border-border/60 bg-secondary/50 px-3.5 py-3 space-y-2 text-xs">
-                            <div className="font-mono text-[11px] text-zinc-600">
-                              {stage.stageId}
-                            </div>
                             <p className="text-muted-foreground leading-relaxed">
                               {stage.detail}
                             </p>
@@ -1333,12 +1309,12 @@ export default function InterceptDashboardPage() {
         </section>
 
         {/* =====================================================================
-            SECTION 03: CRYPTOGRAPHIC & ADVERSARIAL VERIFICATION (5 FOCUSED TABS)
+            SECTION 03: SECURITY, BACKTEST & RESERVE VERIFICATION
            ===================================================================== */}
         <section ref={workspaceRef} className="space-y-4">
           <SectionHeader
             index="03"
-            title="Cryptographic & Adversarial Verification"
+            title="Security, Backtest & Reserve Verification"
             rightSlot={
               <span className="hidden md:inline-block font-mono text-[11px] text-muted-foreground">
                 Hotkeys: Press 1–5 to switch views
@@ -1352,29 +1328,25 @@ export default function InterceptDashboardPage() {
           >
             <TabsList>
               <TabsTrigger value="redteam">
-                <Skull className="h-3.5 w-3.5" />
-                <span>Red-Team (11/11)</span>
+                <span>Security Tests (11/11)</span>
                 <kbd className="hidden md:inline-block ml-1 rounded border border-zinc-300 bg-zinc-100 px-1 font-mono text-[10px] text-zinc-600">
                   1
                 </kbd>
               </TabsTrigger>
               <TabsTrigger value="inspector">
-                <Code className="h-3.5 w-3.5" />
-                <span>Byte Inspector</span>
+                <span>Transaction Payloads</span>
                 <kbd className="hidden md:inline-block ml-1 rounded border border-zinc-300 bg-zinc-100 px-1 font-mono text-[10px] text-zinc-600">
                   2
                 </kbd>
               </TabsTrigger>
               <TabsTrigger value="backtest">
-                <ChartLineUp className="h-3.5 w-3.5" />
-                <span>Backtest Lab</span>
+                <span>Historical Backtest</span>
                 <kbd className="hidden md:inline-block ml-1 rounded border border-zinc-300 bg-zinc-100 px-1 font-mono text-[10px] text-zinc-600">
                   3
                 </kbd>
               </TabsTrigger>
               <TabsTrigger value="vaults">
-                <TerminalWindow className="h-3.5 w-3.5" />
-                <span>Mainnet Vaults</span>
+                <span>Reserve Accounts</span>
                 <kbd className="hidden md:inline-block ml-1 rounded border border-zinc-300 bg-zinc-100 px-1 font-mono text-[10px] text-zinc-600">
                   4
                 </kbd>
@@ -1388,16 +1360,16 @@ export default function InterceptDashboardPage() {
             </TabsList>
 
             {/* =================================================================
-                TAB 1: ADVERSARIAL RED-TEAM SIMULATOR (11/11 BLOCKED)
+                TAB 1: SECURITY TESTS (11/11 BLOCKED)
                ================================================================= */}
             <TabsContent value="redteam" className="space-y-6">
               <div className="grid gap-6 lg:grid-cols-12 items-start">
-                {/* Clean Scannable Vector List (No Repetitive Badges on Every Row) */}
+                {/* Clean Scannable Vector List */}
                 <Card className="lg:col-span-5">
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-sm font-medium">
-                        Exploit Vectors
+                        Simulated Attack Scenarios
                       </CardTitle>
                       <Badge variant="contrast">
                         {adversarialSuite.length} / {adversarialSuite.length} Blocked
@@ -1451,10 +1423,7 @@ export default function InterceptDashboardPage() {
                     <CardHeader className="pb-3">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
-                          <Badge variant="contrast">
-                            <WarningOctagon className="h-3.5 w-3.5" weight="fill" />
-                            <span>Blocked by Guardrail</span>
-                          </Badge>
+                          <Badge variant="contrast">Blocked by Policy Rules</Badge>
                           <Badge variant="outline" className="font-mono">
                             {selectedAdvCase.errorCode}
                           </Badge>
@@ -1466,9 +1435,8 @@ export default function InterceptDashboardPage() {
                             triggerAdversarialIntercept(selectedAdvCase.attackId)
                           }
                         >
-                          <Lightning className="h-3.5 w-3.5" />
                           <span>
-                            {advSimRunning ? "Verifying..." : "Simulate Attack"}
+                            {advSimRunning ? "Verifying..." : "Re-Run Test"}
                           </span>
                         </Button>
                       </div>
@@ -1483,7 +1451,7 @@ export default function InterceptDashboardPage() {
                     <CardContent className="space-y-4">
                       <div className="space-y-1.5">
                         <span className="text-xs font-medium text-muted-foreground">
-                          Injected Rogue AI Payload
+                          Attempted Unauthorized Action
                         </span>
                         <div className="rounded-md border border-border bg-secondary/50 p-3 font-mono text-xs text-foreground break-all">
                           {selectedAdvCase.injectedPayloadSummary}
@@ -1493,7 +1461,7 @@ export default function InterceptDashboardPage() {
                       <div className="space-y-1.5">
                         <div className="flex items-center justify-between text-xs">
                           <span className="font-medium text-zinc-800">
-                            Deterministic Rust Smart Contract Revert
+                            On-Chain Policy Rejection
                           </span>
                           <span className="font-mono text-muted-foreground tabular-nums">
                             {selectedAdvCase.verificationTimeUs} µs
@@ -1505,12 +1473,11 @@ export default function InterceptDashboardPage() {
                       </div>
 
                       <div className="flex items-center justify-between rounded-md border border-border bg-secondary/60 px-3.5 py-2.5 text-xs">
-                        <span className="flex items-center gap-2 font-medium text-foreground">
-                          <CheckCircle className="h-4 w-4 text-zinc-900" weight="fill" />
-                          <span>0 MPC Signatures Issued · User Funds 100% Intact</span>
+                        <span className="font-medium text-foreground">
+                          0 Signatures Issued · User Funds 100% Protected
                         </span>
                         <span className="font-mono text-muted-foreground hidden sm:inline">
-                          v1.signer::sign Aborted
+                          Execution Blocked
                         </span>
                       </div>
                     </CardContent>
@@ -1520,20 +1487,20 @@ export default function InterceptDashboardPage() {
             </TabsContent>
 
             {/* =================================================================
-                TAB 2: BYTE-LEVEL GUARDRAIL INSPECTOR (LEG 1 & LEG 2)
+                TAB 2: TRANSACTION PAYLOAD INSPECTOR (LEG 1 & LEG 2)
                ================================================================= */}
             <TabsContent value="inspector" className="space-y-4">
               {!report?.leg1BaseVerification || !report?.leg2SolanaVerification ? (
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-base">
-                      Byte-Level Inspector (Standby in Live Mode)
+                      Transaction Payloads (Standby in Live Market Mode)
                     </CardTitle>
                     <CardDescription className="text-xs">
-                      Health Factor ({hfBefore.toFixed(2)}) is above the{" "}
-                      {triggerHf.toFixed(2)} trigger threshold, so 0 transactions are
-                      signed. Load the -25% Flash Crash preset to inspect live Leg 1 & Leg
-                      2 unsigned byte payloads.
+                      Health Factor ({hfBefore.toFixed(2)}) is above your{" "}
+                      {triggerHf.toFixed(2)} trigger threshold, so no rescue transactions
+                      are generated. Select the -25% Crash preset to inspect the
+                      cross-chain payloads.
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -1544,8 +1511,7 @@ export default function InterceptDashboardPage() {
                         handleSelectScenario("STRESS_TEST_MAINNET_MODE", 25)
                       }
                     >
-                      <Lightning className="h-3.5 w-3.5" weight="fill" />
-                      <span>Load -25% Crash Payloads</span>
+                      Load -25% Crash Scenario
                     </Button>
                   </CardContent>
                 </Card>
@@ -1557,38 +1523,31 @@ export default function InterceptDashboardPage() {
                       <CardHeader className="pb-3">
                         <div className="flex items-center justify-between">
                           <CardTitle className="text-base">
-                            Leg 1 · Base EIP-1559 Parser
+                            Leg 1 · Base USDC Transfer
                           </CardTitle>
-                          <Badge variant="secondary">domain_id: 0 (Secp256k1)</Badge>
+                          <Badge variant="secondary">Base Mainnet</Badge>
                         </div>
                         <CardDescription className="text-xs">
-                          Verified by{" "}
-                          <code className="font-mono">verify_and_sign_origin_leg</code>{" "}
-                          before <code className="font-mono">Payload::V2::Ecdsa</code>.
+                          Verified against your spending limit and bridge destination
+                          before signing.
                         </CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-3 text-xs">
                         <div className="divide-y divide-border/60 rounded-md border border-border bg-secondary/20 px-3">
                           <div className="flex items-center justify-between py-2">
-                            <span className="text-muted-foreground">Envelope & Chain</span>
+                            <span className="text-muted-foreground">Network</span>
                             <span className="font-mono text-foreground">
-                              0x02 · Base Mainnet (8453)
+                              Base Mainnet (Chain 8453)
                             </span>
                           </div>
                           <div className="flex items-center justify-between py-2">
-                            <span className="text-muted-foreground">Derivation Path</span>
+                            <span className="text-muted-foreground">Transfer Type</span>
                             <span className="font-mono text-foreground">
-                              {report.leg1BaseVerification.derivationPath}
+                              USDC Transfer (68 bytes)
                             </span>
                           </div>
                           <div className="flex items-center justify-between py-2">
-                            <span className="text-muted-foreground">ERC-20 Calldata</span>
-                            <span className="font-mono text-foreground">
-                              0xa9059cbb (68 bytes)
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between py-2">
-                            <span className="text-muted-foreground">1-Click Deposit</span>
+                            <span className="text-muted-foreground">Bridge Deposit</span>
                             <CopyChip
                               value={report.oneClickQuote?.depositAddress ?? ""}
                               display={`${report.oneClickQuote?.depositAddress.slice(
@@ -1598,7 +1557,7 @@ export default function InterceptDashboardPage() {
                             />
                           </div>
                           <div className="flex items-center justify-between py-2">
-                            <span className="text-muted-foreground">Keccak256 Hash</span>
+                            <span className="text-muted-foreground">Transaction Hash</span>
                             <CopyChip
                               value={
                                 report.leg1BaseVerification.signingHashKeccak256Hex
@@ -1617,11 +1576,11 @@ export default function InterceptDashboardPage() {
                             onClick={() => setShowRawHex((prev) => !prev)}
                             className="text-xs font-medium text-muted-foreground hover:text-foreground cursor-pointer"
                           >
-                            {showRawHex ? "Hide Raw Hex" : "Show Raw Unsigned Hex"}
+                            {showRawHex ? "Hide Raw Bytes" : "Show Raw Transaction Bytes"}
                           </button>
                           <CopyChip
                             value={report.leg1BaseVerification.rawUnsignedTxHex}
-                            display="Copy Raw Hex"
+                            display="Copy Bytes"
                           />
                         </div>
 
@@ -1638,43 +1597,36 @@ export default function InterceptDashboardPage() {
                       <CardHeader className="pb-3">
                         <div className="flex items-center justify-between">
                           <CardTitle className="text-base">
-                            Leg 2 · Solana V0 Kamino Parser
+                            Leg 2 · Solana Kamino Repayment
                           </CardTitle>
-                          <Badge variant="secondary">domain_id: 1 (Ed25519)</Badge>
+                          <Badge variant="secondary">Solana Mainnet</Badge>
                         </div>
                         <CardDescription className="text-xs">
-                          Verified by{" "}
-                          <code className="font-mono">
-                            verify_and_sign_destination_leg
-                          </code>{" "}
-                          before <code className="font-mono">Payload::V2::Eddsa</code>.
+                          Verified to only refresh market prices and pay down your pinned
+                          Kamino loan.
                         </CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-3 text-xs">
                         <div className="divide-y divide-border/60 rounded-md border border-border bg-secondary/20 px-3">
                           <div className="flex items-center justify-between py-2">
-                            <span className="text-muted-foreground">V0 Instruction Set</span>
+                            <span className="text-muted-foreground">Instructions</span>
                             <span className="font-mono text-foreground">
-                              {report.leg2SolanaVerification.kaminoRefreshIxCount} Refresh +
-                              1 Repay
+                              {report.leg2SolanaVerification.kaminoRefreshIxCount} Oracle
+                              Refreshes + 1 Loan Repay
                             </span>
                           </div>
                           <div className="flex items-center justify-between py-2">
-                            <span className="text-muted-foreground">Derivation Path</span>
-                            <span className="font-mono text-foreground">
-                              {report.leg2SolanaVerification.derivationPath}
-                            </span>
+                            <span className="text-muted-foreground">Target Position</span>
+                            <CopyChip
+                              value={report.kaminoBefore.obligationPubkey}
+                              display={`${report.kaminoBefore.obligationPubkey.slice(
+                                0,
+                                10
+                              )}...`}
+                            />
                           </div>
                           <div className="flex items-center justify-between py-2">
-                            <span className="text-muted-foreground">
-                              Anchor Discriminator
-                            </span>
-                            <span className="font-mono text-foreground">
-                              {report.leg2SolanaVerification.discriminatorHex}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between py-2">
-                            <span className="text-muted-foreground">Pinned Reserve</span>
+                            <span className="text-muted-foreground">USDC Reserve</span>
                             <CopyChip
                               value={report.leg2SolanaVerification.repayReservePubkey}
                               display={`${report.leg2SolanaVerification.repayReservePubkey.slice(
@@ -1684,7 +1636,7 @@ export default function InterceptDashboardPage() {
                             />
                           </div>
                           <div className="flex items-center justify-between py-2">
-                            <span className="text-muted-foreground">MPC Source ATA</span>
+                            <span className="text-muted-foreground">Repayment Token Account</span>
                             <CopyChip
                               value={
                                 report.leg2SolanaVerification
@@ -1704,11 +1656,11 @@ export default function InterceptDashboardPage() {
                             onClick={() => setShowRawHex((prev) => !prev)}
                             className="text-xs font-medium text-muted-foreground hover:text-foreground cursor-pointer"
                           >
-                            {showRawHex ? "Hide Raw Hex" : "Show Raw Unsigned Hex"}
+                            {showRawHex ? "Hide Raw Bytes" : "Show Raw Transaction Bytes"}
                           </button>
                           <CopyChip
                             value={report.leg2SolanaVerification.rawMessageHex}
-                            display="Copy Raw Hex"
+                            display="Copy Bytes"
                           />
                         </div>
 
@@ -1887,7 +1839,7 @@ export default function InterceptDashboardPage() {
 
                         <div className="rounded-md border border-border bg-secondary/40 px-3.5 py-2.5 text-xs text-muted-foreground">
                           <strong className="text-foreground font-medium">
-                            Quantitative Takeaway:{" "}
+                            Key Takeaway:{" "}
                           </strong>
                           {activeBacktestScenario.interceptEdgeSummary}
                         </div>
@@ -1899,7 +1851,7 @@ export default function InterceptDashboardPage() {
             </TabsContent>
 
             {/* =================================================================
-                TAB 4: MAINNET VAULTS & PRE-FLIGHT CHECKLIST
+                TAB 4: RESERVE ACCOUNTS & PRE-FLIGHT CHECKLIST
                ================================================================= */}
             <TabsContent value="vaults" className="space-y-6">
               {preflight && (
@@ -1909,20 +1861,20 @@ export default function InterceptDashboardPage() {
                       <CardHeader className="pb-2">
                         <div className="flex items-center justify-between">
                           <CardTitle className="text-sm font-medium">
-                            Base MPC Vault (domain_id: 0)
+                            Base USDC Reserve Vault
                           </CardTitle>
-                          <Badge variant="secondary">Secp256k1</Badge>
+                          <Badge variant="secondary">Base Mainnet</Badge>
                         </div>
                       </CardHeader>
                       <CardContent className="space-y-2 pt-1 text-xs">
                         <div className="flex items-center justify-between py-1.5 border-t border-border/60">
-                          <span className="text-muted-foreground">EVM Address</span>
+                          <span className="text-muted-foreground">Reserve Address</span>
                           <CopyChip value={preflight.derivedMpc.mpcBaseVaultAddress} />
                         </div>
                         <div className="flex items-center justify-between py-1.5 border-t border-border/60">
-                          <span className="text-muted-foreground">Derivation Path</span>
+                          <span className="text-muted-foreground">Network</span>
                           <span className="font-mono text-foreground">
-                            {preflight.derivedMpc.baseDerivationPath}
+                            Base Mainnet (8453)
                           </span>
                         </div>
                         <div className="flex items-center justify-between py-1.5 border-t border-border/60">
@@ -1939,18 +1891,18 @@ export default function InterceptDashboardPage() {
                       <CardHeader className="pb-2">
                         <div className="flex items-center justify-between">
                           <CardTitle className="text-sm font-medium">
-                            Solana MPC Payer (domain_id: 1)
+                            Solana Repayment Account
                           </CardTitle>
-                          <Badge variant="secondary">Ed25519</Badge>
+                          <Badge variant="secondary">Solana Mainnet</Badge>
                         </div>
                       </CardHeader>
                       <CardContent className="space-y-2 pt-1 text-xs">
                         <div className="flex items-center justify-between py-1.5 border-t border-border/60">
-                          <span className="text-muted-foreground">Solana Pubkey</span>
+                          <span className="text-muted-foreground">Solana Address</span>
                           <CopyChip value={preflight.derivedMpc.mpcSolanaPayerPubkey} />
                         </div>
                         <div className="flex items-center justify-between py-1.5 border-t border-border/60">
-                          <span className="text-muted-foreground">Derived USDC ATA</span>
+                          <span className="text-muted-foreground">USDC Token Account</span>
                           <CopyChip value={preflight.derivedMpc.mpcSolanaPayerUsdcAta} />
                         </div>
                         <div className="flex items-center justify-between py-1.5 border-t border-border/60">
@@ -1967,7 +1919,7 @@ export default function InterceptDashboardPage() {
                   <Card>
                     <CardHeader className="pb-2">
                       <CardTitle className="text-sm font-medium">
-                        Mainnet Readiness Checklist
+                        Mainnet Readiness Status
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
@@ -1976,7 +1928,7 @@ export default function InterceptDashboardPage() {
                           <TableRow>
                             <TableHead>Check</TableHead>
                             <TableHead>Status</TableHead>
-                            <TableHead>Telemetry</TableHead>
+                            <TableHead>Details</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -2020,12 +1972,27 @@ export default function InterceptDashboardPage() {
             </span>
             <span>·</span>
             <span>
-              NEAR AI Cloud TEE + near-sdk-rs Guardrail + v1.signer MPC + NEAR Intents
-              1-Click
+              Automated Cross-Chain Liquidation Protection for Solana Kamino Lend
             </span>
           </div>
-          <div className="font-mono text-[11px] tabular-nums">
-            guardrail.intercept-defi.near
+          <div className="flex items-center gap-4 text-xs">
+            <button
+              type="button"
+              onClick={() => setWalkthroughOpen(true)}
+              className="hover:text-foreground cursor-pointer"
+            >
+              How It Works
+            </button>
+            <button
+              type="button"
+              onClick={() => setFaqOpen(true)}
+              className="hover:text-foreground cursor-pointer"
+            >
+              FAQ
+            </button>
+            <Link href="/docs" className="hover:text-foreground">
+              Documentation
+            </Link>
           </div>
         </div>
       </footer>
