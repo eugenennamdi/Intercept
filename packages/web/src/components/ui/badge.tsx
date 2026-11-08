@@ -6,8 +6,7 @@ export type BadgeVariant =
   | "secondary"
   | "outline"
   | "destructive"
-  | "emerald"
-  | "amber";
+  | "contrast";
 
 export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
   variant?: BadgeVariant;
@@ -15,17 +14,15 @@ export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
 
 const badgeVariants: Record<BadgeVariant, string> = {
   default:
-    "border-transparent bg-primary text-primary-foreground",
+    "border-transparent bg-primary text-primary-foreground font-medium",
   secondary:
-    "border-transparent bg-secondary text-secondary-foreground",
+    "border-zinc-800 bg-secondary text-zinc-200",
   outline:
-    "border-border text-muted-foreground bg-transparent",
+    "border-zinc-800 text-zinc-400 bg-transparent",
   destructive:
-    "border-red-500/30 bg-red-500/10 text-red-400",
-  emerald:
-    "border-emerald-500/30 bg-emerald-500/10 text-emerald-400",
-  amber:
-    "border-amber-500/30 bg-amber-500/10 text-amber-400",
+    "border-zinc-500/60 bg-zinc-900 text-zinc-100 bg-monochrome-hatch",
+  contrast:
+    "border-zinc-300/80 bg-zinc-100 text-zinc-950 font-semibold",
 };
 
 export function Badge({ className, variant = "default", ...props }: BadgeProps) {

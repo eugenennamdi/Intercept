@@ -1,8 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
-  ShieldCheck,
   Pulse,
   Cpu,
   LockKey,
@@ -21,6 +20,7 @@ import {
   Lightning,
   ArrowSquareOut,
 } from "@phosphor-icons/react";
+import { InterceptLogoMark } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -44,6 +44,10 @@ import {
   TabsTrigger,
   TabsContent,
 } from "@/components/ui/tabs";
+import {
+  HealthFactorTrajectoryChart,
+  type TrajectoryPoint,
+} from "@/components/ui/chart";
 
 interface StageTimingTelemetry {
   stageIndex: number;
@@ -299,6 +303,41 @@ interface InterceptApiResponse {
   backtest: BacktestSuiteReport;
 }
 
+/**
+ * transitions.dev 02-number-pop-in
+ * Animates each character and staggers the last two decimal digits on value updates
+ */
+function AnimatedMetric({
+  value,
+  className,
+}: {
+  value: string;
+  className?: string;
+}) {
+  const chars = value.split("");
+  return (
+    <span key={value} className={`t-digit-group is-animating tabular-nums ${className ?? ""}`}>
+      {chars.map((ch, i) => {
+        const stagger =
+          i === chars.length - 2
+            ? "1"
+            : i === chars.length - 1
+            ? "2"
+            : undefined;
+        return (
+          <span key={`${i}-${ch}`} className="t-digit" data-stagger={stagger}>
+            {ch === " " ? "\u00A0" : ch}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
+/**
+ * transitions.dev 09-icon-swap
+ * Cross-fades Copy <-> Check in a single grid cell with blur & scale
+ */
 function CopyChip({
   value,
   display,
@@ -325,14 +364,17 @@ function CopyChip({
       type="button"
       onClick={handleCopy}
       title={`Copy ${label ?? value}`}
-      className="emil-press inline-flex items-center gap-1.5 rounded-md border border-border bg-secondary/70 px-2 py-0.5 font-mono text-xs text-muted-foreground hover:text-foreground hover:border-zinc-700 cursor-pointer"
+      className="emil-press inline-flex items-center gap-1.5 rounded-md border border-border bg-secondary/80 px-2 py-0.5 font-mono text-xs text-muted-foreground hover:text-foreground hover:border-zinc-700 cursor-pointer"
     >
       <span className="truncate max-w-[180px]">{display ?? value}</span>
-      {copied ? (
-        <Check className="w-3 h-3 text-emerald-400 shrink-0 emil-enter" weight="bold" />
-      ) : (
-        <Copy className="w-3 h-3 opacity-60 shrink-0" />
-      )}
+      <span className="t-icon-swap" data-state={copied ? "b" : "a"}>
+        <span className="t-icon" data-icon="a">
+          <Copy className="w-3 h-3 opacity-70" />
+        </span>
+        <span className="t-icon" data-icon="b">
+          <Check className="w-3 h-3 text-zinc-100" weight="bold" />
+        </span>
+      </span>
     </button>
   );
 }
@@ -350,7 +392,7 @@ export default function InterceptDashboardPage() {
   const [expandedStage, setExpandedStage] = useState<number | null>(3);
   const [selectedAdvId, setSelectedAdvId] = useState<string>("");
   const [advSimRunning, setAdvSimRunning] = useState<boolean>(false);
-  const [advFlashProtection, setAdvFlashProtection] = useState<boolean>(false);
+  const [isShakingRevert, setIsShakingRevert] = useState<boolean>(false);
   const [showCustodyDetail, setShowCustodyDetail] = useState<boolean>(false);
   const workspaceRef = useRef<HTMLDivElement>(null);
 
@@ -358,6 +400,34 @@ export default function InterceptDashboardPage() {
     setIsTransitioning(true);
     fn();
     setTimeout(() => setIsTransitioning(false), 180);
+  }, []);
+
+  // Emil Kowalski Rule #1: Never animate keyboard-initiated actions (instant 0ms switch on 1-6 hotkeys)
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        e.metaKey ||
+        e.ctrlKey ||
+        e.altKey
+      ) {
+        return;
+      }
+      const tabMap: Record<string, string> = {
+        "1": "overview",
+        "2": "inspector",
+        "3": "redteam",
+        "4": "backtest",
+        "5": "vaults",
+        "6": "all",
+      };
+      if (tabMap[e.key]) {
+        setActiveTab(tabMap[e.key]);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
   const fetchPipeline = useCallback(
@@ -409,17 +479,19 @@ export default function InterceptDashboardPage() {
     setPriceDropPct(nextDrop);
   };
 
+  // transitions.dev 12-error-state-shake orchestration when Guardrail blocks a rogue AI vector
   const triggerAdversarialIntercept = (advId?: string) => {
     if (advId) {
       setSelectedAdvId(advId);
     }
     setActiveTab("redteam");
     setAdvSimRunning(true);
-    setAdvFlashProtection(false);
+    setIsShakingRevert(false);
     setTimeout(() => {
       setAdvSimRunning(false);
-      setAdvFlashProtection(true);
-    }, 180);
+      setIsShakingRevert(true);
+      setTimeout(() => setIsShakingRevert(false), 320);
+    }, 140);
   };
 
   const report = data?.report;
@@ -435,23 +507,63 @@ export default function InterceptDashboardPage() {
   const hfAfter = report?.kaminoAfter?.healthFactor ?? hfBefore;
   const triggerHf = (report?.riskEvaluation?.triggerThresholdHfBps ?? 11500) / 10000;
 
-  // Map HF in [0.85, 1.60] to [0%, 100%]
   const hfToPercent = (hf: number) =>
     Math.max(2, Math.min(98, ((hf - 0.85) / (1.6 - 0.85)) * 100));
 
   const isRescueTriggered = report?.riskEvaluation?.actionable ?? false;
 
+  // Build dynamic 7-tick Health Factor trajectory series for the shadcn/ui Monochrome Chart
+  const trajectoryPoints = useMemo<TrajectoryPoint[]>(() => {
+    const baseSpot = report?.pythTelemetry?.rawSpotSolUsd ?? 88.85;
+    const drop = mode === "LIVE_MAINNET_MODE" ? 0 : priceDropPct;
+    const factors = [
+      1.0,
+      1 - (drop * 0.25) / 100,
+      1 - (drop * 0.55) / 100,
+      1 - (drop * 0.8) / 100,
+      1 - drop / 100,
+      1 - (drop * 0.92) / 100,
+      1 - (drop * 0.85) / 100,
+    ];
+    const baseHf = 1.336;
+    return factors.map((mult, idx) => {
+      const price = baseSpot * mult;
+      const rawHf = Number((baseHf * mult).toFixed(4));
+      const rescued =
+        rawHf < triggerHf
+          ? Number(Math.max(rawHf, hfAfter * (0.96 + idx * 0.006)).toFixed(4))
+          : rawHf;
+      const naive =
+        rawHf < triggerHf
+          ? Number(Math.min(1.2, rawHf + 0.14).toFixed(4))
+          : rawHf;
+      return {
+        tickLabel: `T+${idx}`,
+        solPriceUsd: price,
+        unprotectedHf: rawHf,
+        interceptHf: idx >= 3 && isRescueTriggered ? hfAfter : rescued,
+        naiveHf: naive,
+      };
+    });
+  }, [report, mode, priceDropPct, triggerHf, hfAfter, isRescueTriggered]);
+
+  const rawRepayFormatted = report?.riskEvaluation?.repayAmountUsdcFormatted ?? "0.00";
+  const repayDisplay = rawRepayFormatted.startsWith("$")
+    ? rawRepayFormatted
+    : `$${rawRepayFormatted}`;
+
   return (
     <div className="min-h-dvh flex flex-col bg-background text-foreground">
-      {/* Sticky Top Navigation Bar (shadcn/ui + Emil Kowalski translucent chrome) */}
+      {/* Sticky Top Navigation Bar (Monochrome shadcn/ui + Emil Kowalski translucent chrome) */}
       <header className="sticky top-0 z-40 h-14 w-full border-b border-border/80 bg-background/85 backdrop-blur-md">
         <div className="mx-auto flex h-full max-w-[1360px] items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-secondary text-foreground shadow-xs">
-              <ShieldCheck className="h-4 w-4 text-emerald-400" weight="fill" />
+            {/* Sleek Geometric Brand Mark in Concentric Squircle */}
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/90 text-zinc-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+              <InterceptLogoMark size={18} />
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold tracking-[-0.015em] text-foreground">
+              <span className="text-sm font-semibold tracking-[-0.02em] text-foreground">
                 Intercept
               </span>
               <span className="text-zinc-700">/</span>
@@ -462,16 +574,16 @@ export default function InterceptDashboardPage() {
             <Badge
               variant={
                 mode === "LIVE_MAINNET_MODE"
-                  ? "emerald"
+                  ? "secondary"
                   : isRescueTriggered
-                  ? "amber"
-                  : "secondary"
+                  ? "contrast"
+                  : "outline"
               }
               className="ml-1"
             >
               <span
                 className={`h-1.5 w-1.5 rounded-full ${
-                  mode === "LIVE_MAINNET_MODE" ? "bg-emerald-400" : "bg-amber-400"
+                  mode === "LIVE_MAINNET_MODE" ? "bg-zinc-300" : "bg-zinc-950"
                 }`}
               />
               {mode === "LIVE_MAINNET_MODE"
@@ -482,7 +594,7 @@ export default function InterceptDashboardPage() {
 
           <div className="flex items-center gap-2.5">
             {report && (
-              <div className="hidden lg:flex items-center gap-3 rounded-md border border-border/70 bg-secondary/40 px-3 py-1 text-xs text-muted-foreground tabular-nums">
+              <div className="hidden lg:flex items-center gap-3 rounded-md border border-border bg-secondary/60 px-3 py-1 text-xs text-muted-foreground tabular-nums">
                 <span>
                   Slot{" "}
                   <strong className="font-mono font-medium text-foreground">
@@ -498,7 +610,7 @@ export default function InterceptDashboardPage() {
                 </span>
                 <span className="text-zinc-700">·</span>
                 <span>
-                  Latency{" "}
+                  Cycle{" "}
                   <strong className="font-mono font-medium text-foreground">
                     {report.totalMeasuredLatencyMs}ms
                   </strong>
@@ -535,271 +647,266 @@ export default function InterceptDashboardPage() {
 
       <main className="mx-auto w-full max-w-[1360px] flex-1 px-4 py-6 sm:px-6 space-y-6">
         {errorMsg && (
-          <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-300">
-            Telemetry error: {errorMsg}
+          <div className="rounded-lg border border-zinc-600 bg-secondary p-3 text-xs text-zinc-200">
+            Telemetry notice: {errorMsg}
           </div>
         )}
 
         {/* Top Command Header + Scenario Controller */}
         <section className="grid gap-6 lg:grid-cols-12 items-start">
-          <div className="lg:col-span-7 space-y-3">
+          <div className="lg:col-span-7 space-y-3.5">
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="outline">NEAR AI Cloud TEE</Badge>
               <Badge variant="outline">v1.signer MPC (domain_id: 0 & 1)</Badge>
               <Badge variant="outline">NEAR Intents 1-Click</Badge>
+              <Badge variant="outline">Kamino KLend Mainnet</Badge>
             </div>
 
-            <h1 className="text-2xl sm:text-3xl font-semibold tracking-[-0.025em] text-foreground">
+            <h1 className="scroll-m-20 text-2xl sm:text-3xl lg:text-[34px] font-semibold tracking-[-0.03em] leading-[1.1] text-foreground">
               Zero-Trust Cross-Chain Liquidation Defense
             </h1>
 
-            <p className="text-sm text-muted-foreground leading-relaxed max-w-[65ch]">
+            <p className="text-sm text-muted-foreground leading-[1.6] max-w-[65ch]">
               Autonomous Kamino Lend protection that holds idle USDC yield on Base and
               executes cryptographic 2-leg cross-chain rescues onto Solana only when Pyth
               oracle telemetry breaches volatility-adjusted health thresholds.
             </p>
 
-            {/* Non-Custodial Isolation Guarantee Banner (clean shadcn callout, preserves mandatory copy) */}
-            <div className="rounded-lg border border-border bg-card/80 p-3.5">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-start gap-2.5">
-                  <LockKey className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" weight="duotone" />
-                  <div className="space-y-1 text-xs text-muted-foreground leading-relaxed">
-                    <div className="font-medium text-foreground flex items-center gap-2">
-                      <span>Zero-Trust Non-Custodial Isolation</span>
-                      <span className="font-mono text-[11px] text-emerald-400">
-                        guardrail.intercept-defi.near
-                      </span>
-                    </div>
-                    <p className="max-w-[65ch]">
-                      The user’s Solana wallet holds the Kamino obligation (SOL collateral +
-                      USDC debt) and{" "}
-                      <strong className="text-foreground font-medium">
-                        never shares its private key
-                      </strong>
-                      . Kamino Lend natively permits third-party debt repayment (
-                      <code className="font-mono text-foreground">
-                        repay_obligation_liquidity_v2
-                      </code>
-                      ) on behalf of any obligation owner without granting collateral
-                      withdrawal rights.
-                    </p>
-                    {showCustodyDetail && (
-                      <p className="pt-1 text-muted-foreground max-w-[65ch] emil-enter">
-                        Because the user’s Solana wallet is NOT controlled by NEAR MPC, and
-                        the NEAR Guardrail contract strictly pins byte offsets for Base
-                        ERC-20 transfers and Solana Kamino repay instructions, even a 100%
-                        prompt-injected AI agent cannot withdraw collateral or redirect USDC.
+            {/* Non-Custodial Isolation Guarantee Banner (Concentric Bezel Monochrome Callout) */}
+            <div className="bezel-shell">
+              <div className="bezel-core p-3.5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-2.5">
+                    <LockKey
+                      className="h-4 w-4 text-zinc-100 shrink-0 mt-0.5"
+                      weight="duotone"
+                    />
+                    <div className="space-y-1 text-xs text-muted-foreground leading-relaxed">
+                      <div className="font-medium text-foreground flex flex-wrap items-center gap-2">
+                        <span>Zero-Trust Non-Custodial Isolation</span>
+                        <code className="rounded bg-secondary border border-border px-1.5 py-0.5 font-mono text-[11px] text-zinc-200">
+                          guardrail.intercept-defi.near
+                        </code>
+                      </div>
+                      <p className="max-w-[65ch]">
+                        The user’s Solana wallet holds the Kamino obligation (SOL
+                        collateral + USDC debt) and{" "}
+                        <strong className="text-foreground font-medium">
+                          never shares its private key
+                        </strong>
+                        . Kamino Lend natively permits third-party debt repayment (
+                        <code className="font-mono text-zinc-200">
+                          repay_obligation_liquidity_v2
+                        </code>
+                        ) on behalf of any obligation owner without granting collateral
+                        withdrawal rights.
                       </p>
-                    )}
+                      {showCustodyDetail && (
+                        <p className="pt-1 text-muted-foreground max-w-[65ch] emil-enter">
+                          Because the user’s Solana wallet is NOT controlled by NEAR MPC,
+                          and the NEAR Guardrail contract strictly pins byte offsets for
+                          Base ERC-20 transfers and Solana Kamino repay instructions, even
+                          a 100% prompt-injected AI agent cannot withdraw collateral or
+                          redirect USDC.
+                        </p>
+                      )}
+                    </div>
                   </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowCustodyDetail((prev) => !prev)}
+                    className="shrink-0 h-7 px-2 text-xs"
+                  >
+                    <span>{showCustodyDetail ? "Less" : "Details"}</span>
+                    <CaretDown
+                      className={`h-3 w-3 transition-transform duration-150 ${
+                        showCustodyDetail ? "rotate-180" : ""
+                      }`}
+                    />
+                  </Button>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowCustodyDetail((prev) => !prev)}
-                  className="shrink-0 h-7 px-2 text-xs"
-                >
-                  <span>{showCustodyDetail ? "Less" : "Details"}</span>
-                  <CaretDown
-                    className={`h-3 w-3 transition-transform duration-150 ${
-                      showCustodyDetail ? "rotate-180" : ""
-                    }`}
-                  />
-                </Button>
               </div>
             </div>
           </div>
 
-          {/* Right: Scenario & Shock Controller Card */}
-          <Card className="lg:col-span-5">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium">
-                  Market Regime & Oracle Shock
-                </CardTitle>
-                <span className="font-mono text-xs text-muted-foreground tabular-nums">
-                  {mode === "LIVE_MAINNET_MODE"
-                    ? "0% Shock (Unmodified Pyth)"
-                    : `-${priceDropPct}% Simulated SOL Drop`}
-                </span>
-              </div>
-              <CardDescription className="text-xs">
-                Test live unmodified Solana Mainnet feeds or inject a flash crash to
-                trigger the 2-leg MPC rescue pipeline.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* 4 Segmented Presets */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 rounded-lg bg-secondary p-1 border border-border/60">
-                {[
-                  {
-                    label: "Live Oracle",
-                    sub: "0% Shock",
-                    targetMode: "LIVE_MAINNET_MODE" as const,
-                    drop: 0,
-                  },
-                  {
-                    label: "-20% Pullback",
-                    sub: "Micro-Rescue",
-                    targetMode: "STRESS_TEST_MAINNET_MODE" as const,
-                    drop: 20,
-                  },
-                  {
-                    label: "-25% Crash",
-                    sub: "Cascade Rescue",
-                    targetMode: "STRESS_TEST_MAINNET_MODE" as const,
-                    drop: 25,
-                  },
-                  {
-                    label: "-35% Collapse",
-                    sub: "Deep Rescue",
-                    targetMode: "STRESS_TEST_MAINNET_MODE" as const,
-                    drop: 35,
-                  },
-                ].map((preset) => {
-                  const isActive =
-                    preset.targetMode === mode &&
-                    (preset.targetMode === "LIVE_MAINNET_MODE" ||
-                      preset.drop === priceDropPct);
-                  return (
-                    <button
-                      key={preset.label}
-                      type="button"
-                      onClick={() =>
-                        handleSelectScenario(preset.targetMode, preset.drop || 25)
-                      }
-                      className={`emil-press flex flex-col items-start rounded-md px-2.5 py-1.5 text-left cursor-pointer ${
-                        isActive
-                          ? "bg-background text-foreground shadow-xs border border-border"
-                          : "text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      <span className="text-xs font-medium leading-tight">
-                        {preset.label}
-                      </span>
-                      <span className="text-[11px] text-muted-foreground tabular-nums">
-                        {preset.sub}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+          {/* Right: Scenario & Shock Controller Card (interfaces.dev Concentric Bezel) */}
+          <div className="lg:col-span-5 bezel-shell">
+            <Card className="bezel-core border-0 shadow-none">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm font-medium">
+                    Market Regime & Oracle Shock
+                  </CardTitle>
+                  <span className="font-mono text-xs text-muted-foreground tabular-nums">
+                    {mode === "LIVE_MAINNET_MODE"
+                      ? "0% Shock (Live Pyth)"
+                      : `-${priceDropPct}% Simulated SOL Drop`}
+                  </span>
+                </div>
+                <CardDescription className="text-xs">
+                  Test live unmodified Solana Mainnet feeds or inject a flash crash to
+                  trigger the 2-leg MPC rescue pipeline.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* 4 Concentric Segmented Presets: R_outer (10px) = R_inner (6px) + padding (4px) */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 rounded-[10px] bg-secondary p-1 border border-border">
+                  {[
+                    {
+                      label: "Live Oracle",
+                      sub: "0% Shock",
+                      targetMode: "LIVE_MAINNET_MODE" as const,
+                      drop: 0,
+                    },
+                    {
+                      label: "-20% Pullback",
+                      sub: "Micro-Rescue",
+                      targetMode: "STRESS_TEST_MAINNET_MODE" as const,
+                      drop: 20,
+                    },
+                    {
+                      label: "-25% Crash",
+                      sub: "Cascade Rescue",
+                      targetMode: "STRESS_TEST_MAINNET_MODE" as const,
+                      drop: 25,
+                    },
+                    {
+                      label: "-35% Collapse",
+                      sub: "Deep Rescue",
+                      targetMode: "STRESS_TEST_MAINNET_MODE" as const,
+                      drop: 35,
+                    },
+                  ].map((preset) => {
+                    const isActive =
+                      preset.targetMode === mode &&
+                      (preset.targetMode === "LIVE_MAINNET_MODE" ||
+                        preset.drop === priceDropPct);
+                    return (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        onClick={() =>
+                          handleSelectScenario(preset.targetMode, preset.drop || 25)
+                        }
+                        className={`emil-press flex flex-col items-start rounded-[6px] px-2.5 py-1.5 text-left cursor-pointer ${
+                          isActive
+                            ? "bg-background text-foreground shadow-xs border border-zinc-700/80"
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        <span className="text-xs font-medium leading-tight">
+                          {preset.label}
+                        </span>
+                        <span className="text-[11px] text-muted-foreground tabular-nums">
+                          {preset.sub}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
 
-              {/* Fine-Grained Slider */}
-              <div className="space-y-2 pt-1">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground flex items-center gap-1.5">
-                    <SlidersHorizontal className="h-3.5 w-3.5" />
-                    <span>Custom SOL Shock Magnitude</span>
-                  </span>
-                  <span className="font-mono font-medium text-foreground tabular-nums">
-                    {mode === "LIVE_MAINNET_MODE" ? "0%" : `-${priceDropPct}%`}
-                  </span>
+                {/* Fine-Grained Slider */}
+                <div className="space-y-2 pt-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground flex items-center gap-1.5">
+                      <SlidersHorizontal className="h-3.5 w-3.5" />
+                      <span>Custom SOL Shock Magnitude</span>
+                    </span>
+                    <span className="font-mono font-medium text-foreground tabular-nums">
+                      {mode === "LIVE_MAINNET_MODE" ? "0%" : `-${priceDropPct}%`}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={5}
+                    max={40}
+                    step={1}
+                    value={priceDropPct}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      setMode("STRESS_TEST_MAINNET_MODE");
+                      setPriceDropPct(val);
+                    }}
+                    aria-label="Simulated SOL price drop percentage"
+                    className="shadcn-slider w-full"
+                  />
+                  <div className="flex justify-between text-[11px] text-muted-foreground tabular-nums">
+                    <span>-5% (Mild)</span>
+                    <span>-15% (Trigger)</span>
+                    <span>-25% (Flash Crash)</span>
+                    <span>-40% (Severe)</span>
+                  </div>
                 </div>
-                <input
-                  type="range"
-                  min={5}
-                  max={40}
-                  step={1}
-                  value={priceDropPct}
-                  onChange={(e) => {
-                    const val = Number(e.target.value);
-                    setMode("STRESS_TEST_MAINNET_MODE");
-                    setPriceDropPct(val);
-                  }}
-                  aria-label="Simulated SOL price drop percentage"
-                  className="shadcn-slider w-full"
-                />
-                <div className="flex justify-between text-[11px] text-muted-foreground tabular-nums">
-                  <span>-5% (Mild)</span>
-                  <span>-15% (Trigger)</span>
-                  <span>-25% (Flash Crash)</span>
-                  <span>-40% (Severe)</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </div>
         </section>
 
-        {/* 4-Card shadcn KPI Summary Row */}
+        {/* 4-Card Monochrome shadcn/ui KPI Row with transitions.dev Number Pop-In */}
         <section
           data-transitioning={isTransitioning}
           className="emil-crossfade grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
         >
-          {/* KPI 1: Health Factor & Liquidation Bar */}
+          {/* KPI 1: Health Factor & Monochrome Spectrum Bar */}
           <Card className="emil-card-hover">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <span className="text-sm font-medium text-muted-foreground">
                 Health Factor
               </span>
-              <Badge
-                variant={
-                  !isRescueTriggered
-                    ? "emerald"
-                    : hfBefore < 1.0
-                    ? "destructive"
-                    : "amber"
-                }
-              >
+              <Badge variant={isRescueTriggered ? "contrast" : "secondary"}>
                 {!isRescueTriggered
                   ? "Healthy"
                   : hfBefore < 1.0
-                  ? "Critical -> Rescued"
+                  ? "Rescued from Cliff"
                   : "Buffer Restored"}
               </Badge>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex items-baseline gap-2 tabular-nums">
-                <span
-                  className={`text-2xl font-semibold tracking-[-0.02em] ${
-                    hfBefore < 1.05
-                      ? "text-red-400"
-                      : hfBefore < triggerHf
-                      ? "text-amber-400"
-                      : "text-foreground"
+                <AnimatedMetric
+                  value={hfBefore.toFixed(4)}
+                  className={`text-2xl font-semibold tracking-[-0.025em] ${
+                    isRescueTriggered ? "text-zinc-400" : "text-foreground"
                   }`}
-                >
-                  {hfBefore.toFixed(4)}
-                </span>
+                />
                 {isRescueTriggered && (
                   <>
-                    <CaretRight className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="text-2xl font-semibold tracking-[-0.02em] text-emerald-400">
-                      {hfAfter.toFixed(4)}
-                    </span>
+                    <CaretRight className="h-3.5 w-3.5 text-zinc-500" />
+                    <AnimatedMetric
+                      value={hfAfter.toFixed(4)}
+                      className="text-2xl font-semibold tracking-[-0.025em] text-zinc-50"
+                    />
                   </>
                 )}
               </div>
 
-              {/* Clean Spectrum Bar */}
+              {/* Monochrome Spectrum Bar */}
               <div className="space-y-1.5">
-                <div className="relative h-2 w-full rounded-full bg-secondary overflow-hidden">
+                <div className="relative h-2 w-full rounded-full bg-secondary overflow-hidden border border-border">
+                  {/* Liquidation Zone (< 1.00): Monochrome Diagonal Hatch */}
                   <div
-                    className="absolute inset-y-0 left-0 bg-red-500/35"
+                    className="absolute inset-y-0 left-0 bg-monochrome-hatch border-r border-zinc-600"
                     style={{ width: `${hfToPercent(1.0)}%` }}
                   />
+                  {/* Buffer Zone (1.00 -> Trigger) */}
                   <div
-                    className="absolute inset-y-0 bg-amber-500/30"
+                    className="absolute inset-y-0 bg-zinc-800/70 border-r border-zinc-600/80"
                     style={{
                       left: `${hfToPercent(1.0)}%`,
                       width: `${hfToPercent(triggerHf) - hfToPercent(1.0)}%`,
                     }}
                   />
-                  <div
-                    className="absolute inset-y-0 right-0 bg-emerald-500/25"
-                    style={{ left: `${hfToPercent(triggerHf)}%` }}
-                  />
                   {/* Pre-Rescue Marker */}
                   <div
-                    className="absolute top-0 bottom-0 w-1 rounded-full bg-amber-400 transition-[left] duration-200"
+                    className="absolute top-0 bottom-0 w-1 bg-zinc-400 transition-[left] duration-200"
                     style={{ left: `${hfToPercent(hfBefore)}%` }}
                     title={`Observed HF: ${hfBefore.toFixed(4)}`}
                   />
                   {/* Post-Rescue Marker */}
                   {isRescueTriggered && (
                     <div
-                      className="absolute top-0 bottom-0 w-1 rounded-full bg-emerald-400 transition-[left] duration-200"
+                      className="absolute top-0 bottom-0 w-1.5 bg-zinc-50 shadow-[0_0_8px_rgba(255,255,255,0.6)] transition-[left] duration-200"
                       style={{ left: `${hfToPercent(hfAfter)}%` }}
                       title={`Post-Rescue HF: ${hfAfter.toFixed(4)}`}
                     />
@@ -834,24 +941,27 @@ export default function InterceptDashboardPage() {
             <CardContent className="space-y-2">
               <div className="flex items-baseline justify-between tabular-nums">
                 <div>
-                  <span className="text-2xl font-semibold tracking-[-0.02em] text-foreground">
-                    ${report ? report.kaminoBefore.collateralValueUsd.toFixed(2) : "16.40"}
-                  </span>
+                  <AnimatedMetric
+                    value={`$${
+                      report ? report.kaminoBefore.collateralValueUsd.toFixed(2) : "16.40"
+                    }`}
+                    className="text-2xl font-semibold tracking-[-0.025em] text-foreground"
+                  />
                   <span className="ml-1.5 text-xs text-muted-foreground">
                     ({report ? report.kaminoBefore.depositedSol.toFixed(4) : "0.1847"} SOL)
                   </span>
                 </div>
               </div>
-              <div className="flex items-center justify-between text-xs text-muted-foreground tabular-nums pt-1 border-t border-border/60">
+              <div className="flex items-center justify-between text-xs text-muted-foreground tabular-nums pt-1 border-t border-border/70">
                 <span>
                   Debt:{" "}
-                  <strong className="text-foreground font-medium">
+                  <strong className="text-zinc-300 font-medium">
                     ${report ? report.kaminoBefore.borrowedUsdc.toFixed(2) : "9.23"} USDC
                   </strong>
                 </span>
                 <span>
                   After:{" "}
-                  <strong className="text-emerald-400 font-medium">
+                  <strong className="text-zinc-50 font-semibold">
                     ${report ? report.kaminoAfter.borrowedUsdc.toFixed(2) : "9.23"} USDC
                   </strong>
                 </span>
@@ -869,14 +979,17 @@ export default function InterceptDashboardPage() {
             </CardHeader>
             <CardContent className="space-y-2">
               <div className="flex items-baseline gap-2 tabular-nums">
-                <span className="text-2xl font-semibold tracking-[-0.02em] text-foreground">
-                  ${report ? report.pythTelemetry.effectiveSolUsd.toFixed(2) : "88.76"}
-                </span>
+                <AnimatedMetric
+                  value={`$${
+                    report ? report.pythTelemetry.effectiveSolUsd.toFixed(2) : "88.76"
+                  }`}
+                  className="text-2xl font-semibold tracking-[-0.025em] text-foreground"
+                />
                 <span className="text-xs font-mono text-muted-foreground">
                   ±${report ? report.pythTelemetry.confidenceUsd.toFixed(4) : "0.0302"}
                 </span>
               </div>
-              <div className="flex items-center justify-between text-xs text-muted-foreground tabular-nums pt-1 border-t border-border/60">
+              <div className="flex items-center justify-between text-xs text-muted-foreground tabular-nums pt-1 border-t border-border/70">
                 <span>
                   Vol:{" "}
                   <strong className="text-foreground font-medium">
@@ -899,18 +1012,19 @@ export default function InterceptDashboardPage() {
               <span className="text-sm font-medium text-muted-foreground">
                 2-Leg MPC Settlement
               </span>
-              <Badge variant={isRescueTriggered ? "emerald" : "secondary"}>
+              <Badge variant={isRescueTriggered ? "contrast" : "secondary"}>
                 {isRescueTriggered ? "Rescue Active" : "Standby (Hold)"}
               </Badge>
             </CardHeader>
             <CardContent className="space-y-2">
               <div className="flex items-baseline gap-2 tabular-nums">
-                <span className="text-2xl font-semibold tracking-[-0.02em] text-foreground">
-                  {report ? report.riskEvaluation.repayAmountUsdcFormatted : "$0.00"}
-                </span>
+                <AnimatedMetric
+                  value={repayDisplay}
+                  className="text-2xl font-semibold tracking-[-0.025em] text-foreground"
+                />
                 <span className="text-xs text-muted-foreground">USDC</span>
               </div>
-              <div className="flex items-center justify-between text-xs text-muted-foreground tabular-nums pt-1 border-t border-border/60">
+              <div className="flex items-center justify-between text-xs text-muted-foreground tabular-nums pt-1 border-t border-border/70">
                 <span>Base 8453 → Solana</span>
                 <span>
                   Cap:{" "}
@@ -923,7 +1037,7 @@ export default function InterceptDashboardPage() {
           </Card>
         </section>
 
-        {/* Main Tabbed Workspace (shadcn/ui Tabs + Force-Mounted Panels for Zero-Latency & Full Auditability) */}
+        {/* Main Tabbed Workspace (shadcn/ui Tabs + Hotkey Micro-UIs + Force-Mounted Panels) */}
         <div ref={workspaceRef} className="pt-1">
           <Tabs
             value={activeTab}
@@ -934,25 +1048,43 @@ export default function InterceptDashboardPage() {
                 <TabsTrigger value="overview">
                   <Pulse className="h-3.5 w-3.5" />
                   <span>Rescue Pipeline</span>
+                  <kbd className="hidden md:inline-block ml-1 rounded border border-zinc-800 bg-zinc-900 px-1 py-0.2 font-mono text-[10px] text-zinc-500">
+                    1
+                  </kbd>
                 </TabsTrigger>
                 <TabsTrigger value="inspector">
                   <Code className="h-3.5 w-3.5" />
                   <span>Byte Inspector</span>
+                  <kbd className="hidden md:inline-block ml-1 rounded border border-zinc-800 bg-zinc-900 px-1 py-0.2 font-mono text-[10px] text-zinc-500">
+                    2
+                  </kbd>
                 </TabsTrigger>
                 <TabsTrigger value="redteam">
-                  <Skull className="h-3.5 w-3.5 text-red-400" />
-                  <span>Red-Team Simulator (11/11)</span>
+                  <Skull className="h-3.5 w-3.5" />
+                  <span>Red-Team (11/11)</span>
+                  <kbd className="hidden md:inline-block ml-1 rounded border border-zinc-800 bg-zinc-900 px-1 py-0.2 font-mono text-[10px] text-zinc-500">
+                    3
+                  </kbd>
                 </TabsTrigger>
                 <TabsTrigger value="backtest">
                   <ChartLineUp className="h-3.5 w-3.5" />
-                  <span>Historical Backtest</span>
+                  <span>Backtest Lab</span>
+                  <kbd className="hidden md:inline-block ml-1 rounded border border-zinc-800 bg-zinc-900 px-1 py-0.2 font-mono text-[10px] text-zinc-500">
+                    4
+                  </kbd>
                 </TabsTrigger>
                 <TabsTrigger value="vaults">
                   <TerminalWindow className="h-3.5 w-3.5" />
-                  <span>Mainnet Vaults & Pre-Flight</span>
+                  <span>Mainnet Vaults</span>
+                  <kbd className="hidden md:inline-block ml-1 rounded border border-zinc-800 bg-zinc-900 px-1 py-0.2 font-mono text-[10px] text-zinc-500">
+                    5
+                  </kbd>
                 </TabsTrigger>
                 <TabsTrigger value="all">
                   <span>All Sections</span>
+                  <kbd className="hidden md:inline-block ml-1 rounded border border-zinc-800 bg-zinc-900 px-1 py-0.2 font-mono text-[10px] text-zinc-500">
+                    6
+                  </kbd>
                 </TabsTrigger>
               </TabsList>
 
@@ -972,27 +1104,50 @@ export default function InterceptDashboardPage() {
             </div>
 
             {/* =====================================================================
-                TAB 1: OVERVIEW & 5-STAGE PIPELINE
+                TAB 1: OVERVIEW, SHADCN CHART & 5-STAGE PIPELINE
                ===================================================================== */}
             <TabsContent value="overview" className="space-y-6">
-              {/* 3-Domain Non-Custodial Topology Cards */}
-              <div className="grid gap-4 md:grid-cols-3">
-                <Card>
-                  <CardHeader className="pb-2">
+              {/* Interactive shadcn/ui Monochrome Health Factor Trajectory Chart + 3-Domain Architecture */}
+              <div className="grid gap-6 lg:grid-cols-12">
+                <Card className="lg:col-span-7">
+                  <CardHeader className="pb-3">
                     <div className="flex items-center justify-between">
-                      <CardTitle className="text-sm font-medium">
-                        1. User Solana Wallet
+                      <CardTitle className="text-base">
+                        Health Factor Trajectory & Liquidation Threshold
                       </CardTitle>
-                      <Badge variant="outline">Isolated Owner</Badge>
+                      <Badge variant="outline">Interactive Telemetry</Badge>
                     </div>
                     <CardDescription className="text-xs">
-                      Holds Kamino obligation collateral & debt; private key is never
-                      shared with NEAR or the AI agent.
+                      Hover across ticks <code className="font-mono">T+0</code> through{" "}
+                      <code className="font-mono">T+6</code> to compare Intercept TEE
+                      protection against an unprotected Kamino obligation.
                     </CardDescription>
                   </CardHeader>
-                  <CardContent className="pt-2 space-y-2 text-xs">
-                    <div className="flex items-center justify-between py-1 border-t border-border/60">
-                      <span className="text-muted-foreground">Kamino Obligation</span>
+                  <CardContent>
+                    <HealthFactorTrajectoryChart
+                      points={trajectoryPoints}
+                      triggerHf={triggerHf}
+                    />
+                  </CardContent>
+                </Card>
+
+                {/* 3-Domain Non-Custodial Topology Stack */}
+                <div className="lg:col-span-5 flex flex-col justify-between gap-3">
+                  <Card className="flex-1">
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-sm font-medium">
+                          1. User Solana Wallet
+                        </CardTitle>
+                        <Badge variant="outline">Isolated Owner</Badge>
+                      </div>
+                      <CardDescription className="text-xs">
+                        Holds Kamino obligation; private key is never shared with NEAR or
+                        the AI agent.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="pt-1 flex items-center justify-between text-xs border-t border-border/60 mt-2">
+                      <span className="text-muted-foreground">Obligation</span>
                       {report && (
                         <CopyChip
                           value={report.policy.userKaminoObligationPubkey}
@@ -1002,31 +1157,23 @@ export default function InterceptDashboardPage() {
                           )}...${report.policy.userKaminoObligationPubkey.slice(-4)}`}
                         />
                       )}
-                    </div>
-                    <div className="flex items-center justify-between py-1 border-t border-border/60">
-                      <span className="text-muted-foreground">Withdrawal Authority</span>
-                      <span className="font-medium text-emerald-400">
-                        None (Repay-Only)
-                      </span>
-                    </div>
-                  </CardContent>
-                </Card>
+                    </CardContent>
+                  </Card>
 
-                <Card>
-                  <CardHeader className="pb-2">
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="text-sm font-medium">
-                        2. NEAR Policy Guardrail
-                      </CardTitle>
-                      <Badge variant="emerald">Deterministic Rust</Badge>
-                    </div>
-                    <CardDescription className="text-xs">
-                      Verifies TEE Ed25519 receipts and inspects raw EIP-1559 & Solana
-                      V0 bytes before invoking <code className="font-mono">v1.signer</code>.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="pt-2 space-y-2 text-xs">
-                    <div className="flex items-center justify-between py-1 border-t border-border/60">
+                  <Card className="flex-1">
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-sm font-medium">
+                          2. NEAR Policy Guardrail
+                        </CardTitle>
+                        <Badge variant="secondary">Deterministic Rust</Badge>
+                      </div>
+                      <CardDescription className="text-xs">
+                        Verifies TEE Ed25519 receipts and inspects raw EIP-1559 & Solana
+                        V0 bytes before <code className="font-mono">v1.signer</code>.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="pt-1 flex items-center justify-between text-xs border-t border-border/60 mt-2">
                       <span className="text-muted-foreground">Contract ID</span>
                       <CopyChip
                         value={
@@ -1034,33 +1181,24 @@ export default function InterceptDashboardPage() {
                           "guardrail.intercept-defi.near"
                         }
                       />
-                    </div>
-                    <div className="flex items-center justify-between py-1 border-t border-border/60">
-                      <span className="text-muted-foreground">TEE Hardware Quote</span>
-                      <span className="font-medium text-foreground">
-                        {report?.nearAiCloudAttestation.model ??
-                          "deepseek-ai/DeepSeek-V3.1"}
-                      </span>
-                    </div>
-                  </CardContent>
-                </Card>
+                    </CardContent>
+                  </Card>
 
-                <Card>
-                  <CardHeader className="pb-2">
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="text-sm font-medium">
-                        3. Cross-Chain MPC & 1-Click
-                      </CardTitle>
-                      <Badge variant="secondary">Base → Solana</Badge>
-                    </div>
-                    <CardDescription className="text-xs">
-                      Threshold Secp256k1 (<code className="font-mono">domain_id: 0</code>)
-                      and Ed25519 (<code className="font-mono">domain_id: 1</code>)
-                      vaults settle via NEAR Intents.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="pt-2 space-y-2 text-xs">
-                    <div className="flex items-center justify-between py-1 border-t border-border/60">
+                  <Card className="flex-1">
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-sm font-medium">
+                          3. Cross-Chain MPC & 1-Click
+                        </CardTitle>
+                        <Badge variant="secondary">Base → Solana</Badge>
+                      </div>
+                      <CardDescription className="text-xs">
+                        Secp256k1 (<code className="font-mono">domain_id: 0</code>) and
+                        Ed25519 (<code className="font-mono">domain_id: 1</code>) vaults
+                        settle via NEAR Intents.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="pt-1 flex items-center justify-between text-xs border-t border-border/60 mt-2">
                       <span className="text-muted-foreground">Base Vault (0)</span>
                       {report && (
                         <CopyChip
@@ -1071,21 +1209,9 @@ export default function InterceptDashboardPage() {
                           )}...${report.policy.mpcBaseVaultAddress.slice(-6)}`}
                         />
                       )}
-                    </div>
-                    <div className="flex items-center justify-between py-1 border-t border-border/60">
-                      <span className="text-muted-foreground">Solana Payer (1)</span>
-                      {report && (
-                        <CopyChip
-                          value={report.policy.mpcSolanaPayerPubkey}
-                          display={`${report.policy.mpcSolanaPayerPubkey.slice(
-                            0,
-                            6
-                          )}...${report.policy.mpcSolanaPayerPubkey.slice(-6)}`}
-                        />
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
+                    </CardContent>
+                  </Card>
+                </div>
               </div>
 
               {/* 5-Stage Execution Pipeline Card */}
@@ -1103,7 +1229,7 @@ export default function InterceptDashboardPage() {
                       </CardDescription>
                     </div>
                     {report && (
-                      <Badge variant="outline" className="self-start sm:self-auto">
+                      <Badge variant="secondary" className="self-start sm:self-auto">
                         Regime: {report.riskEvaluation.regime}
                       </Badge>
                     )}
@@ -1112,10 +1238,10 @@ export default function InterceptDashboardPage() {
                 <CardContent className="space-y-3">
                   {/* TEE AI Reasoning Summary Bar */}
                   {report && (
-                    <div className="rounded-lg border border-border/80 bg-secondary/40 p-3.5 text-xs space-y-1.5">
+                    <div className="rounded-lg border border-border bg-secondary/50 p-3.5 text-xs space-y-1.5">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <span className="font-medium text-foreground flex items-center gap-1.5">
-                          <Cpu className="h-4 w-4 text-emerald-400" />
+                          <Cpu className="h-4 w-4 text-zinc-100" />
                           <span>
                             NEAR AI Cloud TEE Reasoning (
                             {report.nearAiCloudAttestation.model})
@@ -1160,7 +1286,7 @@ export default function InterceptDashboardPage() {
                                     {stage.label}
                                   </span>
                                   <Badge
-                                    variant="secondary"
+                                    variant="outline"
                                     className="font-mono text-[11px]"
                                   >
                                     {stage.stageId}
@@ -1182,7 +1308,7 @@ export default function InterceptDashboardPage() {
                                     ? "outline"
                                     : stage.status === "REVERTED_BY_GUARDRAIL"
                                     ? "destructive"
-                                    : "emerald"
+                                    : "contrast"
                                 }
                               >
                                 {stage.status}
@@ -1196,7 +1322,7 @@ export default function InterceptDashboardPage() {
                           </button>
 
                           {isExpanded && (
-                            <div className="emil-enter border-t border-border/60 bg-secondary/25 px-4 py-3.5 space-y-2 text-xs">
+                            <div className="emil-enter border-t border-border/60 bg-secondary/35 px-4 py-3.5 space-y-2 text-xs">
                               <p className="text-foreground leading-relaxed">
                                 {stage.detail}
                               </p>
@@ -1209,7 +1335,7 @@ export default function InterceptDashboardPage() {
                                     href={stage.explorerUrl}
                                     target="_blank"
                                     rel="noreferrer"
-                                    className="inline-flex items-center gap-1 font-medium text-emerald-400 hover:underline"
+                                    className="inline-flex items-center gap-1 font-medium text-zinc-100 hover:underline"
                                   >
                                     <span>{stage.explorerLabel}</span>
                                     <ArrowSquareOut className="h-3.5 w-3.5" />
@@ -1266,7 +1392,7 @@ export default function InterceptDashboardPage() {
                         <CardTitle className="text-base">
                           Leg 1 — Base EIP-1559 RLP Byte Parser
                         </CardTitle>
-                        <Badge variant="emerald">domain_id: 0 (Secp256k1)</Badge>
+                        <Badge variant="secondary">domain_id: 0 (Secp256k1)</Badge>
                       </div>
                       <CardDescription className="text-xs">
                         <code className="font-mono">verify_and_sign_origin_leg</code>{" "}
@@ -1290,7 +1416,7 @@ export default function InterceptDashboardPage() {
                             <TableCell className="font-mono text-xs text-muted-foreground">
                               0x02 · Chain 8453
                             </TableCell>
-                            <TableCell className="font-mono text-xs text-emerald-400">
+                            <TableCell className="font-mono text-xs text-zinc-100">
                               domain_id: {report.leg1BaseVerification.mpcDomainId}
                             </TableCell>
                           </TableRow>
@@ -1308,7 +1434,7 @@ export default function InterceptDashboardPage() {
                             <TableCell className="font-mono text-xs text-muted-foreground">
                               0xa9059cbb (68B)
                             </TableCell>
-                            <TableCell className="font-mono text-xs text-emerald-400">
+                            <TableCell className="font-mono text-xs text-zinc-100">
                               transfer(address,uint256)
                             </TableCell>
                           </TableRow>
@@ -1326,7 +1452,7 @@ export default function InterceptDashboardPage() {
                             <TableCell className="font-mono text-xs text-muted-foreground">
                               keccak256(0x02||rlp)
                             </TableCell>
-                            <TableCell className="font-mono text-xs text-emerald-400">
+                            <TableCell className="font-mono text-xs text-zinc-100">
                               {report.leg1BaseVerification.signingHashKeccak256Hex.slice(
                                 0,
                                 16
@@ -1347,7 +1473,7 @@ export default function InterceptDashboardPage() {
                             display="Copy Hex"
                           />
                         </div>
-                        <pre className="rounded-lg border border-border bg-secondary/50 p-3 font-mono text-[11px] text-muted-foreground overflow-x-auto leading-relaxed">
+                        <pre className="rounded-lg border border-border bg-secondary/60 p-3 font-mono text-[11px] text-muted-foreground overflow-x-auto leading-relaxed">
                           {report.leg1BaseVerification.rawUnsignedTxHex}
                         </pre>
                       </div>
@@ -1361,7 +1487,7 @@ export default function InterceptDashboardPage() {
                         <CardTitle className="text-base">
                           Leg 2 — Solana V0 Kamino Instruction Parser
                         </CardTitle>
-                        <Badge variant="emerald">domain_id: 1 (Ed25519)</Badge>
+                        <Badge variant="secondary">domain_id: 1 (Ed25519)</Badge>
                       </div>
                       <CardDescription className="text-xs">
                         <code className="font-mono">verify_and_sign_destination_leg</code>{" "}
@@ -1384,7 +1510,7 @@ export default function InterceptDashboardPage() {
                             <TableCell className="font-mono text-xs text-muted-foreground">
                               0x80 · Signers == 1
                             </TableCell>
-                            <TableCell className="font-mono text-xs text-emerald-400">
+                            <TableCell className="font-mono text-xs text-zinc-100">
                               {report.leg2SolanaVerification.kaminoRefreshIxCount} Refresh +
                               1 Repay
                             </TableCell>
@@ -1403,7 +1529,7 @@ export default function InterceptDashboardPage() {
                             <TableCell className="font-mono text-xs text-muted-foreground">
                               0x74aed54cb435d290
                             </TableCell>
-                            <TableCell className="font-mono text-xs text-emerald-400">
+                            <TableCell className="font-mono text-xs text-zinc-100">
                               {report.leg2SolanaVerification.discriminatorHex}
                             </TableCell>
                           </TableRow>
@@ -1446,7 +1572,7 @@ export default function InterceptDashboardPage() {
                             display="Copy Hex"
                           />
                         </div>
-                        <pre className="rounded-lg border border-border bg-secondary/50 p-3 font-mono text-[11px] text-muted-foreground overflow-x-auto leading-relaxed">
+                        <pre className="rounded-lg border border-border bg-secondary/60 p-3 font-mono text-[11px] text-muted-foreground overflow-x-auto leading-relaxed">
                           {report.leg2SolanaVerification.rawMessageHex}
                         </pre>
                       </div>
@@ -1468,7 +1594,7 @@ export default function InterceptDashboardPage() {
                       <CardTitle className="text-base">
                         Adversarial Attack Vectors
                       </CardTitle>
-                      <Badge variant="emerald">
+                      <Badge variant="contrast">
                         {adversarialSuite.length} / {adversarialSuite.length} Blocked
                       </Badge>
                     </div>
@@ -1487,7 +1613,7 @@ export default function InterceptDashboardPage() {
                             type="button"
                             onClick={() => triggerAdversarialIntercept(adv.attackId)}
                             className={`emil-row-hover flex w-full items-center justify-between gap-3 px-4 py-3 text-left cursor-pointer ${
-                              isSelected ? "bg-secondary/90" : ""
+                              isSelected ? "bg-secondary" : ""
                             }`}
                           >
                             <div className="min-w-0">
@@ -1519,13 +1645,17 @@ export default function InterceptDashboardPage() {
                   </CardContent>
                 </Card>
 
-                {/* Right Column: Live Attack Inspector */}
+                {/* Right Column: Live Attack Inspector with transitions.dev Shake on Block */}
                 {selectedAdvCase && (
-                  <Card className="lg:col-span-7 sticky top-20">
+                  <Card
+                    className={`lg:col-span-7 sticky top-20 ${
+                      isShakingRevert ? "is-shaking" : ""
+                    }`}
+                  >
                     <CardHeader>
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
-                          <Badge variant="destructive">
+                          <Badge variant="contrast">
                             <WarningOctagon className="h-3.5 w-3.5" weight="fill" />
                             <span>Guardrail Revert Verified</span>
                           </Badge>
@@ -1560,14 +1690,14 @@ export default function InterceptDashboardPage() {
                         <span className="text-xs font-medium text-muted-foreground">
                           Injected Rogue AI Payload
                         </span>
-                        <div className="rounded-lg border border-border bg-secondary/40 p-3 font-mono text-xs text-foreground break-all">
+                        <div className="rounded-lg border border-border bg-secondary/50 p-3 font-mono text-xs text-foreground break-all">
                           {selectedAdvCase.injectedPayloadSummary}
                         </div>
                       </div>
 
                       <div className="space-y-1.5">
                         <div className="flex items-center justify-between text-xs">
-                          <span className="font-medium text-red-400">
+                          <span className="font-medium text-zinc-200">
                             Deterministic Rust Smart Contract Panic (
                             {selectedAdvCase.errorCode})
                           </span>
@@ -1575,21 +1705,15 @@ export default function InterceptDashboardPage() {
                             Rejected in {selectedAdvCase.verificationTimeUs} µs
                           </span>
                         </div>
-                        <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3.5 font-mono text-xs text-red-300 leading-relaxed">
+                        <div className="rounded-lg border border-zinc-500/50 bg-zinc-900 bg-monochrome-hatch p-3.5 font-mono text-xs text-zinc-100 leading-relaxed">
                           {selectedAdvCase.contractRevertMessage}
                         </div>
                       </div>
 
-                      <div
-                        className={`rounded-lg border p-3.5 text-xs transition-colors duration-200 ${
-                          advFlashProtection
-                            ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-                            : "border-border bg-secondary/30 text-muted-foreground"
-                        }`}
-                      >
+                      <div className="rounded-lg border border-border bg-secondary/40 p-3.5 text-xs text-muted-foreground">
                         <div className="flex items-center gap-2 font-medium text-foreground mb-1">
                           <CheckCircle
-                            className="h-4 w-4 text-emerald-400"
+                            className="h-4 w-4 text-zinc-100"
                             weight="fill"
                           />
                           <span>
@@ -1624,7 +1748,7 @@ export default function InterceptDashboardPage() {
                         </span>
                       </CardHeader>
                       <CardContent>
-                        <div className="text-2xl font-semibold tracking-[-0.02em] text-emerald-400 tabular-nums">
+                        <div className="text-2xl font-semibold tracking-[-0.025em] text-foreground tabular-nums">
                           {backtest.aggregateSummary.interceptSurvivalRatePct}%
                         </div>
                         <p className="text-xs text-muted-foreground mt-1">
@@ -1644,7 +1768,7 @@ export default function InterceptDashboardPage() {
                         </span>
                       </CardHeader>
                       <CardContent>
-                        <div className="text-2xl font-semibold tracking-[-0.02em] text-foreground tabular-nums">
+                        <div className="text-2xl font-semibold tracking-[-0.025em] text-foreground tabular-nums">
                           $
                           {backtest.aggregateSummary.totalLiquidationLossPreventedUsd.toFixed(
                             2
@@ -1663,7 +1787,7 @@ export default function InterceptDashboardPage() {
                         </span>
                       </CardHeader>
                       <CardContent>
-                        <div className="text-2xl font-semibold tracking-[-0.02em] text-foreground tabular-nums">
+                        <div className="text-2xl font-semibold tracking-[-0.025em] text-foreground tabular-nums">
                           {backtest.aggregateSummary.capitalEfficiencySavingsVsConservativePct.toFixed(
                             1
                           )}
@@ -1709,7 +1833,7 @@ export default function InterceptDashboardPage() {
                                   <TableRow
                                     key={o.strategyId}
                                     className={
-                                      isIntercept ? "bg-emerald-500/5 font-medium" : ""
+                                      isIntercept ? "bg-zinc-900/70 font-medium" : ""
                                     }
                                   >
                                     <TableCell className="font-medium">
@@ -1719,7 +1843,9 @@ export default function InterceptDashboardPage() {
                                       <Badge
                                         variant={
                                           o.survivedWithoutLiquidation
-                                            ? "emerald"
+                                            ? isIntercept
+                                              ? "contrast"
+                                              : "secondary"
                                             : "destructive"
                                         }
                                       >
@@ -1743,7 +1869,7 @@ export default function InterceptDashboardPage() {
                             </TableBody>
                           </Table>
 
-                          <div className="rounded-md border border-border/60 bg-secondary/30 px-3.5 py-2.5 text-xs text-muted-foreground">
+                          <div className="rounded-md border border-border bg-secondary/40 px-3.5 py-2.5 text-xs text-muted-foreground">
                             <strong className="text-foreground font-medium">
                               Quantitative Edge:{" "}
                             </strong>
@@ -1770,7 +1896,7 @@ export default function InterceptDashboardPage() {
                           <CardTitle className="text-sm font-medium">
                             Base Mainnet MPC Vault (domain_id: 0)
                           </CardTitle>
-                          <Badge variant="emerald">Secp256k1 Live</Badge>
+                          <Badge variant="secondary">Secp256k1 Live</Badge>
                         </div>
                         <CardDescription className="text-xs">
                           Derived via{" "}
@@ -1811,7 +1937,7 @@ export default function InterceptDashboardPage() {
                           <CardTitle className="text-sm font-medium">
                             Solana Mainnet MPC Payer (domain_id: 1)
                           </CardTitle>
-                          <Badge variant="emerald">Ed25519 Live</Badge>
+                          <Badge variant="secondary">Ed25519 Live</Badge>
                         </div>
                         <CardDescription className="text-xs">
                           Derived via{" "}
@@ -1871,7 +1997,7 @@ export default function InterceptDashboardPage() {
                                 {item.item}
                               </TableCell>
                               <TableCell>
-                                <Badge variant={item.passed ? "emerald" : "secondary"}>
+                                <Badge variant={item.passed ? "contrast" : "outline"}>
                                   {item.passed ? "READY" : "INFO"}
                                 </Badge>
                               </TableCell>
@@ -1891,12 +2017,16 @@ export default function InterceptDashboardPage() {
         </div>
       </main>
 
-      {/* Clean Minimalist Footer */}
+      {/* Clean Minimalist Monochrome Footer */}
       <footer className="mt-12 border-t border-border/70 py-6 text-xs text-muted-foreground">
         <div className="mx-auto flex max-w-[1360px] flex-col sm:flex-row items-center justify-between gap-4 px-4 sm:px-6">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4 text-emerald-400" weight="fill" />
-            <span className="font-medium text-foreground">Intercept</span>
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-6 w-6 items-center justify-center rounded-md border border-zinc-800 bg-zinc-900 text-zinc-100">
+              <InterceptLogoMark size={13} />
+            </div>
+            <span className="font-semibold tracking-tight text-foreground">
+              Intercept
+            </span>
             <span>·</span>
             <span>
               NEAR AI Cloud TEE + near-sdk-rs Guardrail + v1.signer MPC + NEAR Intents
