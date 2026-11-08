@@ -53,6 +53,10 @@ export async function POST(request: Request) {
     mode?: ExecutionMode;
     stressShockPct?: number;
     minTriggerHfBpsOverride?: number;
+    userObligationOverride?: string;
+    maxPerActionUsdcFormattedOverride?: string;
+    maxDailyUsdcFormattedOverride?: string;
+    maxSlippageBpsOverride?: number;
   };
 
   const [report, preflight] = await Promise.all([
@@ -64,6 +68,22 @@ export async function POST(request: Request) {
     }),
     runMainnetPreflightCheck(),
   ]);
+
+  if (body.userObligationOverride?.trim()) {
+    const trimmed = body.userObligationOverride.trim();
+    report.policy.userKaminoObligationPubkey = trimmed;
+    report.kaminoBefore.obligationPubkey = trimmed;
+  }
+  if (body.maxPerActionUsdcFormattedOverride?.trim()) {
+    report.policy.maxPerActionUsdcFormatted = body.maxPerActionUsdcFormattedOverride.trim();
+  }
+  if (body.maxDailyUsdcFormattedOverride?.trim()) {
+    report.policy.maxDailyUsdcFormatted = body.maxDailyUsdcFormattedOverride.trim();
+  }
+  if (typeof body.maxSlippageBpsOverride === "number") {
+    report.policy.maxSlippageBps = body.maxSlippageBpsOverride;
+  }
+
   const adversarialSuite = runAdversarialAttackSuite();
   const backtest = runQuantitativeBacktestSuite();
 

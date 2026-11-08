@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import Link from "next/link";
 import {
   Pulse,
   Cpu,
@@ -19,8 +20,18 @@ import {
   TerminalWindow,
   Lightning,
   ArrowSquareOut,
+  ShieldCheck,
+  Question,
+  BookOpen,
+  Sparkle,
 } from "@phosphor-icons/react";
 import { InterceptLogoMark } from "@/components/brand-logo";
+import {
+  WalkthroughModal,
+  ConfigurePolicyModal,
+  FaqModal,
+  type CustomPolicyConfig,
+} from "@/components/modals";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -448,6 +459,20 @@ export default function InterceptDashboardPage() {
   const [showCustodyDetail, setShowCustodyDetail] = useState<boolean>(false);
   const [showRawHex, setShowRawHex] = useState<boolean>(false);
   const [selectedBacktestIdx, setSelectedBacktestIdx] = useState<number>(0);
+
+  // Interactive Modals & Custom User Policy State
+  const [walkthroughOpen, setWalkthroughOpen] = useState<boolean>(false);
+  const [configureOpen, setConfigureOpen] = useState<boolean>(false);
+  const [faqOpen, setFaqOpen] = useState<boolean>(false);
+  const [customPolicy, setCustomPolicy] = useState<CustomPolicyConfig>({
+    userKaminoObligationPubkey: "H6ARHf6YXhGYeQfUzQNGk6rDNnLBQKrenN712K4AQJEG",
+    userSolanaWalletPubkey: "",
+    minTriggerHfBps: 11500,
+    maxPerActionUsdc: 2500,
+    maxDailyUsdc: 5000,
+    maxSlippageBps: 50,
+  });
+
   const workspaceRef = useRef<HTMLDivElement>(null);
 
   const triggerSmoothTransition = useCallback((fn: () => void) => {
@@ -486,7 +511,8 @@ export default function InterceptDashboardPage() {
   const fetchPipeline = useCallback(
     async (
       targetMode: "LIVE_MAINNET_MODE" | "STRESS_TEST_MAINNET_MODE",
-      dropPct: number
+      dropPct: number,
+      policyCfg: CustomPolicyConfig = customPolicy
     ) => {
       setLoading(true);
       setErrorMsg(null);
@@ -498,6 +524,17 @@ export default function InterceptDashboardPage() {
           body: JSON.stringify({
             mode: targetMode,
             stressShockPct: -Math.abs(dropPct),
+            minTriggerHfBpsOverride: policyCfg.minTriggerHfBps,
+            userObligationOverride: policyCfg.userKaminoObligationPubkey,
+            maxPerActionUsdcFormattedOverride: `$${policyCfg.maxPerActionUsdc.toLocaleString(
+              "en-US",
+              { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+            )}`,
+            maxDailyUsdcFormattedOverride: `$${policyCfg.maxDailyUsdc.toLocaleString(
+              "en-US",
+              { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+            )}`,
+            maxSlippageBpsOverride: policyCfg.maxSlippageBps,
           }),
         });
         if (!res.ok) {
@@ -516,11 +553,11 @@ export default function InterceptDashboardPage() {
         setTimeout(() => setIsTransitioning(false), 160);
       }
     },
-    [selectedAdvId]
+    [selectedAdvId, customPolicy]
   );
 
   useEffect(() => {
-    void fetchPipeline(mode, priceDropPct);
+    void fetchPipeline(mode, priceDropPct, customPolicy);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, priceDropPct]);
 
@@ -615,18 +652,49 @@ export default function InterceptDashboardPage() {
          ===================================================================== */}
       <header className="sticky top-0 z-40 h-14 w-full border-b border-border/80 bg-background/85 backdrop-blur-md">
         <div className="mx-auto flex h-full max-w-[1320px] items-center justify-between px-4 sm:px-6">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-950 text-zinc-50 shadow-2xs">
-              <InterceptLogoMark size={18} />
+          <div className="flex items-center gap-5">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-950 text-zinc-50 shadow-2xs">
+                <InterceptLogoMark size={18} />
+              </div>
+              <span className="text-sm font-semibold tracking-[-0.02em] text-foreground">
+                Intercept
+              </span>
             </div>
-            <span className="text-sm font-semibold tracking-[-0.02em] text-foreground">
-              Intercept
-            </span>
+
+            {/* Clean Top Navigation Links (Walkthrough, FAQ, Docs) */}
+            <nav className="hidden sm:flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setWalkthroughOpen(true)}
+                className="emil-press inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/70 cursor-pointer"
+              >
+                <Sparkle className="h-3.5 w-3.5" />
+                <span>How It Works</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setFaqOpen(true)}
+                className="emil-press inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/70 cursor-pointer"
+              >
+                <Question className="h-3.5 w-3.5" />
+                <span>FAQ</span>
+              </button>
+
+              <Link
+                href="/docs"
+                className="emil-press inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/70"
+              >
+                <BookOpen className="h-3.5 w-3.5" />
+                <span>Docs</span>
+              </Link>
+            </nav>
           </div>
 
           <div className="flex items-center gap-2">
             {report && (
-              <div className="hidden md:flex items-center gap-2.5 rounded-md border border-border bg-secondary/60 px-2.5 py-1 text-xs text-muted-foreground tabular-nums">
+              <div className="hidden lg:flex items-center gap-2.5 rounded-md border border-border bg-secondary/60 px-2.5 py-1 text-xs text-muted-foreground tabular-nums">
                 <span>
                   Slot{" "}
                   <strong className="font-mono font-medium text-foreground">
@@ -647,6 +715,15 @@ export default function InterceptDashboardPage() {
             )}
 
             <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setConfigureOpen(true)}
+            >
+              <ShieldCheck className="h-3.5 w-3.5" weight="duotone" />
+              <span>Configure Policy</span>
+            </Button>
+
+            <Button
               variant="destructive"
               size="sm"
               onClick={() => {
@@ -658,13 +735,13 @@ export default function InterceptDashboardPage() {
               }}
             >
               <Skull className="h-3.5 w-3.5" weight="fill" />
-              <span>Test Exploit</span>
+              <span className="hidden md:inline">Test Exploit</span>
             </Button>
 
             <Button
               variant="outline"
               size="sm"
-              onClick={() => void fetchPipeline(mode, priceDropPct)}
+              onClick={() => void fetchPipeline(mode, priceDropPct, customPolicy)}
               disabled={loading}
               aria-label="Refresh telemetry"
             >
@@ -701,8 +778,41 @@ export default function InterceptDashboardPage() {
               <p className="text-sm text-muted-foreground leading-relaxed max-w-[60ch]">
                 Holds idle USDC on Base and executes byte-verified cross-chain Kamino
                 debt rescues onto Solana only when Pyth health drops below{" "}
-                <span className="font-mono font-medium text-zinc-900">1.15x</span>.
+                <span className="font-mono font-medium text-zinc-900">
+                  {triggerHf.toFixed(2)}x
+                </span>
+                .
               </p>
+
+              {/* Clear Onboarding & Walkthrough Actions */}
+              <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={() => setConfigureOpen(true)}
+                >
+                  <ShieldCheck className="h-4 w-4" weight="fill" />
+                  <span>Configure Protection Policy</span>
+                </Button>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setWalkthroughOpen(true)}
+                >
+                  <Sparkle className="h-3.5 w-3.5" />
+                  <span>Product Walkthrough</span>
+                </Button>
+
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setFaqOpen(true)}
+                >
+                  <Question className="h-3.5 w-3.5" />
+                  <span>FAQ</span>
+                </Button>
+              </div>
             </div>
 
             {/* Scannable 3-Pillar Architecture Strip + Optional Custody Proof Drawer */}
@@ -1935,6 +2045,43 @@ export default function InterceptDashboardPage() {
           </div>
         </div>
       </footer>
+
+      {/* =====================================================================
+          INTERACTIVE MODALS (WALKTHROUGH, CONFIGURE POLICY, FAQ)
+         ===================================================================== */}
+      <WalkthroughModal
+        open={walkthroughOpen}
+        onClose={() => setWalkthroughOpen(false)}
+        onProceedToConfigure={() => setConfigureOpen(true)}
+      />
+
+      <ConfigurePolicyModal
+        open={configureOpen}
+        onClose={() => setConfigureOpen(false)}
+        onOpenWalkthrough={() => setWalkthroughOpen(true)}
+        currentConfig={customPolicy}
+        derivedBaseVault={
+          report?.policy.mpcBaseVaultAddress ??
+          "0x72faa1abaf92e0c4b791f15acedb496c8979746c"
+        }
+        derivedSolanaPayer={
+          report?.policy.mpcSolanaPayerPubkey ??
+          "GZMAbwapG99YKCsA2CDVc4bXeBzd7nvKMQgtm9K8aKas"
+        }
+        nearContractId={
+          report?.policy.nearContractId ?? "guardrail.intercept-defi.near"
+        }
+        onApplyConfig={(next) => {
+          setCustomPolicy(next);
+          void fetchPipeline(mode, priceDropPct, next);
+        }}
+      />
+
+      <FaqModal
+        open={faqOpen}
+        onClose={() => setFaqOpen(false)}
+        onOpenConfigure={() => setConfigureOpen(true)}
+      />
     </div>
   );
 }
