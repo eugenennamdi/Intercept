@@ -67,33 +67,32 @@ export function HealthFactorTrajectoryChart({
     <div className={cn("space-y-3", className)}>
       {/* shadcn/ui Chart Legend & Live Readout Header */}
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-        <div className="flex flex-wrap items-center gap-4">
+        <div className="flex flex-wrap items-center gap-3.5">
           <span className="inline-flex items-center gap-1.5 text-zinc-100 font-medium">
             <span className="h-2 w-2 rounded-[2px] bg-zinc-50" />
-            <span>Intercept TEE (Protected)</span>
+            <span>Intercept TEE</span>
           </span>
           <span className="inline-flex items-center gap-1.5 text-zinc-400">
             <span className="h-0.5 w-3 bg-zinc-400" />
-            <span>Naive Static 1.20x</span>
+            <span>Static 1.20x</span>
           </span>
           <span className="inline-flex items-center gap-1.5 text-zinc-500">
             <span className="h-0.5 w-3 border-b border-dashed border-zinc-500" />
-            <span>Unprotected Obligation</span>
+            <span>Unprotected</span>
           </span>
         </div>
 
         {activePoint && (
-          <div className="flex items-center gap-3 rounded-md border border-border bg-secondary/60 px-2.5 py-1 font-mono text-[11px] tabular-nums">
+          <div className="flex items-center gap-2.5 rounded-md border border-border bg-secondary/60 px-2.5 py-1 font-mono text-[11px] tabular-nums">
             <span className="text-zinc-400">{activePoint.tickLabel}</span>
-            <span className="text-zinc-600">·</span>
-            <span className="text-zinc-300">SOL ${activePoint.solPriceUsd.toFixed(2)}</span>
-            <span className="text-zinc-600">·</span>
+            <span className="text-zinc-700">·</span>
+            <span className="text-zinc-300">${activePoint.solPriceUsd.toFixed(2)}</span>
+            <span className="text-zinc-700">·</span>
             <span className="text-zinc-50 font-semibold">
-              Intercept HF {activePoint.interceptHf.toFixed(4)}
+              HF {activePoint.interceptHf.toFixed(2)}
             </span>
-            <span className="text-zinc-600">·</span>
             <span className="text-zinc-500">
-              Raw HF {activePoint.unprotectedHf.toFixed(4)}
+              (Raw {activePoint.unprotectedHf.toFixed(2)})
             </span>
           </div>
         )}
