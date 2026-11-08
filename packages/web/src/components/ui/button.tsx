@@ -11,15 +11,15 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 
 const variantClasses: Record<ButtonVariant, string> = {
   default:
-    "bg-primary text-primary-foreground shadow-xs hover:bg-zinc-200",
+    "bg-zinc-900 text-zinc-50 shadow-xs hover:bg-zinc-800",
   destructive:
-    "bg-zinc-900 text-zinc-100 border border-zinc-400/70 shadow-xs hover:bg-zinc-100 hover:text-zinc-950",
+    "bg-zinc-900 text-zinc-50 border border-zinc-900 shadow-xs hover:bg-zinc-800",
   outline:
-    "border border-border bg-transparent text-foreground shadow-xs hover:bg-accent hover:text-accent-foreground",
+    "border border-border bg-white text-foreground shadow-xs hover:bg-secondary",
   secondary:
-    "bg-secondary text-secondary-foreground border border-border/80 shadow-xs hover:bg-zinc-800/80",
+    "bg-secondary text-secondary-foreground border border-border/80 shadow-xs hover:bg-zinc-200/70",
   ghost:
-    "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+    "text-muted-foreground hover:bg-secondary hover:text-foreground",
   link:
     "text-primary underline-offset-4 hover:underline",
 };

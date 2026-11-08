@@ -321,7 +321,7 @@ function SectionHeader({
     <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 pb-3 border-b border-border/70">
       <div className="space-y-1">
         <div className="flex items-center gap-2.5">
-          <span className="inline-flex h-5 items-center rounded border border-zinc-700/80 bg-secondary px-1.5 font-mono text-[10px] font-semibold tracking-wider text-zinc-300">
+          <span className="inline-flex h-5 items-center rounded border border-zinc-300 bg-secondary px-1.5 font-mono text-[10px] font-semibold tracking-wider text-zinc-800">
             {index}
           </span>
           <h2 className="text-base sm:text-lg font-semibold tracking-[-0.02em] text-foreground">
@@ -401,7 +401,7 @@ function CopyChip({
       type="button"
       onClick={handleCopy}
       title={`Copy ${label ?? value}`}
-      className="emil-press inline-flex items-center gap-1.5 rounded-md border border-border bg-secondary/80 px-2 py-0.5 font-mono text-xs text-muted-foreground hover:text-foreground hover:border-zinc-700 cursor-pointer"
+      className="emil-press inline-flex items-center gap-1.5 rounded-md border border-border bg-secondary/80 px-2 py-0.5 font-mono text-xs text-muted-foreground hover:text-foreground hover:border-zinc-400 cursor-pointer"
     >
       <span className="truncate max-w-[180px]">{display ?? value}</span>
       <span className="t-icon-swap" data-state={copied ? "b" : "a"}>
@@ -409,7 +409,7 @@ function CopyChip({
           <Copy className="w-3 h-3 opacity-70" />
         </span>
         <span className="t-icon" data-icon="b">
-          <Check className="w-3 h-3 text-zinc-100" weight="bold" />
+          <Check className="w-3 h-3 text-zinc-950" weight="bold" />
         </span>
       </span>
     </button>
@@ -633,7 +633,7 @@ export default function InterceptDashboardPage() {
             >
               <span
                 className={`h-1.5 w-1.5 rounded-full ${
-                  mode === "LIVE_MAINNET_MODE" ? "bg-zinc-300" : "bg-zinc-950"
+                  mode === "LIVE_MAINNET_MODE" ? "bg-zinc-600" : "bg-zinc-50"
                 }`}
               />
               {mode === "LIVE_MAINNET_MODE"
@@ -651,14 +651,14 @@ export default function InterceptDashboardPage() {
                     #{report.kaminoBefore.solanaSlot.toLocaleString()}
                   </strong>
                 </span>
-                <span className="text-zinc-700">·</span>
+                <span className="text-zinc-300">·</span>
                 <span>
                   <strong className="font-mono font-medium text-foreground">
                     ${report.pythTelemetry.effectiveSolUsd.toFixed(2)}
                   </strong>
                 </span>
-                <span className="text-zinc-700">·</span>
-                <span className="font-mono text-zinc-300">
+                <span className="text-zinc-300">·</span>
+                <span className="font-mono text-zinc-700">
                   {report.totalMeasuredLatencyMs}ms
                 </span>
               </div>
@@ -696,7 +696,7 @@ export default function InterceptDashboardPage() {
 
       <main className="mx-auto w-full max-w-[1320px] flex-1 px-4 py-8 sm:px-6 space-y-10">
         {errorMsg && (
-          <div className="rounded-lg border border-zinc-600 bg-secondary p-3 text-xs text-zinc-200">
+          <div className="rounded-lg border border-zinc-300 bg-secondary p-3 text-xs text-zinc-800">
             Telemetry notice: {errorMsg}
           </div>
         )}
@@ -707,8 +707,8 @@ export default function InterceptDashboardPage() {
         <section className="grid gap-6 lg:grid-cols-12 items-stretch">
           <div className="lg:col-span-7 flex flex-col justify-between space-y-5">
             <div className="space-y-3">
-              <div className="inline-flex items-center gap-2 rounded-full border border-border bg-secondary/70 px-3 py-1 text-[11px] font-mono text-muted-foreground">
-                <span className="h-1.5 w-1.5 rounded-full bg-zinc-100" />
+              <div className="inline-flex items-center gap-2 rounded-full border border-border bg-white px-3 py-1 text-[11px] font-mono text-muted-foreground shadow-2xs">
+                <span className="h-1.5 w-1.5 rounded-full bg-zinc-900" />
                 <span>NEAR AI CLOUD TEE · V1.SIGNER MPC · NEAR INTENTS 1-CLICK</span>
               </div>
 
@@ -719,7 +719,7 @@ export default function InterceptDashboardPage() {
               <p className="text-sm text-muted-foreground leading-relaxed max-w-[60ch]">
                 Holds idle USDC on Base and executes byte-verified cross-chain Kamino
                 debt rescues onto Solana only when Pyth health drops below{" "}
-                <span className="font-mono text-zinc-200">1.15x</span>.
+                <span className="font-mono font-medium text-zinc-900">1.15x</span>.
               </p>
             </div>
 
@@ -727,30 +727,30 @@ export default function InterceptDashboardPage() {
             <div className="bezel-shell">
               <div className="bezel-core p-3.5 space-y-3">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                  <div className="rounded-md border border-border/70 bg-secondary/50 px-3 py-2">
+                  <div className="rounded-md border border-border bg-secondary/60 px-3 py-2">
                     <div className="flex items-center justify-between text-[11px] font-mono text-muted-foreground">
                       <span>01 · CUSTODY</span>
-                      <LockKey className="h-3.5 w-3.5 text-zinc-200" />
+                      <LockKey className="h-3.5 w-3.5 text-zinc-700" />
                     </div>
                     <div className="mt-1 text-xs font-medium text-foreground">
                       Solana Key Never Shared
                     </div>
                   </div>
 
-                  <div className="rounded-md border border-border/70 bg-secondary/50 px-3 py-2">
+                  <div className="rounded-md border border-border bg-secondary/60 px-3 py-2">
                     <div className="flex items-center justify-between text-[11px] font-mono text-muted-foreground">
                       <span>02 · GUARDRAIL</span>
-                      <Code className="h-3.5 w-3.5 text-zinc-200" />
+                      <Code className="h-3.5 w-3.5 text-zinc-700" />
                     </div>
                     <div className="mt-1 text-xs font-medium text-foreground truncate font-mono">
                       guardrail.intercept-defi.near
                     </div>
                   </div>
 
-                  <div className="rounded-md border border-border/70 bg-secondary/50 px-3 py-2">
+                  <div className="rounded-md border border-border bg-secondary/60 px-3 py-2">
                     <div className="flex items-center justify-between text-[11px] font-mono text-muted-foreground">
                       <span>03 · SETTLEMENT</span>
-                      <Pulse className="h-3.5 w-3.5 text-zinc-200" />
+                      <Pulse className="h-3.5 w-3.5 text-zinc-700" />
                     </div>
                     <div className="mt-1 text-xs font-medium text-foreground">
                       Base (0) → Solana (1)
@@ -761,7 +761,7 @@ export default function InterceptDashboardPage() {
                 <div className="flex items-center justify-between pt-0.5 text-xs">
                   <span className="text-muted-foreground">
                     Third-party Kamino{" "}
-                    <code className="font-mono text-zinc-300">
+                    <code className="font-mono font-medium text-zinc-800">
                       repay_obligation_liquidity_v2
                     </code>{" "}
                     with zero collateral withdrawal rights.
@@ -769,7 +769,7 @@ export default function InterceptDashboardPage() {
                   <button
                     type="button"
                     onClick={() => setShowCustodyDetail((prev) => !prev)}
-                    className="emil-press inline-flex items-center gap-1 font-medium text-zinc-200 hover:text-white shrink-0 ml-3 cursor-pointer"
+                    className="emil-press inline-flex items-center gap-1 font-medium text-zinc-900 hover:text-zinc-600 shrink-0 ml-3 cursor-pointer"
                   >
                     <span>{showCustodyDetail ? "Hide Proof" : "Custody Proof"}</span>
                     <CaretDown
@@ -795,7 +795,7 @@ export default function InterceptDashboardPage() {
                     never shares its private key
                   </strong>
                   . Kamino Lend natively permits third-party debt repayment (
-                  <code className="font-mono text-zinc-200">
+                  <code className="font-mono text-zinc-800">
                     repay_obligation_liquidity_v2
                   </code>
                   ) on behalf of any obligation owner without granting collateral
@@ -868,7 +868,7 @@ export default function InterceptDashboardPage() {
                         }
                         className={`emil-press flex flex-col items-start rounded-[6px] px-2.5 py-2 text-left cursor-pointer ${
                           isActive
-                            ? "bg-background text-foreground shadow-xs border border-zinc-700/80"
+                            ? "bg-white text-foreground shadow-xs border border-zinc-300"
                             : "text-muted-foreground hover:text-foreground"
                         }`}
                       >
@@ -962,15 +962,15 @@ export default function InterceptDashboardPage() {
                   <AnimatedMetric
                     value={hfBefore.toFixed(2)}
                     className={`text-3xl font-semibold tracking-[-0.03em] ${
-                      isRescueTriggered ? "text-zinc-500" : "text-foreground"
+                      isRescueTriggered ? "text-zinc-400" : "text-foreground"
                     }`}
                   />
                   {isRescueTriggered && (
                     <>
-                      <CaretRight className="h-4 w-4 text-zinc-500" />
+                      <CaretRight className="h-4 w-4 text-zinc-400" />
                       <AnimatedMetric
                         value={hfAfter.toFixed(2)}
-                        className="text-3xl font-semibold tracking-[-0.03em] text-zinc-50"
+                        className="text-3xl font-semibold tracking-[-0.03em] text-zinc-950"
                       />
                     </>
                   )}
@@ -979,16 +979,16 @@ export default function InterceptDashboardPage() {
                 <div className="space-y-1.5">
                   <div className="relative h-1.5 w-full rounded-full bg-secondary overflow-hidden border border-border">
                     <div
-                      className="absolute inset-y-0 left-0 bg-monochrome-hatch border-r border-zinc-600"
+                      className="absolute inset-y-0 left-0 bg-monochrome-hatch border-r border-zinc-400"
                       style={{ width: `${hfToPercent(1.0)}%` }}
                     />
                     <div
-                      className="absolute top-0 bottom-0 w-1 bg-zinc-500 transition-[left] duration-200"
+                      className="absolute top-0 bottom-0 w-1 bg-zinc-400 transition-[left] duration-200"
                       style={{ left: `${hfToPercent(hfBefore)}%` }}
                     />
                     {isRescueTriggered && (
                       <div
-                        className="absolute top-0 bottom-0 w-1.5 bg-zinc-50 transition-[left] duration-200"
+                        className="absolute top-0 bottom-0 w-1.5 bg-zinc-950 transition-[left] duration-200"
                         style={{ left: `${hfToPercent(hfAfter)}%` }}
                       />
                     )}
@@ -1135,13 +1135,13 @@ export default function InterceptDashboardPage() {
 
                 {/* Concise 1-line TEE Decision Bar */}
                 {report && (
-                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border/70 bg-secondary/40 px-3 py-2 text-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-secondary/60 px-3 py-2 text-xs">
                     <div className="flex items-center gap-2 min-w-0">
-                      <Cpu className="h-3.5 w-3.5 text-zinc-200 shrink-0" />
+                      <Cpu className="h-3.5 w-3.5 text-zinc-700 shrink-0" />
                       <span className="font-medium text-foreground truncate">
                         {report.nearAiCloudAttestation.model}
                       </span>
-                      <span className="text-zinc-600">·</span>
+                      <span className="text-zinc-300">·</span>
                       <span className="font-mono text-muted-foreground">
                         {report.riskEvaluation.regime}
                       </span>
@@ -1227,8 +1227,8 @@ export default function InterceptDashboardPage() {
                         </button>
 
                         {isExpanded && (
-                          <div className="emil-enter border-t border-border/60 bg-secondary/40 px-3.5 py-3 space-y-2 text-xs">
-                            <div className="font-mono text-[11px] text-zinc-400">
+                          <div className="emil-enter border-t border-border/60 bg-secondary/50 px-3.5 py-3 space-y-2 text-xs">
+                            <div className="font-mono text-[11px] text-zinc-600">
                               {stage.stageId}
                             </div>
                             <p className="text-muted-foreground leading-relaxed">
@@ -1239,7 +1239,7 @@ export default function InterceptDashboardPage() {
                                 href={stage.explorerUrl}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="inline-flex items-center gap-1 font-medium text-zinc-100 hover:underline pt-0.5"
+                                className="inline-flex items-center gap-1 font-medium text-zinc-900 hover:underline pt-0.5"
                               >
                                 <span>{stage.explorerLabel}</span>
                                 <ArrowSquareOut className="h-3.5 w-3.5" />
@@ -1278,34 +1278,34 @@ export default function InterceptDashboardPage() {
               <TabsTrigger value="redteam">
                 <Skull className="h-3.5 w-3.5" />
                 <span>Red-Team (11/11)</span>
-                <kbd className="hidden md:inline-block ml-1 rounded border border-zinc-800 bg-zinc-900 px-1 font-mono text-[10px] text-zinc-500">
+                <kbd className="hidden md:inline-block ml-1 rounded border border-zinc-300 bg-zinc-100 px-1 font-mono text-[10px] text-zinc-600">
                   1
                 </kbd>
               </TabsTrigger>
               <TabsTrigger value="inspector">
                 <Code className="h-3.5 w-3.5" />
                 <span>Byte Inspector</span>
-                <kbd className="hidden md:inline-block ml-1 rounded border border-zinc-800 bg-zinc-900 px-1 font-mono text-[10px] text-zinc-500">
+                <kbd className="hidden md:inline-block ml-1 rounded border border-zinc-300 bg-zinc-100 px-1 font-mono text-[10px] text-zinc-600">
                   2
                 </kbd>
               </TabsTrigger>
               <TabsTrigger value="backtest">
                 <ChartLineUp className="h-3.5 w-3.5" />
                 <span>Backtest Lab</span>
-                <kbd className="hidden md:inline-block ml-1 rounded border border-zinc-800 bg-zinc-900 px-1 font-mono text-[10px] text-zinc-500">
+                <kbd className="hidden md:inline-block ml-1 rounded border border-zinc-300 bg-zinc-100 px-1 font-mono text-[10px] text-zinc-600">
                   3
                 </kbd>
               </TabsTrigger>
               <TabsTrigger value="vaults">
                 <TerminalWindow className="h-3.5 w-3.5" />
                 <span>Mainnet Vaults</span>
-                <kbd className="hidden md:inline-block ml-1 rounded border border-zinc-800 bg-zinc-900 px-1 font-mono text-[10px] text-zinc-500">
+                <kbd className="hidden md:inline-block ml-1 rounded border border-zinc-300 bg-zinc-100 px-1 font-mono text-[10px] text-zinc-600">
                   4
                 </kbd>
               </TabsTrigger>
               <TabsTrigger value="all">
                 <span>View All</span>
-                <kbd className="hidden md:inline-block ml-1 rounded border border-zinc-800 bg-zinc-900 px-1 font-mono text-[10px] text-zinc-500">
+                <kbd className="hidden md:inline-block ml-1 rounded border border-zinc-300 bg-zinc-100 px-1 font-mono text-[10px] text-zinc-600">
                   5
                 </kbd>
               </TabsTrigger>
@@ -1349,7 +1349,7 @@ export default function InterceptDashboardPage() {
                                 className={`text-xs truncate ${
                                   isSelected
                                     ? "font-semibold text-foreground"
-                                    : "text-zinc-300"
+                                    : "text-zinc-700"
                                 }`}
                               >
                                 {adv.title}
@@ -1416,21 +1416,21 @@ export default function InterceptDashboardPage() {
 
                       <div className="space-y-1.5">
                         <div className="flex items-center justify-between text-xs">
-                          <span className="font-medium text-zinc-200">
+                          <span className="font-medium text-zinc-800">
                             Deterministic Rust Smart Contract Revert
                           </span>
                           <span className="font-mono text-muted-foreground tabular-nums">
                             {selectedAdvCase.verificationTimeUs} µs
                           </span>
                         </div>
-                        <div className="rounded-md border border-zinc-500/50 bg-zinc-900 bg-monochrome-hatch p-3.5 font-mono text-xs text-zinc-100 leading-relaxed">
+                        <div className="rounded-md border border-zinc-300 bg-zinc-100/80 bg-monochrome-hatch p-3.5 font-mono text-xs text-zinc-950 leading-relaxed">
                           {selectedAdvCase.contractRevertMessage}
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between rounded-md border border-border bg-secondary/40 px-3.5 py-2.5 text-xs">
+                      <div className="flex items-center justify-between rounded-md border border-border bg-secondary/60 px-3.5 py-2.5 text-xs">
                         <span className="flex items-center gap-2 font-medium text-foreground">
-                          <CheckCircle className="h-4 w-4 text-zinc-100" weight="fill" />
+                          <CheckCircle className="h-4 w-4 text-zinc-900" weight="fill" />
                           <span>0 MPC Signatures Issued · User Funds 100% Intact</span>
                         </span>
                         <span className="font-mono text-muted-foreground hidden sm:inline">
@@ -1743,7 +1743,7 @@ export default function InterceptDashboardPage() {
                                   onClick={() => setSelectedBacktestIdx(idx)}
                                   className={`emil-press rounded-[6px] px-2.5 py-1 text-xs font-medium cursor-pointer ${
                                     active
-                                      ? "bg-background text-foreground shadow-xs border border-zinc-700/80"
+                                      ? "bg-white text-foreground shadow-xs border border-zinc-300"
                                       : "text-muted-foreground hover:text-foreground"
                                   }`}
                                 >
@@ -1773,7 +1773,7 @@ export default function InterceptDashboardPage() {
                                 <TableRow
                                   key={o.strategyId}
                                   className={
-                                    isIntercept ? "bg-zinc-900/70 font-medium" : ""
+                                    isIntercept ? "bg-zinc-100/90 font-medium" : ""
                                   }
                                 >
                                   <TableCell className="font-medium">

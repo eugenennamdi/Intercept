@@ -18,8 +18,8 @@ export default function OpenGraphImage() {
           display: "flex",
           flexDirection: "column",
           justifyContent: "space-between",
-          backgroundColor: "#09090b",
-          color: "#fafafa",
+          backgroundColor: "#fafafa",
+          color: "#09090b",
           padding: "64px 72px",
           fontFamily: "sans-serif",
           position: "relative",
@@ -33,7 +33,8 @@ export default function OpenGraphImage() {
             left: "24px",
             right: "24px",
             bottom: "24px",
-            border: "1px solid #27272a",
+            backgroundColor: "#ffffff",
+            border: "1px solid #e4e4e7",
             borderRadius: "20px",
             display: "flex",
           }}
@@ -54,7 +55,7 @@ export default function OpenGraphImage() {
                 width: "52px",
                 height: "52px",
                 borderRadius: "12px",
-                backgroundColor: "#141417",
+                backgroundColor: "#09090b",
                 border: "1px solid #27272a",
                 display: "flex",
                 alignItems: "center",
@@ -79,7 +80,7 @@ export default function OpenGraphImage() {
                   fontSize: "24px",
                   fontWeight: 700,
                   letterSpacing: "-0.03em",
-                  color: "#fafafa",
+                  color: "#09090b",
                 }}
               >
                 INTERCEPT
@@ -103,10 +104,11 @@ export default function OpenGraphImage() {
               gap: "10px",
               padding: "10px 18px",
               borderRadius: "9999px",
-              backgroundColor: "#141417",
-              border: "1px solid #27272a",
+              backgroundColor: "#f4f4f5",
+              border: "1px solid #e4e4e7",
               fontSize: "14px",
-              color: "#d4d4d8",
+              fontWeight: 600,
+              color: "#18181b",
             }}
           >
             <div
@@ -114,7 +116,7 @@ export default function OpenGraphImage() {
                 width: "8px",
                 height: "8px",
                 borderRadius: "9999px",
-                backgroundColor: "#fafafa",
+                backgroundColor: "#09090b",
               }}
             />
             <span>NON-CUSTODIAL · 11/11 EXPLOITS BLOCKED</span>
@@ -136,7 +138,7 @@ export default function OpenGraphImage() {
               fontWeight: 700,
               lineHeight: 1.06,
               letterSpacing: "-0.04em",
-              color: "#fafafa",
+              color: "#09090b",
             }}
           >
             Zero-Trust Cross-Chain Liquidation Defense.
@@ -145,7 +147,7 @@ export default function OpenGraphImage() {
             style={{
               fontSize: "22px",
               lineHeight: 1.45,
-              color: "#a1a1aa",
+              color: "#52525b",
               maxWidth: "820px",
               letterSpacing: "-0.01em",
             }}
@@ -164,7 +166,7 @@ export default function OpenGraphImage() {
             justifyContent: "space-between",
             width: "100%",
             paddingTop: "28px",
-            borderTop: "1px solid #27272a",
+            borderTop: "1px solid #e4e4e7",
           }}
         >
           {[
@@ -194,7 +196,7 @@ export default function OpenGraphImage() {
                 style={{
                   fontSize: "17px",
                   fontWeight: 600,
-                  color: "#e4e4e7",
+                  color: "#09090b",
                   letterSpacing: "-0.01em",
                 }}
               >

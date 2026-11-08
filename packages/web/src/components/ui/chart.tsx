@@ -13,7 +13,7 @@ export interface TrajectoryPoint {
 }
 
 /**
- * shadcn/ui Monochrome Area & Threshold Chart
+ * shadcn/ui Monochrome Light Area & Threshold Chart
  * Renders interactive multi-series Health Factor trajectory with crosshair & ChartTooltipContent
  */
 export function HealthFactorTrajectoryChart({
@@ -48,7 +48,10 @@ export function HealthFactorTrajectoryChart({
 
   const buildPath = (selector: (p: TrajectoryPoint) => number) =>
     points
-      .map((p, i) => `${i === 0 ? "M" : "L"}${toX(i).toFixed(1)},${toY(selector(p)).toFixed(1)}`)
+      .map(
+        (p, i) =>
+          `${i === 0 ? "M" : "L"}${toX(i).toFixed(1)},${toY(selector(p)).toFixed(1)}`
+      )
       .join(" ");
 
   const interceptPath = buildPath((p) => p.interceptHf);
@@ -61,34 +64,35 @@ export function HealthFactorTrajectoryChart({
 
   const liqY = toY(1.0);
   const trigY = toY(triggerHf);
-  const activePoint = hoverIdx !== null ? points[hoverIdx] : points[points.length - 1];
+  const activePoint =
+    hoverIdx !== null ? points[hoverIdx] : points[points.length - 1];
 
   return (
     <div className={cn("space-y-3", className)}>
       {/* shadcn/ui Chart Legend & Live Readout Header */}
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
         <div className="flex flex-wrap items-center gap-3.5">
-          <span className="inline-flex items-center gap-1.5 text-zinc-100 font-medium">
-            <span className="h-2 w-2 rounded-[2px] bg-zinc-50" />
+          <span className="inline-flex items-center gap-1.5 text-zinc-950 font-semibold">
+            <span className="h-2 w-2 rounded-[2px] bg-zinc-950" />
             <span>Intercept TEE</span>
           </span>
-          <span className="inline-flex items-center gap-1.5 text-zinc-400">
-            <span className="h-0.5 w-3 bg-zinc-400" />
+          <span className="inline-flex items-center gap-1.5 text-zinc-600">
+            <span className="h-0.5 w-3 bg-zinc-500" />
             <span>Static 1.20x</span>
           </span>
           <span className="inline-flex items-center gap-1.5 text-zinc-500">
-            <span className="h-0.5 w-3 border-b border-dashed border-zinc-500" />
+            <span className="h-0.5 w-3 border-b border-dashed border-zinc-400" />
             <span>Unprotected</span>
           </span>
         </div>
 
         {activePoint && (
-          <div className="flex items-center gap-2.5 rounded-md border border-border bg-secondary/60 px-2.5 py-1 font-mono text-[11px] tabular-nums">
-            <span className="text-zinc-400">{activePoint.tickLabel}</span>
-            <span className="text-zinc-700">·</span>
-            <span className="text-zinc-300">${activePoint.solPriceUsd.toFixed(2)}</span>
-            <span className="text-zinc-700">·</span>
-            <span className="text-zinc-50 font-semibold">
+          <div className="flex items-center gap-2.5 rounded-md border border-border bg-secondary px-2.5 py-1 font-mono text-[11px] tabular-nums">
+            <span className="text-zinc-500">{activePoint.tickLabel}</span>
+            <span className="text-zinc-300">·</span>
+            <span className="text-zinc-700">${activePoint.solPriceUsd.toFixed(2)}</span>
+            <span className="text-zinc-300">·</span>
+            <span className="text-zinc-950 font-semibold">
               HF {activePoint.interceptHf.toFixed(2)}
             </span>
             <span className="text-zinc-500">
@@ -99,17 +103,17 @@ export function HealthFactorTrajectoryChart({
       </div>
 
       {/* SVG Canvas */}
-      <div className="relative w-full overflow-hidden rounded-lg border border-border/80 bg-[#09090b] p-2">
+      <div className="relative w-full overflow-hidden rounded-lg border border-border bg-white p-2">
         <svg
           viewBox={`0 0 ${width} ${height}`}
           className="w-full h-[195px] select-none overflow-visible"
           onMouseLeave={() => setHoverIdx(null)}
         >
           <defs>
-            <linearGradient id="shadcnMonoArea" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#fafafa" stopOpacity="0.18" />
-              <stop offset="85%" stopColor="#fafafa" stopOpacity="0.01" />
-              <stop offset="100%" stopColor="#fafafa" stopOpacity="0.0" />
+            <linearGradient id="shadcnMonoLightArea" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#09090b" stopOpacity="0.10" />
+              <stop offset="85%" stopColor="#09090b" stopOpacity="0.01" />
+              <stop offset="100%" stopColor="#09090b" stopOpacity="0.0" />
             </linearGradient>
           </defs>
 
@@ -123,7 +127,7 @@ export function HealthFactorTrajectoryChart({
                   y1={y}
                   x2={width - padRight}
                   y2={y}
-                  stroke="#1f1f23"
+                  stroke="#f1f1f3"
                   strokeWidth="1"
                 />
                 <text
@@ -144,7 +148,7 @@ export function HealthFactorTrajectoryChart({
             y1={trigY}
             x2={width - padRight}
             y2={trigY}
-            stroke="#52525b"
+            stroke="#a1a1aa"
             strokeWidth="1"
             strokeDasharray="3 3"
           />
@@ -155,24 +159,24 @@ export function HealthFactorTrajectoryChart({
             y1={liqY}
             x2={width - padRight}
             y2={liqY}
-            stroke="#a1a1aa"
+            stroke="#52525b"
             strokeWidth="1"
             strokeDasharray="2 2"
           />
 
           {/* Area under Intercept curve */}
-          <path d={interceptArea} fill="url(#shadcnMonoArea)" />
+          <path d={interceptArea} fill="url(#shadcnMonoLightArea)" />
 
           {/* Unprotected Curve (Dashed Muted) */}
           <path
             d={unprotectedPath}
             fill="none"
-            stroke="#52525b"
+            stroke="#a1a1aa"
             strokeWidth="1.5"
             strokeDasharray="4 4"
           />
 
-          {/* Naive Static 1.20x Curve (Thin Zinc-400) */}
+          {/* Naive Static 1.20x Curve (Thin Zinc-500) */}
           <path
             d={naivePath}
             fill="none"
@@ -180,11 +184,11 @@ export function HealthFactorTrajectoryChart({
             strokeWidth="1.5"
           />
 
-          {/* Intercept Protected Curve (Crisp White 2px) */}
+          {/* Intercept Protected Curve (Crisp Ink Black 2.2px) */}
           <path
             d={interceptPath}
             fill="none"
-            stroke="#fafafa"
+            stroke="#09090b"
             strokeWidth="2.2"
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -206,7 +210,7 @@ export function HealthFactorTrajectoryChart({
                     y1={padTop}
                     x2={cx}
                     y2={padTop + plotH}
-                    stroke="#52525b"
+                    stroke="#a1a1aa"
                     strokeWidth="1"
                     strokeDasharray="2 2"
                   />
@@ -216,8 +220,8 @@ export function HealthFactorTrajectoryChart({
                   cx={cx}
                   cy={cyUnprotected}
                   r={isHovered ? 3.5 : 2}
-                  fill="#09090b"
-                  stroke="#71717a"
+                  fill="#ffffff"
+                  stroke="#a1a1aa"
                   strokeWidth="1.5"
                 />
 
@@ -225,8 +229,8 @@ export function HealthFactorTrajectoryChart({
                   cx={cx}
                   cy={cyIntercept}
                   r={isHovered ? 4.5 : 2.75}
-                  fill="#fafafa"
-                  stroke="#09090b"
+                  fill="#09090b"
+                  stroke="#ffffff"
                   strokeWidth="1.5"
                 />
 

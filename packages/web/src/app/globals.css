@@ -1,36 +1,36 @@
 @import "tailwindcss";
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 
-  /* shadcn/ui Monochrome Architectural Tokens (OKLCH-calibrated neutral scale) */
-  --background: #09090b;
-  --foreground: #fafafa;
-  --card: #0c0c0e;
-  --card-foreground: #fafafa;
-  --popover: #0c0c0e;
-  --popover-foreground: #fafafa;
-  --primary: #fafafa;
-  --primary-foreground: #09090b;
-  --secondary: #141417;
-  --secondary-foreground: #e4e4e7;
-  --muted: #18181b;
-  --muted-foreground: #a1a1aa;
-  --accent: #1f1f23;
-  --accent-foreground: #fafafa;
-  --destructive: #fafafa;
-  --destructive-foreground: #09090b;
-  --border: #222226;
-  --input: #27272a;
-  --ring: #d4d4d8;
+  /* shadcn/ui Monochrome Light Architectural Tokens */
+  --background: #fafafa;
+  --foreground: #09090b;
+  --card: #ffffff;
+  --card-foreground: #09090b;
+  --popover: #ffffff;
+  --popover-foreground: #09090b;
+  --primary: #09090b;
+  --primary-foreground: #fafafa;
+  --secondary: #f4f4f5;
+  --secondary-foreground: #18181b;
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+  --accent: #f4f4f5;
+  --accent-foreground: #09090b;
+  --destructive: #09090b;
+  --destructive-foreground: #fafafa;
+  --border: #e4e4e7;
+  --input: #e4e4e7;
+  --ring: #09090b;
   --radius: 0.625rem;
 
-  /* shadcn/ui Monochrome Chart Tokens */
-  --chart-1: #fafafa;
-  --chart-2: #a1a1aa;
-  --chart-3: #71717a;
-  --chart-4: #3f3f46;
-  --chart-5: #27272a;
+  /* shadcn/ui Monochrome Light Chart Tokens */
+  --chart-1: #09090b;
+  --chart-2: #52525b;
+  --chart-3: #a1a1aa;
+  --chart-4: #d4d4d8;
+  --chart-5: #e4e4e7;
 
   /* Emil Kowalski & Zajno custom easing curves */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -121,23 +121,23 @@ input[type="range"] {
 .bezel-shell {
   border-radius: 14px;
   padding: 4px;
-  background-color: #0e0e11;
-  border: 1px solid #1c1c20;
+  background-color: #f1f1f3;
+  border: 1px solid #e4e4e7;
 }
 
 .bezel-core {
   border-radius: 10px;
-  background-color: #09090b;
-  border: 1px solid #222226;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  background-color: #ffffff;
+  border: 1px solid #e4e4e7;
+  box-shadow: 0 1px 2px rgba(9, 9, 11, 0.04);
 }
 
 /* Monochrome diagonal hatch pattern for Guardrail Block / Liquidation Zone */
 .bg-monochrome-hatch {
   background-image: repeating-linear-gradient(
     -45deg,
-    rgba(250, 250, 250, 0.06),
-    rgba(250, 250, 250, 0.06) 4px,
+    rgba(9, 9, 11, 0.055),
+    rgba(9, 9, 11, 0.055) 4px,
     transparent 4px,
     transparent 8px
   );
@@ -281,20 +281,20 @@ input[type="range"] {
 /* Gate hover effects behind fine pointer media query */
 @media (hover: hover) and (pointer: fine) {
   .emil-row-hover:hover {
-    background-color: rgba(255, 255, 255, 0.03);
+    background-color: rgba(9, 9, 11, 0.025);
   }
   .emil-card-hover:hover {
-    border-color: #3f3f46;
+    border-color: #a1a1aa;
   }
 }
 
-/* Monochrome shadcn Slider */
+/* Monochrome Light shadcn Slider */
 input[type="range"].shadcn-slider {
   -webkit-appearance: none;
   appearance: none;
   height: 5px;
   border-radius: 9999px;
-  background: #27272a;
+  background: #e4e4e7;
   cursor: pointer;
 }
 
@@ -304,9 +304,9 @@ input[type="range"].shadcn-slider::-webkit-slider-thumb {
   width: 15px;
   height: 15px;
   border-radius: 9999px;
-  background: #fafafa;
-  border: 2px solid #09090b;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25);
+  background: #09090b;
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 3px rgba(9, 9, 11, 0.25);
   transition: transform 150ms var(--ease-out), background-color 150ms ease;
 }
 
@@ -342,14 +342,14 @@ input[type="range"].shadcn-slider::-webkit-slider-thumb:active {
 }
 
 ::-webkit-scrollbar-track {
-  background: #09090b;
+  background: #fafafa;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #27272a;
+  background: #d4d4d8;
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #3f3f46;
+  background: #a1a1aa;
 }

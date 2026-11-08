@@ -14,15 +14,15 @@ export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
 
 const badgeVariants: Record<BadgeVariant, string> = {
   default:
-    "border-transparent bg-primary text-primary-foreground font-medium",
+    "border-transparent bg-zinc-900 text-zinc-50 font-medium",
   secondary:
-    "border-zinc-800 bg-secondary text-zinc-200",
+    "border-zinc-200 bg-zinc-100 text-zinc-800",
   outline:
-    "border-zinc-800 text-zinc-400 bg-transparent",
+    "border-zinc-200 text-zinc-600 bg-white",
   destructive:
-    "border-zinc-500/60 bg-zinc-900 text-zinc-100 bg-monochrome-hatch",
+    "border-zinc-300 bg-zinc-100 text-zinc-900 bg-monochrome-hatch font-medium",
   contrast:
-    "border-zinc-300/80 bg-zinc-100 text-zinc-950 font-semibold",
+    "border-zinc-900 bg-zinc-900 text-zinc-50 font-semibold",
 };
 
 export function Badge({ className, variant = "default", ...props }: BadgeProps) {

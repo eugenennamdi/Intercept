@@ -59,7 +59,7 @@ export const TabsTrigger = React.forwardRef<HTMLButtonElement, TabsTriggerProps>
         className={cn(
           "emil-press inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring cursor-pointer select-none",
           isActive
-            ? "bg-background text-foreground shadow-xs border border-border/80"
+            ? "bg-white text-foreground shadow-xs border border-border"
             : "text-muted-foreground hover:text-foreground",
           className
         )}
