@@ -615,31 +615,13 @@ export default function InterceptDashboardPage() {
          ===================================================================== */}
       <header className="sticky top-0 z-40 h-14 w-full border-b border-border/80 bg-background/85 backdrop-blur-md">
         <div className="mx-auto flex h-full max-w-[1320px] items-center justify-between px-4 sm:px-6">
-          <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/90 text-zinc-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-950 text-zinc-50 shadow-2xs">
               <InterceptLogoMark size={18} />
             </div>
             <span className="text-sm font-semibold tracking-[-0.02em] text-foreground">
               Intercept
             </span>
-            <Badge
-              variant={
-                mode === "LIVE_MAINNET_MODE"
-                  ? "secondary"
-                  : isRescueTriggered
-                  ? "contrast"
-                  : "outline"
-              }
-            >
-              <span
-                className={`h-1.5 w-1.5 rounded-full ${
-                  mode === "LIVE_MAINNET_MODE" ? "bg-zinc-600" : "bg-zinc-50"
-                }`}
-              />
-              {mode === "LIVE_MAINNET_MODE"
-                ? "Live Mainnet"
-                : `Stress Sim (-${priceDropPct}%)`}
-            </Badge>
           </div>
 
           <div className="flex items-center gap-2">
