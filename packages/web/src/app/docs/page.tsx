@@ -696,8 +696,90 @@ export default function InterceptDocsPage() {
 
             <CodeBlock
               title="3. Configure Policy On-Chain (update_policy)"
-              code={`near contract call-function as-transaction intercept-guardrail-731008.testnet update_policy json-args '{"user_kamino_obligation_pubkey":"C5dZVpvpA39SNLDkojsi98nRePRRy8ELhtxak8m2vMq","min_trigger_hf_bps":11500,"max_single_rescue_usdc":"2500000000","max_daily_rescue_usdc":"5000000000","max_slippage_bps":50}' prepaid-gas '30.0 Tgas' attached-deposit '0 NEAR' sign-as <YOUR_ACCOUNT.near> network-config testnet sign-with-keychain send`}
+              code={`near contract call-function as-transaction intercept-guardrail-731008.testnet update_policy json-args '{"new_policy":{"owner_id":"intercept-guardrail-731008.testnet","authorized_agent_id":"intercept-guardrail-731008.testnet","mpc_signer_contract":"v1.signer-prod.testnet","tee_enclave_pubkey_hex":"ef03c6fb5128efac12f621f4496fd3b84aa00f3df130f925b82e5d24c2a3a054","mpc_base_vault_address_hex":"0x72faa1abaf92e0c4b791f15acedb496c8979746c","mpc_solana_payer_pubkey":"GZMAbwapG99YKCsA2CDVc4bXeBzd7nvKMQgtm9K8aKas","user_kamino_obligation_pubkey":"C5dZVpvpA39SNLDkojsi98nRePRRy8ELhtxak8m2vMq","kamino_lending_market_pubkey":"7u3HeHxYDLhnCoErrtycNokbQYbWGzLs6JSDqGAv5PfF","base_derivation_path":"intercept-base-vault-1","solana_derivation_path":"intercept-solana-payer-1","max_per_action_usdc":2500000000,"max_daily_usdc":5000000000,"max_slippage_bps":100,"min_trigger_hf_bps":11500,"max_receipt_age_sec":300}}' prepaid-gas '50.0 Tgas' attached-deposit '0 NEAR' sign-as intercept-guardrail-731008.testnet network-config testnet sign-with-keychain send`}
             />
+
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>On-Chain Step</TableHead>
+                  <TableHead>Contract / Method</TableHead>
+                  <TableHead>Transaction Hash (NearBlocks)</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow>
+                  <TableCell className="text-xs font-medium">Contract Deploy &amp; Init</TableCell>
+                  <TableCell className="font-mono text-xs">intercept-guardrail-731008.testnet::new</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    <a
+                      href="https://testnet.nearblocks.io/txns/CedSJ6iioQUux7FyTQ9BWvKXimh2d3v5LcvU3rjjcZ6J"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline underline-offset-4 hover:text-zinc-600"
+                    >
+                      CedSJ6iioQUux7FyTQ9BWvKXimh2d3v5LcvU3rjjcZ6J
+                    </a>
+                  </TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="text-xs font-medium">Owner Policy Update</TableCell>
+                  <TableCell className="font-mono text-xs">update_policy</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    <a
+                      href="https://testnet.nearblocks.io/txns/FJYFVxh3DC8Y1YUsK5iejsFUd8SVfzLo4n7kTXDu1skd"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline underline-offset-4 hover:text-zinc-600"
+                    >
+                      FJYFVxh3DC8Y1YUsK5iejsFUd8SVfzLo4n7kTXDu1skd
+                    </a>
+                  </TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="text-xs font-medium">Leg 1 Base Rescue (domain_id: 0 Secp256k1)</TableCell>
+                  <TableCell className="font-mono text-xs">request_rescue_origin_leg → v1.signer-prod.testnet</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    <a
+                      href="https://testnet.nearblocks.io/txns/8SMLnn6YKav94Xczjfp56WQ7vWzATkq7rJvDwwEHVS2R"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline underline-offset-4 hover:text-zinc-600"
+                    >
+                      8SMLnn6YKav94Xczjfp56WQ7vWzATkq7rJvDwwEHVS2R
+                    </a>
+                  </TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="text-xs font-medium">Leg 2 Solana Repay (domain_id: 1 Ed25519)</TableCell>
+                  <TableCell className="font-mono text-xs">request_rescue_destination_leg → v1.signer-prod.testnet</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    <a
+                      href="https://testnet.nearblocks.io/txns/A97bw66AcyJzyfg3C3cg8vAhmMyDA9wFz7BW2jE2b7Mx"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline underline-offset-4 hover:text-zinc-600"
+                    >
+                      A97bw66AcyJzyfg3C3cg8vAhmMyDA9wFz7BW2jE2b7Mx
+                    </a>
+                  </TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="text-xs font-medium">Async TOCTOU Failure Rollback</TableCell>
+                  <TableCell className="font-mono text-xs">on_origin_leg_signed (rescue_origin_leg_rolled_back)</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    <a
+                      href="https://testnet.nearblocks.io/txns/GnXXpAsFo6w9c77SjkK8VNYvY3uAwY49rPdFPbnzhvkk"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline underline-offset-4 hover:text-zinc-600"
+                    >
+                      GnXXpAsFo6w9c77SjkK8VNYvY3uAwY49rPdFPbnzhvkk
+                    </a>
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
           </section>
         </main>
 

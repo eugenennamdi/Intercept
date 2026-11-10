@@ -14,7 +14,7 @@ use solana_parser::{
     KAMINO_MAINNET_SOL_RESERVE_ID_STR, KAMINO_MAINNET_USDC_RESERVE_ID_STR,
 };
 use std::collections::{BTreeMap, BTreeSet};
-use tee_receipt::TeeDecisionReceipt;
+use tee_receipt::{deserialize_u128_str_or_num, TeeDecisionReceipt};
 
 /// Default gas attached to `v1.signer::sign` cross-contract call (250 TGas required by NEAR MPC threshold signing)
 pub const MPC_SIGN_GAS: Gas = Gas::from_tgas(250);
@@ -105,8 +105,10 @@ pub struct PolicyConfig {
     /// Derivation path used with `v1.signer` for Solana (`domain_id: 1`)
     pub solana_derivation_path: String,
     /// Maximum USDC allowed per individual rescue execution (6 decimals, e.g., 500_000_000 = 500 USDC)
+    #[serde(deserialize_with = "deserialize_u128_str_or_num")]
     pub max_per_action_usdc: u128,
     /// Maximum cumulative USDC allowed across any rolling 24-hour window (6 decimals)
+    #[serde(deserialize_with = "deserialize_u128_str_or_num")]
     pub max_daily_usdc: u128,
     /// Maximum tolerated cross-chain swap slippage in basis points (e.g., 100 = 1.00%)
     pub max_slippage_bps: u16,

@@ -1,6 +1,23 @@
 use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::env;
-use near_sdk::serde::{Deserialize, Serialize};
+use near_sdk::serde::{de, Deserialize, Deserializer, Serialize};
+
+/// Accepts either a JSON integer (`2500000`) or a JSON decimal string (`"2500000"`) when deserializing `u128` fields.
+pub fn deserialize_u128_str_or_num<'de, D>(deserializer: D) -> Result<u128, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(crate = "near_sdk::serde", untagged)]
+    enum StrOrU128 {
+        Num(u128),
+        Str(String),
+    }
+    match StrOrU128::deserialize(deserializer)? {
+        StrOrU128::Num(v) => Ok(v),
+        StrOrU128::Str(s) => s.trim().parse::<u128>().map_err(de::Error::custom),
+    }
+}
 
 /// Canonical domain separator prefix for TEE Decision Receipts signed by the NEAR AI Cloud enclave
 pub const TEE_RECEIPT_DOMAIN_PREFIX: &str = "INTERCEPT_TEE_RECEIPT_V1";
@@ -72,10 +89,12 @@ pub struct TeeDecisionReceipt {
     /// Selected dynamic de-risking regime (`HOLD`, `MICRO_BUFFER_RESCUE`, `CASCADE_DEEP_RESCUE`)
     pub regime: RiskRegime,
     /// Exact Base USDC repayment amount in 6-decimal micro-USDC (e.g., 2_500_000 = 2.50 USDC)
+    #[serde(deserialize_with = "deserialize_u128_str_or_num")]
     pub repay_amount_usdc: u128,
     /// Hex-encoded 20-byte NEAR Intents 1-Click deposit address on Base (`0x...`)
     pub oneclick_deposit_address: String,
     /// Guaranteed minimum output on Solana in 6-decimal micro-USDC from 1-Click quote
+    #[serde(deserialize_with = "deserialize_u128_str_or_num")]
     pub min_amount_out: u128,
     /// Hex-encoded 32-byte SHA-256 hash of the full quantitative reasoning trace & Pyth price proof
     pub reasoning_hash: String,

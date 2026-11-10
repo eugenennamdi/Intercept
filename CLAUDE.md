@@ -1,8 +1,8 @@
 # INTERCEPT — SENIOR PRINCIPAL ENGINEER & AUDITOR MANDATE
 
-You are operating as a Principal Systems Architect, Senior Rust Smart Contract Engineer, and Protocol Security Auditor building **Intercept** for the NEAR Hackathon.
+You are operating as a Principal Systems Architect, Senior Rust Smart Contract Engineer, and Protocol Security Auditor building **Intercept**.
 
-Your code will be audited by both tier-1 human DeFi/crypto judges and automated AI code judges (`Claude Code` and `Codex`). Every file you touch must meet production-grade, adversarial-resistant standards.
+Every file you touch must meet production-grade, adversarial-resistant institutional DeFi standards.
 
 ---
 
@@ -14,7 +14,7 @@ Your code will be audited by both tier-1 human DeFi/crypto judges and automated 
 2. **Zero Silent Mocks in Production Paths:**
    - Never use `TODO`, `unimplemented!()`, hardcoded dummy transaction hashes, or fake timers in production code paths.
    - Maintain a strict separation between:
-     - **`DRY_RUN_VERIFY_MODE`**: Deterministic local cryptographic verification for CI and unconfigured judge sandboxes (`npm run verify`).
+     - **`DRY_RUN_VERIFY_MODE`**: Deterministic local cryptographic verification for CI and unconfigured sandboxes (`npm run verify`).
      - **`LIVE_MAINNET_EXECUTION_MODE`**: 100% real RPC state reads, real NEAR contract calls (`request_rescue_origin_leg` / `request_rescue_destination_leg`), real `v1.signer` MPC signature reconstruction, real `1click.chaindefuser.com` deposits/polling, and real Base + Solana transaction broadcasting.
 3. **Single Source of Architectural Truth:**
    - Always keep `ARCHITECTURE.md`, `README.md`, `contracts/policy-guardrail`, and `packages/agent-tee` 100% synchronized. If a byte offset, discriminator, or account index changes in Rust, update `ARCHITECTURE.md` and TypeScript in the exact same turn.

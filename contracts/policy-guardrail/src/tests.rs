@@ -1836,3 +1836,46 @@ fn test_bounded_receipt_storage_pruning_and_mpc_gas_constants() {
     assert_eq!(telemetry.consumed_receipt_count, 1);
     assert_eq!(telemetry.pending_leg2_authorizations.len(), 1);
 }
+
+#[test]
+fn test_u128_string_and_number_json_deserialization_and_v1_signer_exclusive_payload() {
+    let (policy, tee_sk, _base_vault, _mpc_solana_payer, _user_obligation, _lending_market) =
+        sample_policy_and_keys();
+    setup_context("alice.near", TEST_TIMESTAMP_SEC);
+    let contract = InterceptPolicyContract::new(policy.clone());
+
+    // 1. Verify ChainSignatureArgs JSON omits legacy `payload` and includes `payload_v2`
+    let leg1_args = contract.build_origin_leg_sign_args(&[0x42u8; 32]);
+    let leg1_json = near_sdk::serde_json::to_string(&leg1_args).expect("serialize leg1 sign args");
+    assert!(!leg1_json.contains("\"payload\":"));
+    assert!(leg1_json.contains("\"payload_v2\":{\"Ecdsa\":"));
+
+    // 2. Verify TeeDecisionReceipt deserializes from stringified u128 fields (as emitted by TypeScript)
+    let deposit_addr = [0x99; 20];
+    let receipt = sign_test_receipt(
+        &tee_sk,
+        &policy.user_kamino_obligation_pubkey,
+        RiskRegime::CascadeDeepRescue,
+        2_380_000,
+        2_370_000,
+        &deposit_addr,
+        TEST_TIMESTAMP_SEC,
+    );
+    let receipt_str_u128_json = near_sdk::serde_json::json!({
+        "timestamp": receipt.timestamp,
+        "obligation_pubkey": receipt.obligation_pubkey,
+        "observed_hf_bps": receipt.observed_hf_bps,
+        "volatility_bps": receipt.volatility_bps,
+        "regime": "CASCADE_DEEP_RESCUE",
+        "repay_amount_usdc": "2380000",
+        "oneclick_deposit_address": receipt.oneclick_deposit_address,
+        "min_amount_out": "2370000",
+        "reasoning_hash": receipt.reasoning_hash,
+        "enclave_signature_hex": receipt.enclave_signature_hex,
+    });
+    let parsed_receipt: TeeDecisionReceipt =
+        near_sdk::serde_json::from_value(receipt_str_u128_json)
+            .expect("TeeDecisionReceipt must deserialize stringified u128 fields");
+    assert_eq!(parsed_receipt.repay_amount_usdc, 2_380_000);
+    assert_eq!(parsed_receipt.min_amount_out, 2_370_000);
+}
