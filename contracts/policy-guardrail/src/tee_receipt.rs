@@ -116,6 +116,11 @@ pub enum TeeReceiptError {
         actual_b58: String,
     },
     ZeroRepayAmount,
+    RepayAmountExceedsSolanaU64Max(u128),
+    MinAmountOutExceedsRepayAmount {
+        min_amount_out: u128,
+        repay_amount_usdc: u128,
+    },
     InvalidDepositAddressHex,
     SlippageExceeded {
         repay_amount_usdc: u128,
@@ -160,6 +165,24 @@ impl core::fmt::Display for TeeReceiptError {
             }
             TeeReceiptError::ZeroRepayAmount => {
                 write!(f, "TEE receipt repay_amount_usdc must be > 0")
+            }
+            TeeReceiptError::RepayAmountExceedsSolanaU64Max(amount) => {
+                write!(
+                    f,
+                    "TEE receipt repay_amount_usdc ({}) exceeds Solana SPL u64::MAX ({})",
+                    amount,
+                    u64::MAX
+                )
+            }
+            TeeReceiptError::MinAmountOutExceedsRepayAmount {
+                min_amount_out,
+                repay_amount_usdc,
+            } => {
+                write!(
+                    f,
+                    "TEE receipt min_amount_out ({}) cannot exceed repay_amount_usdc ({}) (would create an inverted [min..=max] Leg 2 range)",
+                    min_amount_out, repay_amount_usdc
+                )
             }
             TeeReceiptError::InvalidDepositAddressHex => {
                 write!(
@@ -260,9 +283,9 @@ impl TeeDecisionReceipt {
             return Err(TeeReceiptError::NonActionableRegime);
         }
 
-        // 2. Timestamp freshness check
-        if self.timestamp + max_receipt_age_sec < current_timestamp_sec
-            || self.timestamp > current_timestamp_sec + 60
+        // 2. Timestamp freshness check (saturating arithmetic prevents u64 overflow)
+        if self.timestamp.saturating_add(max_receipt_age_sec) < current_timestamp_sec
+            || self.timestamp > current_timestamp_sec.saturating_add(60)
         {
             return Err(TeeReceiptError::InvalidTimestamp {
                 receipt_ts: self.timestamp,
@@ -282,12 +305,27 @@ impl TeeDecisionReceipt {
             });
         }
 
-        // 4. Repay amount & slippage check
+        // 4. Repay amount, Solana u64 ceiling, & slippage check
         if self.repay_amount_usdc == 0 {
             return Err(TeeReceiptError::ZeroRepayAmount);
         }
-        let required_min_out =
-            (self.repay_amount_usdc * (10_000u128 - (max_slippage_bps as u128))) / 10_000u128;
+        if self.repay_amount_usdc > (u64::MAX as u128) {
+            return Err(TeeReceiptError::RepayAmountExceedsSolanaU64Max(
+                self.repay_amount_usdc,
+            ));
+        }
+        if self.min_amount_out > self.repay_amount_usdc {
+            return Err(TeeReceiptError::MinAmountOutExceedsRepayAmount {
+                min_amount_out: self.min_amount_out,
+                repay_amount_usdc: self.repay_amount_usdc,
+            });
+        }
+        let slippage_complement = 10_000u128.saturating_sub(max_slippage_bps as u128);
+        let required_min_out = self
+            .repay_amount_usdc
+            .checked_mul(slippage_complement)
+            .unwrap_or(u128::MAX)
+            / 10_000u128;
         if self.min_amount_out < required_min_out {
             return Err(TeeReceiptError::SlippageExceeded {
                 repay_amount_usdc: self.repay_amount_usdc,

@@ -475,10 +475,22 @@ export function assembleSignedEip1559Transaction(params: {
     .replace(/^0x/i, "")
     .padStart(64, "0")
     .slice(-64);
-  const yParity = params.recoveryId & 1;
-
   const rBigInt = BigInt("0x" + rHex);
-  const sBigInt = BigInt("0x" + sHex);
+  let sBigInt = BigInt("0x" + sHex);
+  let yParity = params.recoveryId & 1;
+
+  const SECP256K1_N =
+    0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
+  const SECP256K1_HALF_N = SECP256K1_N >> 1n;
+  if (rBigInt <= 0n || rBigInt >= SECP256K1_N || sBigInt <= 0n || sBigInt >= SECP256K1_N) {
+    throw new Error("Invalid Secp256k1 signature scalar bounds (r or s out of [1, n-1])");
+  }
+  // EIP-2 low-S canonicalization: if s > n/2, replace s with n - s and flip yParity
+  if (sBigInt > SECP256K1_HALF_N) {
+    sBigInt = SECP256K1_N - sBigInt;
+    yParity ^= 1;
+  }
+  const canonicalSHex = sBigInt.toString(16).padStart(64, "0");
 
   const reencodedUnsignedItems: Buffer[] = [
     rlpEncodeBigInt(rlpBufferToBigInt(item[0])),
@@ -505,7 +517,7 @@ export function assembleSignedEip1559Transaction(params: {
     signedTxBytes,
     txHashHex,
     rHex: "0x" + rHex,
-    sHex: "0x" + sHex,
+    sHex: "0x" + canonicalSHex,
     yParity,
   };
 }
@@ -692,6 +704,13 @@ export function verifyEip1559BaseUsdcTransferBytes(params: {
         errorMessage: `GUARDRAIL REVERT: EIP-1559 max_priority_fee_per_gas (${maxPriorityFeePerGasWei.toString()}) > max_fee_per_gas (${maxFeePerGasWei.toString()})`,
       };
     }
+    if (maxPriorityFeePerGasWei > 10_000_000_000n) {
+      return {
+        ok: false,
+        errorCode: "MAX_PRIORITY_FEE_PER_GAS_EXCEEDED",
+        errorMessage: `CRITICAL MEV-BRIBE BLOCK: EIP-1559 max_priority_fee_per_gas (${maxPriorityFeePerGasWei.toString()} wei) exceeds guardrail cap (10000000000 wei / 10 gwei)`,
+      };
+    }
 
     const toBuf = item[5];
     if (!Buffer.isBuffer(toBuf)) {
@@ -772,6 +791,16 @@ export function verifyEip1559BaseUsdcTransferBytes(params: {
       };
     }
 
+    const accessList = item[8];
+    if (!Array.isArray(accessList) || accessList.length !== 0) {
+      return {
+        ok: false,
+        errorCode: "NONEMPTY_ACCESS_LIST",
+        errorMessage:
+          "GUARDRAIL REVERT: Unsigned EIP-1559 transaction accessList must be an empty RLP list",
+      };
+    }
+
     return {
       ok: true,
       decoded: {
@@ -824,10 +853,16 @@ export function decodeCompactU16(
   if (offset + 1 >= buf.length) throw new Error("EOF reading compact-u16 b1");
   const b1 = buf[offset + 1];
   if ((b1 & 0x80) === 0) {
+    if (b1 === 0) {
+      throw new Error("Non-canonical 2-byte compact-u16 encoding");
+    }
     return { value: (b0 & 0x7f) | (b1 << 7), nextOffset: offset + 2 };
   }
   if (offset + 2 >= buf.length) throw new Error("EOF reading compact-u16 b2");
   const b2 = buf[offset + 2];
+  if ((b2 & 0xfc) !== 0 || b2 === 0) {
+    throw new Error("Non-canonical or overflowing 3-byte compact-u16 encoding");
+  }
   return {
     value: (b0 & 0x7f) | ((b1 & 0x7f) << 7) | (b2 << 14),
     nextOffset: offset + 3,
@@ -1231,6 +1266,7 @@ export function verifySolanaKaminoRepayMessageBytes(params: {
 
     const numRequiredSignatures = raw[offset];
     const numReadonlySignedAccounts = raw[offset + 1];
+    const numReadonlyUnsignedAccounts = raw[offset + 2];
     offset += 3;
     if (numRequiredSignatures !== 1) {
       return {
@@ -1249,6 +1285,13 @@ export function verifySolanaKaminoRepayMessageBytes(params: {
 
     const keysLenRes = decodeCompactU16(raw, offset);
     offset = keysLenRes.nextOffset;
+    if (keysLenRes.value === 0 || 1 + numReadonlyUnsignedAccounts > keysLenRes.value) {
+      return {
+        ok: false,
+        errorCode: "INVALID_READONLY_UNSIGNED_ACCOUNTS",
+        errorMessage: `GUARDRAIL REVERT: Solana MessageHeader num_readonly_unsigned_accounts (${numReadonlyUnsignedAccounts}) exceeds unsigned static account count (total_keys=${keysLenRes.value})`,
+      };
+    }
     const accountKeys: string[] = [];
     for (let i = 0; i < keysLenRes.value; i++) {
       const pkBytes = raw.subarray(offset, offset + 32);
@@ -1272,7 +1315,19 @@ export function verifySolanaKaminoRepayMessageBytes(params: {
       };
     }
 
-    // Skip 32-byte recent_blockhash
+    // Read 32-byte recent_blockhash and reject all-zero blockhash
+    const recentBlockhashBytes = raw.subarray(offset, offset + 32);
+    if (
+      recentBlockhashBytes.length !== 32 ||
+      recentBlockhashBytes.equals(Buffer.alloc(32, 0))
+    ) {
+      return {
+        ok: false,
+        errorCode: "ZERO_RECENT_BLOCKHASH",
+        errorMessage:
+          "GUARDRAIL REVERT: Solana message recent_blockhash cannot be all zeroes",
+      };
+    }
     offset += 32;
 
     const ixLenRes = decodeCompactU16(raw, offset);
@@ -1301,12 +1356,28 @@ export function verifySolanaKaminoRepayMessageBytes(params: {
 
     for (let i = 0; i < ixLenRes.value; i++) {
       const programIdIndex = raw[offset++];
+      if (programIdIndex >= accountKeys.length) {
+        return {
+          ok: false,
+          errorCode: "ACCOUNT_INDEX_OUT_OF_BOUNDS",
+          errorMessage: `GUARDRAIL REVERT: Instruction program_id_index ${programIdIndex} out of bounds for ${accountKeys.length} static keys`,
+        };
+      }
       const programId = accountKeys[programIdIndex];
 
       const acctLenRes = decodeCompactU16(raw, offset);
       offset = acctLenRes.nextOffset;
       const ixAccounts = raw.subarray(offset, offset + acctLenRes.value);
       offset += acctLenRes.value;
+      for (let a = 0; a < ixAccounts.length; a++) {
+        if (ixAccounts[a] >= accountKeys.length) {
+          return {
+            ok: false,
+            errorCode: "ACCOUNT_INDEX_OUT_OF_BOUNDS",
+            errorMessage: `GUARDRAIL REVERT: Instruction account index ${ixAccounts[a]} out of bounds for ${accountKeys.length} static keys`,
+          };
+        }
+      }
 
       const dataLenRes = decodeCompactU16(raw, offset);
       offset = dataLenRes.nextOffset;
@@ -1399,8 +1470,11 @@ export function verifySolanaKaminoRepayMessageBytes(params: {
                 "GUARDRAIL REVERT: Kamino refresh instructions must precede repayment",
             };
           }
-          if (isRefreshReserve) {
-            if (ixData.length !== 8 || ixAccounts.length < 2) {
+          if (isRefreshReserve || isRefreshReservesBatch) {
+            const validDataLen = isRefreshReserve
+              ? ixData.length === 8
+              : ixData.length === 8 || ixData.length === 9;
+            if (!validDataLen || ixAccounts.length < 2) {
               return {
                 ok: false,
                 errorCode: "INVALID_REFRESH_RESERVE",
@@ -1456,7 +1530,8 @@ export function verifySolanaKaminoRepayMessageBytes(params: {
               const remKey = accountKeys[ixAccounts[r]];
               if (
                 remKey !== expectedSolReserve &&
-                remKey !== expectedUsdcReserve
+                remKey !== expectedUsdcReserve &&
+                remKey !== KAMINO_LEND_PROGRAM_ID
               ) {
                 return {
                   ok: false,
@@ -1464,6 +1539,34 @@ export function verifySolanaKaminoRepayMessageBytes(params: {
                   errorMessage: `GUARDRAIL REVERT: refresh_obligation remaining_account (${remKey}) is not in allowed obligation reserves`,
                 };
               }
+            }
+          } else if (isRefreshFarms) {
+            if ((ixData.length !== 8 && ixData.length !== 9) || ixAccounts.length < 4) {
+              return {
+                ok: false,
+                errorCode: "INVALID_REFRESH_FARMS",
+                errorMessage:
+                  "GUARDRAIL REVERT: Invalid refresh_obligation_farms_for_reserve instruction layout",
+              };
+            }
+            const acctPubkeys = Array.from(ixAccounts).map((idx) => accountKeys[idx]);
+            if (!acctPubkeys.includes(params.expectedUserObligationPubkey)) {
+              return {
+                ok: false,
+                errorCode: "OBLIGATION_MISMATCH",
+                errorMessage: `GUARDRAIL REVERT: refresh_obligation_farms_for_reserve does not reference user obligation ${params.expectedUserObligationPubkey}`,
+              };
+            }
+            if (
+              !acctPubkeys.includes(expectedSolReserve) &&
+              !acctPubkeys.includes(expectedUsdcReserve)
+            ) {
+              return {
+                ok: false,
+                errorCode: "UNAUTHORIZED_RESERVE_ACCOUNT",
+                errorMessage:
+                  "GUARDRAIL REVERT: refresh_obligation_farms_for_reserve does not reference an allowed obligation reserve",
+              };
             }
           }
           kaminoRefreshIxCount++;
@@ -1523,6 +1626,13 @@ export function verifySolanaKaminoRepayMessageBytes(params: {
         }
 
         const repayAmountUsdcMicro = ixData.readBigUInt64LE(8);
+        if (repayAmountUsdcMicro === 0n) {
+          return {
+            ok: false,
+            errorCode: "ZERO_REPAY_AMOUNT",
+            errorMessage: "GUARDRAIL REVERT: Kamino repay amount must be > 0",
+          };
+        }
         if (
           repayAmountUsdcMicro < params.minRepayAmountUsdcMicro ||
           repayAmountUsdcMicro > params.maxRepayAmountUsdcMicro
@@ -1531,6 +1641,15 @@ export function verifySolanaKaminoRepayMessageBytes(params: {
             ok: false,
             errorCode: "REPAY_AMOUNT_OUT_OF_BOUNDS",
             errorMessage: `GUARDRAIL REVERT: Kamino repay amount ${repayAmountUsdcMicro.toString()} outside [${params.minRepayAmountUsdcMicro.toString()}..=${params.maxRepayAmountUsdcMicro.toString()}]`,
+          };
+        }
+
+        const ownerPubkey = accountKeys[ixAccounts[0]];
+        if (ownerPubkey !== params.expectedMpcSolanaPayerPubkey) {
+          return {
+            ok: false,
+            errorCode: "REPAYER_AUTHORITY_MISMATCH",
+            errorMessage: `GUARDRAIL REVERT: Kamino repayer owner account[0] (${ownerPubkey}) does not match MPC_Solana_Payer (${params.expectedMpcSolanaPayerPubkey})`,
           };
         }
 
@@ -1591,6 +1710,14 @@ export function verifySolanaKaminoRepayMessageBytes(params: {
           errorMessage: `GUARDRAIL REVERT: V0 Address Lookup Tables forbidden (found ${altRes.value})`,
         };
       }
+    }
+
+    if (offset !== raw.length) {
+      return {
+        ok: false,
+        errorCode: "TRAILING_BYTES",
+        errorMessage: `GUARDRAIL REVERT: Solana message has ${raw.length - offset} unexpected trailing bytes`,
+      };
     }
 
     if (!verifiedKamino) {

@@ -1879,3 +1879,119 @@ fn test_u128_string_and_number_json_deserialization_and_v1_signer_exclusive_payl
     assert_eq!(parsed_receipt.repay_amount_usdc, 2_380_000);
     assert_eq!(parsed_receipt.min_amount_out, 2_370_000);
 }
+
+#[test]
+fn test_security_audit_invariants_inverted_leg2_bounds_mev_priority_bribe_and_solana_header_overflow() {
+    let (policy, tee_sk, _base_vault, mpc_solana_payer, user_obligation, lending_market) =
+        sample_policy_and_keys();
+    let tee_pk_bytes = tee_sk.verifying_key().to_bytes();
+    let deposit_addr = [0x99; 20];
+
+    // 1. Reject TEE receipt where min_amount_out > repay_amount_usdc (would brick Leg 2 [min..=max] interval)
+    let inverted_receipt = sign_test_receipt(
+        &tee_sk,
+        &policy.user_kamino_obligation_pubkey,
+        RiskRegime::CascadeDeepRescue,
+        2_500_000,
+        3_000_000, // min_amount_out > repay_amount_usdc
+        &deposit_addr,
+        TEST_TIMESTAMP_SEC,
+    );
+    let err_inverted = inverted_receipt
+        .verify(
+            &tee_pk_bytes,
+            &user_obligation,
+            policy.max_slippage_bps,
+            TEST_TIMESTAMP_SEC,
+            policy.max_receipt_age_sec,
+        )
+        .expect_err("min_amount_out > repay_amount_usdc must be rejected");
+    assert!(
+        format!("{}", err_inverted).contains("cannot exceed repay_amount_usdc"),
+        "Unexpected error: {}",
+        err_inverted
+    );
+
+    // 2. Reject TEE receipt where repay_amount_usdc > u64::MAX (prevents silent u128 -> u64 truncation on Solana SPL Token)
+    let u64_overflow_receipt = sign_test_receipt(
+        &tee_sk,
+        &policy.user_kamino_obligation_pubkey,
+        RiskRegime::CascadeDeepRescue,
+        (u64::MAX as u128) + 1,
+        u64::MAX as u128,
+        &deposit_addr,
+        TEST_TIMESTAMP_SEC,
+    );
+    let err_u64 = u64_overflow_receipt
+        .verify(
+            &tee_pk_bytes,
+            &user_obligation,
+            policy.max_slippage_bps,
+            TEST_TIMESTAMP_SEC,
+            policy.max_receipt_age_sec,
+        )
+        .expect_err("repay_amount_usdc > u64::MAX must be rejected");
+    assert!(
+        format!("{}", err_u64).contains("exceeds Solana SPL u64::MAX"),
+        "Unexpected error: {}",
+        err_u64
+    );
+
+    // 3. Reject EIP-1559 transaction where max_priority_fee_per_gas > 10 gwei (anti-MEV priority bribe cap)
+    let calldata = build_erc20_transfer_calldata(&deposit_addr, 2_500_000);
+    let mev_bribe_tx = build_unsigned_eip1559_tx(
+        BASE_MAINNET_CHAIN_ID,
+        1,
+        25_000_000_000, // 25 gwei priority fee (> 10 gwei cap, even though <= 30 gwei max_fee_per_gas)
+        30_000_000_000, // 30 gwei max fee
+        65_000,
+        &BASE_USDC_ADDRESS,
+        0,
+        &calldata,
+    );
+    let err_mev = verify_eip1559_base_usdc_transfer(&mev_bribe_tx, &deposit_addr, 2_500_000)
+        .expect_err("max_priority_fee_per_gas > 10 gwei must be rejected");
+    assert!(
+        matches!(err_mev, EvmParseError::MaxPriorityFeePerGasExceeded { .. }),
+        "Expected MaxPriorityFeePerGasExceeded, got {:?}",
+        err_mev
+    );
+
+    // 4. Reject Solana MessageHeader where num_readonly_unsigned_accounts exceeds static account keys
+    let mut malformed_sol_msg = build_solana_kamino_repay_message(
+        true,
+        &mpc_solana_payer,
+        &user_obligation,
+        &lending_market,
+        &KAMINO_MAINNET_USDC_RESERVE_PUBKEY,
+        &[0x44; 32],
+        &[0x55; 32],
+        &[0x66; 32],
+        &[0x77; 32],
+        &[0x88; 32],
+        2_500_000,
+        true,
+        true,
+    );
+    // Byte 0 = 0x80 (V0), Byte 1 = 1 (sigs), Byte 2 = 0 (readonly_signed), Byte 3 = num_readonly_unsigned_accounts
+    malformed_sol_msg[3] = 25; // 1 + 25 > 10 static keys
+    let err_sol_hdr = verify_solana_kamino_repay_message(
+        &malformed_sol_msg,
+        &mpc_solana_payer,
+        &user_obligation,
+        &lending_market,
+        &KAMINO_MAINNET_SOL_RESERVE_PUBKEY,
+        &KAMINO_MAINNET_USDC_RESERVE_PUBKEY,
+        2_475_000,
+        2_500_000,
+    )
+    .expect_err("Overflowing num_readonly_unsigned_accounts must be rejected");
+    assert!(
+        matches!(
+            err_sol_hdr,
+            SolanaParseError::InvalidReadonlyUnsignedAccounts { .. }
+        ),
+        "Expected InvalidReadonlyUnsignedAccounts, got {:?}",
+        err_sol_hdr
+    );
+}

@@ -28,6 +28,10 @@ pub const MAX_ERC20_TRANSFER_GAS_LIMIT: u64 = 250_000;
 /// Prevents a compromised AI agent from draining the MPC Base Vault's ETH gas reserve via MEV builder bribes.
 pub const MAX_ALLOWED_BASE_FEE_PER_GAS_WEI: u128 = 50_000_000_000;
 
+/// Maximum allowed EIP-1559 `max_priority_fee_per_gas` on Base Mainnet (10 gwei = 10,000,000,000 wei).
+/// Prevents a compromised AI agent from tipping the entire 50 gwei `max_fee_per_gas` cap to an MEV block builder when Base baseFee is low.
+pub const MAX_ALLOWED_PRIORITY_FEE_PER_GAS_WEI: u128 = 10_000_000_000;
+
 /// Decoded and verified fields of an unsigned EIP-1559 Base USDC transfer transaction
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(crate = "near_sdk::serde")]
@@ -54,6 +58,7 @@ pub enum EvmParseError {
     InvalidChainId { expected: u64, actual: u64 },
     GasLimitOutOfBounds { min: u64, max: u64, actual: u64 },
     MaxFeePerGasExceeded { max_allowed_wei: u128, actual_wei: u128 },
+    MaxPriorityFeePerGasExceeded { max_allowed_wei: u128, actual_wei: u128 },
     PriorityFeeExceedsMaxFee { priority_fee_wei: u128, max_fee_wei: u128 },
     InvalidTargetContract { expected: [u8; 20], actual: Vec<u8> },
     NonZeroNativeValue(u128),
@@ -94,6 +99,16 @@ impl core::fmt::Display for EvmParseError {
                 write!(
                     f,
                     "CRITICAL GAS-GRIEFING BLOCK: EIP-1559 max_fee_per_gas ({} wei) exceeds guardrail cap ({} wei)",
+                    actual_wei, max_allowed_wei
+                )
+            }
+            EvmParseError::MaxPriorityFeePerGasExceeded {
+                max_allowed_wei,
+                actual_wei,
+            } => {
+                write!(
+                    f,
+                    "CRITICAL MEV-BRIBE BLOCK: EIP-1559 max_priority_fee_per_gas ({} wei) exceeds guardrail cap ({} wei / 10 gwei)",
                     actual_wei, max_allowed_wei
                 )
             }
@@ -383,6 +398,12 @@ pub fn verify_eip1559_base_usdc_transfer(
         return Err(EvmParseError::PriorityFeeExceedsMaxFee {
             priority_fee_wei: max_priority_fee_per_gas,
             max_fee_wei: max_fee_per_gas,
+        });
+    }
+    if max_priority_fee_per_gas > MAX_ALLOWED_PRIORITY_FEE_PER_GAS_WEI {
+        return Err(EvmParseError::MaxPriorityFeePerGasExceeded {
+            max_allowed_wei: MAX_ALLOWED_PRIORITY_FEE_PER_GAS_WEI,
+            actual_wei: max_priority_fee_per_gas,
         });
     }
 

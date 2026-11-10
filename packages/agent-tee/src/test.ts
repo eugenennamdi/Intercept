@@ -507,4 +507,42 @@ test("Multi-instruction Kamino refresh+repay passes, sneaking withdraw after ref
   );
   assert.equal(createAtaIx.instructionDataHex, "01");
   assert.equal(createAtaIx.ataPubkey, derivedAta.ataPubkeyBase58);
+
+  // 10. Security audit invariants: MEV priority fee cap (>10 gwei), EIP-2 low-S canonicalization, and Solana trailing bytes
+  const mevBribeTx = buildUnsignedEip1559TxBytes({
+    nonce: 7,
+    maxPriorityFeePerGasWei: 25_000_000_000n, // 25 gwei (> 10 gwei cap)
+    maxFeePerGasWei: 30_000_000_000n,
+    gasLimit: 65_000,
+    calldata,
+  });
+  const mevVerify = verifyEip1559BaseUsdcTransferBytes({
+    rawUnsignedTxHex: mevBribeTx.rawUnsignedTxHex,
+    expectedDepositAddressHex: "0x9999999999999999999999999999999999999999",
+    expectedRepayAmountUsdcMicro: amount,
+  });
+  assert.equal(mevVerify.ok, false);
+  assert.equal(mevVerify.errorCode, "MAX_PRIORITY_FEE_PER_GAS_EXCEEDED");
+
+  // EIP-2 low-S canonicalization: high-S scalar (n - 1) must be flipped to s = 1 and yParity toggled
+  const highSSigned = assembleSignedEip1559Transaction({
+    rawUnsignedTxHex: unsignedEvm.rawUnsignedTxHex,
+    bigRAffineHex: "02" + "11".repeat(32),
+    sScalarHex:
+      "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140", // SECP256K1_N - 1
+    recoveryId: 0,
+  });
+  assert.equal(highSSigned.sHex, "0x" + "00".repeat(31) + "01");
+  assert.equal(highSSigned.yParity, 1);
+
+  // Solana trailing bytes rejection
+  const trailingSolVerify = verifySolanaKaminoRepayMessageBytes({
+    rawMessageHex: validFullMsg.rawMessageHex + "deadbeef",
+    expectedMpcSolanaPayerPubkey: mpcPayer,
+    expectedUserObligationPubkey: obligation,
+    minRepayAmountUsdcMicro: amount,
+    maxRepayAmountUsdcMicro: amount,
+  });
+  assert.equal(trailingSolVerify.ok, false);
+  assert.equal(trailingSolVerify.errorCode, "TRAILING_BYTES");
 });

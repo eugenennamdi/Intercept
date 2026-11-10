@@ -118,6 +118,7 @@ pub enum SolanaParseError {
     NonCanonicalCompactU16,
     InvalidSignatureCount(u8),
     ReadonlySignedAccountsForbidden(u8),
+    InvalidReadonlyUnsignedAccounts { readonly_unsigned: u8, total_keys: usize },
     DuplicateStaticAccountKey { pubkey: [u8; 32] },
     FeePayerMismatch { expected: [u8; 32], actual: [u8; 32] },
     ZeroRecentBlockhash,
@@ -170,6 +171,16 @@ impl core::fmt::Display for SolanaParseError {
                     f,
                     "Solana MessageHeader num_readonly_signed_accounts must be 0, got {}",
                     n
+                )
+            }
+            SolanaParseError::InvalidReadonlyUnsignedAccounts {
+                readonly_unsigned,
+                total_keys,
+            } => {
+                write!(
+                    f,
+                    "Solana MessageHeader num_readonly_unsigned_accounts ({}) exceeds unsigned static account count (total_keys={})",
+                    readonly_unsigned, total_keys
                 )
             }
             SolanaParseError::DuplicateStaticAccountKey { pubkey } => {
@@ -422,7 +433,7 @@ pub fn verify_solana_kamino_repay_message(
     }
     let num_required_signatures = raw_message[offset];
     let num_readonly_signed_accounts = raw_message[offset + 1];
-    let _num_readonly_unsigned_accounts = raw_message[offset + 2];
+    let num_readonly_unsigned_accounts = raw_message[offset + 2];
     offset += 3;
 
     if num_required_signatures != 1 {
@@ -438,6 +449,12 @@ pub fn verify_solana_kamino_repay_message(
     let account_keys_len = read_compact_u16(raw_message, &mut offset)?;
     if account_keys_len == 0 {
         return Err(SolanaParseError::InvalidSignatureCount(0));
+    }
+    if 1usize.saturating_add(num_readonly_unsigned_accounts as usize) > account_keys_len {
+        return Err(SolanaParseError::InvalidReadonlyUnsignedAccounts {
+            readonly_unsigned: num_readonly_unsigned_accounts,
+            total_keys: account_keys_len,
+        });
     }
     let keys_byte_len = account_keys_len
         .checked_mul(32)
@@ -619,8 +636,23 @@ pub fn verify_solana_kamino_repay_message(
                 if ix_data.len() != 8 && ix_data.len() != 9 {
                     return Err(SolanaParseError::InvalidKaminoInstructionDataLength(ix_data.len()));
                 }
-                if ix_accounts.is_empty() {
-                    return Err(SolanaParseError::InsufficientKaminoAccounts(0));
+                if ix_accounts.len() < 2 {
+                    return Err(SolanaParseError::InsufficientKaminoAccounts(ix_accounts.len()));
+                }
+                let reserve_pk = &account_keys[ix_accounts[0] as usize];
+                if reserve_pk != expected_sol_collateral_reserve_pubkey
+                    && reserve_pk != expected_usdc_repay_reserve_pubkey
+                {
+                    return Err(SolanaParseError::UnauthorizedReserveAccount {
+                        actual: *reserve_pk,
+                    });
+                }
+                let market_pk = &account_keys[ix_accounts[1] as usize];
+                if market_pk != expected_lending_market_pubkey {
+                    return Err(SolanaParseError::LendingMarketMismatch {
+                        expected: *expected_lending_market_pubkey,
+                        actual: *market_pk,
+                    });
                 }
                 kamino_refresh_ix_count += 1;
             } else if disc == REFRESH_OBLIGATION_DISCRIMINATOR {
@@ -674,6 +706,25 @@ pub fn verify_solana_kamino_repay_message(
                 }
                 if ix_accounts.len() < 4 {
                     return Err(SolanaParseError::InsufficientKaminoAccounts(ix_accounts.len()));
+                }
+                let has_pinned_obligation = ix_accounts
+                    .iter()
+                    .any(|&idx| &account_keys[idx as usize] == expected_user_obligation_pubkey);
+                if !has_pinned_obligation {
+                    return Err(SolanaParseError::ObligationPubkeyMismatch {
+                        expected: *expected_user_obligation_pubkey,
+                        actual: account_keys[ix_accounts[1] as usize],
+                    });
+                }
+                let has_pinned_reserve = ix_accounts.iter().any(|&idx| {
+                    let pk = &account_keys[idx as usize];
+                    pk == expected_sol_collateral_reserve_pubkey
+                        || pk == expected_usdc_repay_reserve_pubkey
+                });
+                if !has_pinned_reserve {
+                    return Err(SolanaParseError::UnauthorizedReserveAccount {
+                        actual: account_keys[ix_accounts[3] as usize],
+                    });
                 }
                 kamino_refresh_ix_count += 1;
             } else if disc == REPAY_OBLIGATION_LIQUIDITY_V2_DISCRIMINATOR

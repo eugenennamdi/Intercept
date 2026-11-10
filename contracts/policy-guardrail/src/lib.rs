@@ -420,7 +420,7 @@ impl InterceptPolicyContract {
             hex::encode(receipt_hash)
         );
 
-        if now_sec >= self.rolling_window_start_sec + ROLLING_WINDOW_SECONDS {
+        if now_sec >= self.rolling_window_start_sec.saturating_add(ROLLING_WINDOW_SECONDS) {
             self.rolling_window_start_sec = now_sec;
             self.rolling_24h_spent_usdc = 0;
         }
@@ -435,8 +435,10 @@ impl InterceptPolicyContract {
         // the asynchronous `v1.signer::sign` promise so concurrent calls in the same block cannot
         // bypass the 24h cap or replay the receipt.
         self.consumed_receipt_hashes.insert(receipt_hash);
-        self.rolling_24h_spent_usdc += receipt.repay_amount_usdc;
-        self.total_rescues_authorized += 1;
+        self.rolling_24h_spent_usdc = self
+            .rolling_24h_spent_usdc
+            .saturating_add(receipt.repay_amount_usdc);
+        self.total_rescues_authorized = self.total_rescues_authorized.saturating_add(1);
 
         let receipt_hash_hex = hex::encode(receipt_hash);
         let keccak256_hex = hex::encode(verified_evm.signing_hash_keccak256);
@@ -793,11 +795,12 @@ impl InterceptPolicyContract {
     /// Returns full guardrail telemetry, active policy limits, and pending Leg 2 authorizations.
     pub fn get_telemetry(&self) -> GuardrailTelemetry {
         let now_sec = env::block_timestamp() / 1_000_000_000;
-        let effective_spent = if now_sec >= self.rolling_window_start_sec + ROLLING_WINDOW_SECONDS {
-            0
-        } else {
-            self.rolling_24h_spent_usdc
-        };
+        let effective_spent =
+            if now_sec >= self.rolling_window_start_sec.saturating_add(ROLLING_WINDOW_SECONDS) {
+                0
+            } else {
+                self.rolling_24h_spent_usdc
+            };
         let remaining = self.policy.max_daily_usdc.saturating_sub(effective_spent);
         GuardrailTelemetry {
             policy: self.policy.clone(),
@@ -898,13 +901,14 @@ impl InterceptPolicyContract {
             self.policy.max_per_action_usdc
         );
 
-        let effective_spent = if now_sec >= self.rolling_window_start_sec + ROLLING_WINDOW_SECONDS {
-            0
-        } else {
-            self.rolling_24h_spent_usdc
-        };
+        let effective_spent =
+            if now_sec >= self.rolling_window_start_sec.saturating_add(ROLLING_WINDOW_SECONDS) {
+                0
+            } else {
+                self.rolling_24h_spent_usdc
+            };
         assert!(
-            effective_spent + receipt.repay_amount_usdc <= self.policy.max_daily_usdc,
+            effective_spent.saturating_add(receipt.repay_amount_usdc) <= self.policy.max_daily_usdc,
             "GUARDRAIL REVERT (DAILY LIMIT): rolling_24h_spent ({}) + repay_amount_usdc ({}) exceeds max_daily_usdc ({})",
             effective_spent,
             receipt.repay_amount_usdc,
@@ -1096,8 +1100,10 @@ fn decode_base58_32(s: &str, field_name: &str) -> [u8; 32] {
 /// Validates numeric invariants on `PolicyConfig` during `new` and `update_policy`.
 fn validate_policy_invariants(policy: &PolicyConfig) {
     assert!(
-        policy.max_per_action_usdc > 0 && policy.max_per_action_usdc <= policy.max_daily_usdc,
-        "Policy invariant failed: 0 < max_per_action_usdc <= max_daily_usdc"
+        policy.max_per_action_usdc > 0
+            && policy.max_per_action_usdc <= policy.max_daily_usdc
+            && policy.max_per_action_usdc <= (u64::MAX as u128),
+        "Policy invariant failed: 0 < max_per_action_usdc <= min(max_daily_usdc, u64::MAX)"
     );
     assert!(
         policy.max_slippage_bps <= 1_000,

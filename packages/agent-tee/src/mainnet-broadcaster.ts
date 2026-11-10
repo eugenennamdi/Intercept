@@ -325,12 +325,18 @@ export async function fetchBaseMainnetAccountAndGasState(params: {
       const nonce = Number(BigInt(byId.get(2) ?? "0x0"));
       const gasPriceWei = BigInt(byId.get(3) ?? "0x1c9c380"); // ~0.03 gwei fallback
       const priorityFeeWei = BigInt(byId.get(4) ?? "0x16e360"); // ~0.0015 gwei fallback
-      const maxPriorityFeePerGasWei =
+      const rawPriorityFeeWei =
         priorityFeeWei > 0n ? priorityFeeWei : 1_500_000n;
-      const maxFeePerGasWei =
+      const maxPriorityFeePerGasWei =
+        rawPriorityFeeWei > 10_000_000_000n
+          ? 10_000_000_000n
+          : rawPriorityFeeWei;
+      const rawMaxFeeWei =
         gasPriceWei * 2n + maxPriorityFeePerGasWei > maxPriorityFeePerGasWei
           ? gasPriceWei * 2n + maxPriorityFeePerGasWei
           : 30_000_000n;
+      const maxFeePerGasWei =
+        rawMaxFeeWei > 50_000_000_000n ? 50_000_000_000n : rawMaxFeeWei;
       const ethBalanceWei = BigInt(byId.get(5) ?? "0x0");
       const rawUsdcHex = byId.get(6) ?? "0x0";
       const usdcBalanceMicro =

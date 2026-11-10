@@ -18,20 +18,41 @@ function serializeBigInt<T>(obj: T): unknown {
   );
 }
 
+const VALID_MODES = new Set<ExecutionMode>([
+  "LIVE_MAINNET_MODE",
+  "STRESS_TEST_MAINNET_MODE",
+]);
+const BASE58_PUBKEY_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+const DECIMAL_USDC_RE = /^\d{1,9}(\.\d{1,6})?$/;
+
+function clampFinite(
+  val: unknown,
+  min: number,
+  max: number
+): number | undefined {
+  if (typeof val !== "number" || !Number.isFinite(val)) return undefined;
+  return Math.min(max, Math.max(min, val));
+}
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const modeParam = url.searchParams.get("mode") as ExecutionMode | null;
+  const rawMode = url.searchParams.get("mode") as ExecutionMode | null;
+  const modeParam: ExecutionMode =
+    rawMode && VALID_MODES.has(rawMode) ? rawMode : "LIVE_MAINNET_MODE";
   const dropParam =
     url.searchParams.get("stressShockPct") ?? url.searchParams.get("priceDropPct");
   const parsedDrop = dropParam !== null ? Number(dropParam) : undefined;
+  const clampedDrop = clampFinite(
+    parsedDrop !== undefined ? Math.abs(parsedDrop) : undefined,
+    0,
+    95
+  );
   const stressShockPct =
-    parsedDrop !== undefined && !Number.isNaN(parsedDrop)
-      ? -Math.abs(parsedDrop)
-      : undefined;
+    clampedDrop !== undefined ? -clampedDrop : undefined;
 
   const [report, preflight] = await Promise.all([
     executeInterceptRescuePipeline({
-      mode: modeParam ?? "LIVE_MAINNET_MODE",
+      mode: modeParam,
       stressShockPct,
     }),
     runMainnetPreflightCheck(),
@@ -59,29 +80,58 @@ export async function POST(request: Request) {
     maxSlippageBpsOverride?: number;
   };
 
+  const safeMode: ExecutionMode =
+    body.mode && VALID_MODES.has(body.mode)
+      ? body.mode
+      : "STRESS_TEST_MAINNET_MODE";
+  const clampedShockAbs = clampFinite(
+    typeof body.stressShockPct === "number"
+      ? Math.abs(body.stressShockPct)
+      : undefined,
+    0,
+    95
+  );
+  const safeMinTriggerHfBps = clampFinite(
+    body.minTriggerHfBpsOverride,
+    10_100,
+    25_000
+  );
+
   const [report, preflight] = await Promise.all([
     executeInterceptRescuePipeline({
-      mode: body.mode ?? "STRESS_TEST_MAINNET_MODE",
+      mode: safeMode,
       stressShockPct:
-        body.stressShockPct !== undefined ? -Math.abs(body.stressShockPct) : undefined,
-      minTriggerHfBpsOverride: body.minTriggerHfBpsOverride,
+        clampedShockAbs !== undefined ? -clampedShockAbs : undefined,
+      minTriggerHfBpsOverride:
+        safeMinTriggerHfBps !== undefined
+          ? Math.round(safeMinTriggerHfBps)
+          : undefined,
     }),
     runMainnetPreflightCheck(),
   ]);
 
-  if (body.userObligationOverride?.trim()) {
+  if (typeof body.userObligationOverride === "string") {
     const trimmed = body.userObligationOverride.trim();
-    report.policy.userKaminoObligationPubkey = trimmed;
-    report.kaminoBefore.obligationPubkey = trimmed;
+    if (BASE58_PUBKEY_RE.test(trimmed)) {
+      report.policy.userKaminoObligationPubkey = trimmed;
+      report.kaminoBefore.obligationPubkey = trimmed;
+    }
   }
-  if (body.maxPerActionUsdcFormattedOverride?.trim()) {
-    report.policy.maxPerActionUsdcFormatted = body.maxPerActionUsdcFormattedOverride.trim();
+  if (typeof body.maxPerActionUsdcFormattedOverride === "string") {
+    const trimmed = body.maxPerActionUsdcFormattedOverride.trim();
+    if (DECIMAL_USDC_RE.test(trimmed)) {
+      report.policy.maxPerActionUsdcFormatted = trimmed;
+    }
   }
-  if (body.maxDailyUsdcFormattedOverride?.trim()) {
-    report.policy.maxDailyUsdcFormatted = body.maxDailyUsdcFormattedOverride.trim();
+  if (typeof body.maxDailyUsdcFormattedOverride === "string") {
+    const trimmed = body.maxDailyUsdcFormattedOverride.trim();
+    if (DECIMAL_USDC_RE.test(trimmed)) {
+      report.policy.maxDailyUsdcFormatted = trimmed;
+    }
   }
-  if (typeof body.maxSlippageBpsOverride === "number") {
-    report.policy.maxSlippageBps = body.maxSlippageBpsOverride;
+  const safeSlippageBps = clampFinite(body.maxSlippageBpsOverride, 1, 1_000);
+  if (safeSlippageBps !== undefined) {
+    report.policy.maxSlippageBps = Math.round(safeSlippageBps);
   }
 
   const adversarialSuite = runAdversarialAttackSuite();
