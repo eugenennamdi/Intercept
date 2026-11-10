@@ -1,5 +1,5 @@
+use near_sdk::env;
 use near_sdk::serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 /// Solana ComputeBudget Program ID: `ComputeBudget111111111111111111111111111111`
 pub const COMPUTE_BUDGET_PROGRAM_ID_STR: &str = "ComputeBudget111111111111111111111111111111";
@@ -76,9 +76,7 @@ pub const MAX_SOLANA_PRIORITY_FEE_MICRO_LAMPORTS: u64 = 5_000_000;
 
 /// Computes the 8-byte Anchor instruction discriminator `sha256("global:<ix_name>")[0..8]`
 pub fn compute_anchor_discriminator(global_ix_name: &str) -> [u8; 8] {
-    let mut hasher = Sha256::new();
-    hasher.update(global_ix_name.as_bytes());
-    let digest = hasher.finalize();
+    let digest = env::sha256_array(global_ix_name.as_bytes());
     let mut disc = [0u8; 8];
     disc.copy_from_slice(&digest[0..8]);
     disc

@@ -1,5 +1,5 @@
+use near_sdk::env;
 use near_sdk::serde::{Deserialize, Serialize};
-use sha3::{Digest, Keccak256};
 
 /// Base Mainnet EIP-155 chain ID (8453)
 pub const BASE_MAINNET_CHAIN_ID: u64 = 8453;
@@ -480,12 +480,7 @@ pub fn verify_eip1559_base_usdc_transfer(
 
 /// Computes the 32-byte Keccak-256 digest of a byte slice
 pub fn keccak256_bytes(data: &[u8]) -> [u8; 32] {
-    let mut hasher = Keccak256::new();
-    hasher.update(data);
-    let digest = hasher.finalize();
-    let mut out = [0u8; 32];
-    out.copy_from_slice(&digest);
-    out
+    env::keccak256_array(data)
 }
 
 /// Canonical RLP helper to encode unsigned integers

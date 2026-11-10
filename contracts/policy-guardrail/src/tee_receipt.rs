@@ -1,7 +1,6 @@
 use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::env;
 use near_sdk::serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 /// Canonical domain separator prefix for TEE Decision Receipts signed by the NEAR AI Cloud enclave
 pub const TEE_RECEIPT_DOMAIN_PREFIX: &str = "INTERCEPT_TEE_RECEIPT_V1";
@@ -213,12 +212,7 @@ impl TeeDecisionReceipt {
     /// Computes the 32-byte SHA-256 digest of the canonical receipt payload (used for replay protection)
     pub fn receipt_hash(&self) -> [u8; 32] {
         let payload = self.canonical_signing_payload();
-        let mut hasher = Sha256::new();
-        hasher.update(payload.as_bytes());
-        let digest = hasher.finalize();
-        let mut out = [0u8; 32];
-        out.copy_from_slice(&digest);
-        out
+        env::sha256_array(payload.as_bytes())
     }
 
     /// Decodes the 20-byte Base deposit address from `oneclick_deposit_address`
