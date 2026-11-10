@@ -105,6 +105,10 @@ pub struct TeeDecisionReceipt {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TeeReceiptError {
     NonActionableRegime,
+    PositionHealthyAboveTrigger {
+        observed_hf_bps: u32,
+        min_trigger_hf_bps: u32,
+    },
     InvalidTimestamp {
         receipt_ts: u64,
         current_ts: u64,
@@ -138,6 +142,16 @@ impl core::fmt::Display for TeeReceiptError {
         match self {
             TeeReceiptError::NonActionableRegime => {
                 write!(f, "TEE Decision Receipt regime is HOLD; rescue execution is forbidden")
+            }
+            TeeReceiptError::PositionHealthyAboveTrigger {
+                observed_hf_bps,
+                min_trigger_hf_bps,
+            } => {
+                write!(
+                    f,
+                    "TEE Decision Receipt observed_hf_bps ({}) is not below policy min_trigger_hf_bps ({}); rescue forbidden while position is healthy",
+                    observed_hf_bps, min_trigger_hf_bps
+                )
             }
             TeeReceiptError::InvalidTimestamp {
                 receipt_ts,
@@ -269,18 +283,25 @@ impl TeeDecisionReceipt {
         Ok(arr)
     }
 
-    /// Verifies all cryptographic, temporal, slippage, and obligation invariants of the TEE receipt
+    /// Verifies all cryptographic, temporal, threshold, slippage, and obligation invariants of the TEE receipt
     pub fn verify(
         &self,
         expected_enclave_pubkey: &[u8; 32],
         expected_obligation_pubkey: &[u8; 32],
+        min_trigger_hf_bps: u32,
         max_slippage_bps: u16,
         current_timestamp_sec: u64,
         max_receipt_age_sec: u64,
     ) -> Result<[u8; 20], TeeReceiptError> {
-        // 1. Regime must be actionable
+        // 1. Regime must be actionable and observed_hf_bps must breach policy.min_trigger_hf_bps
         if !self.regime.is_rescue_actionable() {
             return Err(TeeReceiptError::NonActionableRegime);
+        }
+        if self.observed_hf_bps >= min_trigger_hf_bps {
+            return Err(TeeReceiptError::PositionHealthyAboveTrigger {
+                observed_hf_bps: self.observed_hf_bps,
+                min_trigger_hf_bps,
+            });
         }
 
         // 2. Timestamp freshness check (saturating arithmetic prevents u64 overflow)

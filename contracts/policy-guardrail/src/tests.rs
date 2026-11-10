@@ -1540,6 +1540,7 @@ fn test_nep297_structured_events_and_function_call_key_spec() {
     assert!(fc_spec
         .forbidden_admin_methods
         .contains(&"update_policy".to_string()));
+    assert_eq!(fc_spec.recommended_allowance_near, "1.00");
 
     setup_context("agent.intercept.near", TEST_TIMESTAMP_SEC);
     let deposit_addr = [0x99; 20];
@@ -1901,6 +1902,7 @@ fn test_security_audit_invariants_inverted_leg2_bounds_mev_priority_bribe_and_so
         .verify(
             &tee_pk_bytes,
             &user_obligation,
+            policy.min_trigger_hf_bps,
             policy.max_slippage_bps,
             TEST_TIMESTAMP_SEC,
             policy.max_receipt_age_sec,
@@ -1926,6 +1928,7 @@ fn test_security_audit_invariants_inverted_leg2_bounds_mev_priority_bribe_and_so
         .verify(
             &tee_pk_bytes,
             &user_obligation,
+            policy.min_trigger_hf_bps,
             policy.max_slippage_bps,
             TEST_TIMESTAMP_SEC,
             policy.max_receipt_age_sec,
@@ -1993,5 +1996,141 @@ fn test_security_audit_invariants_inverted_leg2_bounds_mev_priority_bribe_and_so
         ),
         "Expected InvalidReadonlyUnsignedAccounts, got {:?}",
         err_sol_hdr
+    );
+}
+
+#[test]
+fn test_onchain_min_trigger_hf_enforcement_and_zero_deposit_function_call_sponsorship() {
+    let (
+        policy,
+        tee_sk,
+        _mpc_base_vault,
+        mpc_solana_payer,
+        user_obligation,
+        lending_market,
+    ) = sample_policy_and_keys();
+    let tee_pk_bytes = tee_sk.verifying_key().to_bytes();
+    let deposit_addr = [0x99u8; 20];
+
+    // 1. Reject TEE receipt when observed_hf_bps >= policy.min_trigger_hf_bps (e.g. 12_000 >= 11_500)
+    let mut healthy_receipt = TeeDecisionReceipt {
+        timestamp: TEST_TIMESTAMP_SEC,
+        obligation_pubkey: policy.user_kamino_obligation_pubkey.clone(),
+        observed_hf_bps: 12_000, // Healthy (>= 11_500 trigger threshold) despite actionable regime tag
+        volatility_bps: 4_000,
+        regime: RiskRegime::MicroBufferRescue,
+        repay_amount_usdc: 10_000_000,
+        oneclick_deposit_address: format!("0x{}", hex::encode(deposit_addr)),
+        min_amount_out: 9_950_000,
+        reasoning_hash: format!("0x{}", hex::encode([0xcd; 32])),
+        enclave_signature_hex: String::new(),
+    };
+    let payload = healthy_receipt.canonical_signing_payload();
+    healthy_receipt.enclave_signature_hex = hex::encode(tee_sk.sign(payload.as_bytes()).to_bytes());
+
+    let err_healthy = healthy_receipt
+        .verify(
+            &tee_pk_bytes,
+            &user_obligation,
+            policy.min_trigger_hf_bps,
+            policy.max_slippage_bps,
+            TEST_TIMESTAMP_SEC,
+            policy.max_receipt_age_sec,
+        )
+        .expect_err("Receipt with observed_hf_bps >= min_trigger_hf_bps must be rejected");
+    assert!(
+        format!("{}", err_healthy).contains("is not below policy min_trigger_hf_bps"),
+        "Unexpected error: {}",
+        err_healthy
+    );
+
+    // 2. Verify zero-deposit FunctionCall access key execution (attached_deposit == 0 NEAR)
+    // sponsors the 0.05 NEAR v1.signer deposit from the contract's own balance without DepositWithFunctionCall error
+    setup_context("alice.near", TEST_TIMESTAMP_SEC);
+    let mut contract = InterceptPolicyContract::new(policy.clone());
+
+    let mut zero_deposit_ctx = VMContextBuilder::new();
+    zero_deposit_ctx
+        .predecessor_account_id("agent.intercept.near".parse::<AccountId>().unwrap())
+        .block_timestamp(TEST_TIMESTAMP_SEC * 1_000_000_000)
+        .account_balance(NearToken::from_near(2))
+        .attached_deposit(NearToken::from_yoctonear(0));
+    testing_env!(zero_deposit_ctx.build());
+
+    let valid_receipt = sign_test_receipt(
+        &tee_sk,
+        &policy.user_kamino_obligation_pubkey,
+        RiskRegime::MicroBufferRescue,
+        10_000_000,
+        9_950_000,
+        &deposit_addr,
+        TEST_TIMESTAMP_SEC,
+    );
+    let receipt_hash_hex = hex::encode(valid_receipt.receipt_hash());
+    let calldata = build_erc20_transfer_calldata(&deposit_addr, 10_000_000);
+    let unsigned_evm_tx = build_unsigned_eip1559_tx(
+        BASE_MAINNET_CHAIN_ID,
+        1,
+        1_000_000_000,
+        2_000_000_000,
+        65_000,
+        &BASE_USDC_ADDRESS,
+        0,
+        &calldata,
+    );
+    let _leg1_promise = contract.request_rescue_origin_leg(
+        valid_receipt,
+        policy.mpc_solana_payer_pubkey.clone(),
+        hex::encode(&unsigned_evm_tx),
+    );
+    assert_eq!(contract.total_rescues_authorized, 1);
+
+    // Simulate v1.signer callback transitioning to ReadyForLeg2, then execute Leg 2 with 0 attached deposit
+    let mut cb_ctx = VMContextBuilder::new();
+    cb_ctx
+        .predecessor_account_id("current.account.near".parse::<AccountId>().unwrap())
+        .current_account_id("current.account.near".parse::<AccountId>().unwrap())
+        .block_timestamp(TEST_TIMESTAMP_SEC * 1_000_000_000);
+    testing_env!(cb_ctx.build());
+    let _ = contract.on_origin_leg_signed(
+        receipt_hash_hex.clone(),
+        "aa".repeat(32),
+        10_000_000,
+        Ok(near_sdk::serde_json::json!({
+            "big_r": { "affine_point": format!("02{}", "11".repeat(32)) },
+            "s": { "scalar": "22".repeat(32) },
+            "recovery_id": 0
+        })),
+    );
+
+    let mut zero_deposit_leg2_ctx = VMContextBuilder::new();
+    zero_deposit_leg2_ctx
+        .predecessor_account_id("agent.intercept.near".parse::<AccountId>().unwrap())
+        .block_timestamp((TEST_TIMESTAMP_SEC + 5) * 1_000_000_000)
+        .account_balance(NearToken::from_near(2))
+        .attached_deposit(NearToken::from_yoctonear(0));
+    testing_env!(zero_deposit_leg2_ctx.build());
+
+    let sol_msg = build_solana_kamino_full_refresh_and_repay_message(
+        true,
+        &mpc_solana_payer,
+        &user_obligation,
+        &lending_market,
+        &KAMINO_MAINNET_SOL_RESERVE_PUBKEY,
+        &KAMINO_MAINNET_USDC_RESERVE_PUBKEY,
+        &[0x55; 32],
+        &[0x66; 32],
+        &[0x77; 32],
+        &[0x88; 32],
+        &[0x91; 32],
+        &[0x92; 32],
+        &[0xaa; 32],
+        9_980_000,
+    );
+    let _leg2_promise =
+        contract.request_rescue_destination_leg(receipt_hash_hex.clone(), hex::encode(&sol_msg));
+    assert_eq!(
+        contract.leg2_authorizations.get(&receipt_hash_hex).unwrap().state,
+        RescueLifecycleState::InFlightLeg2
     );
 }

@@ -79,6 +79,7 @@ The NEAR Policy Guardrail Contract verifies:
 4. Timestamp freshness & policy invariant: `policy.max_receipt_age_sec` is strictly enforced in `30..=3600`, and `receipt.timestamp + policy.max_receipt_age_sec >= block_timestamp_sec`.
 5. `bs58::decode(receipt.obligation_pubkey) == self.user_kamino_obligation_pubkey`.
 6. Slippage bound: `receipt.min_amount_out * 10_000 >= receipt.repay_amount_usdc * (10_000 - policy.max_slippage_bps)`.
+7. Health-factor trigger threshold: `receipt.observed_hf_bps < policy.min_trigger_hf_bps` (blocks premature Base USDC depletion when the position is healthy above the owner's configured trigger).
 
 ### 3.2 Leg 1 Byte-Level EIP-1559 RLP Verifier (`src/evm_parser.rs`)
 
@@ -101,7 +102,7 @@ The contract decodes the raw unsigned EIP-1559 payload (`0x02 || rlp([chain_id, 
 | `data[52..68]` | Amount | `u128::from_be_bytes` must equal `receipt.repay_amount_usdc` |
 | `access_list` | Item `8` | Must be empty RLP list (`0xc0`) |
 
-Only after all checks pass does the contract compute `keccak256(raw_unsigned_tx)` and invoke `v1.signer::sign` (`domain_id: 0`, `MPC_SIGN_GAS = 250 TGas`, `MPC_CALLBACK_GAS = 30 TGas`).
+Only after all checks pass does the contract compute `keccak256(raw_unsigned_tx)` and invoke `v1.signer::sign` (`domain_id: 0`, `MPC_SIGN_GAS = 250 TGas`, `MPC_CALLBACK_GAS = 30 TGas`). Because NEAR `AccessKeyPermission::FunctionCall` keys reject transactions with `attached_deposit > 0` (`DepositWithFunctionCall`), `resolve_mpc_sign_deposit()` automatically sponsors `DEFAULT_MPC_SIGN_DEPOSIT` (`0.05 NEAR`) from the guardrail contract's own balance whenever the agent calls with `0 NEAR` attached (`v1.signer` refunds unused deposit directly back to the guardrail contract).
 
 ### 3.3 Leg 2 Byte-Level Solana Message & Kamino Repay Verifier (`src/solana_parser.rs`)
 

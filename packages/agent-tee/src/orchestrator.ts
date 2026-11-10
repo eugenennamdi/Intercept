@@ -298,7 +298,8 @@ export async function executeInterceptRescuePipeline(options?: {
       "request_rescue_destination_leg",
     ],
     forbiddenAdminMethods: ["new", "update_policy"],
-    allowanceNear: "0.25",
+    // ponytail: 1.00 NEAR allowance covers NEAR's ~0.3009 NEAR pessimistic upfront reservation on 300 TGas v1.signer calls
+    allowanceNear: "1.00",
   };
 
   stages.push({

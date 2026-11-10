@@ -556,7 +556,9 @@ export async function invokeNearPolicyContractLive<T>(params: {
     methodName,
     argsJson,
     gasUnits = 300_000_000_000_000n, // 300 TGas (250 TGas v1.signer + 30 TGas callback + 20 TGas contract)
-    attachedDepositYocto = 50_000_000_000_000_000_000_000n, // 0.05 NEAR for v1.signer fee
+    // ponytail: 0 yoctoNEAR default because NEAR AccessKeyPermission::FunctionCall forbids >0 attached_deposit
+    // (InvalidAccessKeyError::DepositWithFunctionCall); guardrail contract sponsors 0.05 NEAR v1.signer fee from its own balance.
+    attachedDepositYocto = 0n,
   } = params;
 
   const cleanKey = signerPrivateKeyBase58.replace(/^ed25519:/i, "").trim();

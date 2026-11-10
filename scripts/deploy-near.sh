@@ -21,6 +21,8 @@ NETWORK="${NEAR_NETWORK:-mainnet}"
 OWNER_ID="${OWNER_NEAR_ID:-keeper-owner.near}"
 AGENT_ID="${NEAR_ACCOUNT_ID:-tee-agent.intercept-defi.near}"
 MPC_SIGNER="${MPC_SIGNER_CONTRACT_ID:-v1.signer}"
+DEMO_TEE_PUBKEY_HEX="ef03c6fb5128efac12f621f4496fd3b84aa00f3df130f925b82e5d24c2a3a054"
+TEE_PUBKEY_HEX="${TEE_ENCLAVE_PUBKEY_HEX:-${DEMO_TEE_PUBKEY_HEX}}"
 
 INIT_ARGS=$(cat <<EOF
 {
@@ -28,7 +30,7 @@ INIT_ARGS=$(cat <<EOF
     "owner_id": "${OWNER_ID}",
     "authorized_agent_id": "${AGENT_ID}",
     "mpc_signer_contract": "${MPC_SIGNER}",
-    "tee_enclave_pubkey_hex": "ef03c6fb5128efac12f621f4496fd3b84aa00f3df130f925b82e5d24c2a3a054",
+    "tee_enclave_pubkey_hex": "${TEE_PUBKEY_HEX}",
     "mpc_base_vault_address_hex": "0x72faa1abaf92e0c4b791f15acedb496c8979746c",
     "mpc_solana_payer_pubkey": "GZMAbwapG99YKCsA2CDVc4bXeBzd7nvKMQgtm9K8aKas",
     "user_kamino_obligation_pubkey": "C5dZVpvpA39SNLDkojsi98nRePRRy8ELhtxak8m2vMq",
@@ -48,8 +50,16 @@ EOF
 )
 
 if [[ "${1:-}" == "--deploy" ]]; then
+  if [[ "${NETWORK}" == "mainnet" && "${TEE_PUBKEY_HEX}" == "${DEMO_TEE_PUBKEY_HEX}" ]]; then
+    echo "ERROR: Refusing Mainnet init with public demo TEE_ENCLAVE_PUBKEY_HEX (${DEMO_TEE_PUBKEY_HEX})." >&2
+    echo "Set TEE_ENCLAVE_PUBKEY_HEX to your dedicated enclave Ed25519 public key before deploying to Mainnet." >&2
+    exit 1
+  fi
   echo "==> [2/2] Deploying ${WASM_PATH} to ${CONTRACT_ID} (${NETWORK})..."
   near contract deploy "${CONTRACT_ID}" use-file "${WASM_PATH}" with-init-call new json-args "${INIT_ARGS}" prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' network-config "${NETWORK}" sign-with-keychain send
+elif [[ "${1:-}" == "--upgrade-wasm" ]]; then
+  echo "==> [2/2] Upgrading WASM on ${CONTRACT_ID} (${NETWORK}) without re-initializing state..."
+  near contract deploy "${CONTRACT_ID}" use-file "${WASM_PATH}" without-init-call network-config "${NETWORK}" sign-with-keychain send
 else
   echo "==> [2/2] Ready to deploy! Run with '--deploy' or execute via near-cli-rs:"
   echo "near contract deploy ${CONTRACT_ID} use-file ${WASM_PATH} with-init-call new json-args '${INIT_ARGS}' prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' network-config ${NETWORK}"

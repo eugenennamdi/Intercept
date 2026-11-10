@@ -61,14 +61,14 @@ near contract deploy guardrail.<your-account>.near \
 POLICY_CONTRACT_ID="guardrail.<your-account>.near" npm run preflight
 
 # 4. Initialize the Policy Guardrail Contract
-# Note: tee_enclave_pubkey_hex below matches the default domain-separated enclave keypair;
-# if using a custom TEE_ENCLAVE_SECRET_SEED_HEX, substitute its derived 32-byte Ed25519 pubkey hex.
+# Generate a dedicated production enclave seed (do NOT reuse the public demo key on Mainnet)
+# and pass its derived 32-byte Ed25519 public key hex as tee_enclave_pubkey_hex:
 near contract call-function as-transaction guardrail.<your-account>.near new json-args '{
   "policy": {
     "owner_id": "<your-account>.near",
     "authorized_agent_id": "agent.<your-account>.near",
     "mpc_signer_contract": "v1.signer",
-    "tee_enclave_pubkey_hex": "ef03c6fb5128efac12f621f4496fd3b84aa00f3df130f925b82e5d24c2a3a054",
+    "tee_enclave_pubkey_hex": "<Production_TEE_Enclave_Ed25519_Pubkey_Hex_64_Chars>",
     "mpc_base_vault_address_hex": "<MPC_Base_Vault_0x_from_step_3>",
     "mpc_solana_payer_pubkey": "<MPC_Solana_Payer_base58_from_step_3>",
     "user_kamino_obligation_pubkey": "<User_Kamino_Obligation_PDA_from_step_2>",
@@ -86,7 +86,7 @@ near contract call-function as-transaction guardrail.<your-account>.near new jso
 }' prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' sign-as <your-account>.near network-config mainnet sign-with-keychain send
 ```
 
-Create a scoped Function Call Access Key for the agent account restricted strictly to `request_rescue_origin_leg` and `request_rescue_destination_leg`:
+Create a scoped Function Call Access Key for the agent account restricted strictly to `request_rescue_origin_leg` and `request_rescue_destination_leg` (keep at least `~0.5 NEAR` on `guardrail.<your-account>.near` so `resolve_mpc_sign_deposit()` can sponsor the `0.05 NEAR` `v1.signer::sign` fee while the `FunctionCall` key attaches `0 NEAR`):
 
 ```bash
 near account add-key agent.<your-account>.near grant-function-call-access \
@@ -116,6 +116,7 @@ near account add-key agent.<your-account>.near grant-function-call-access \
 export NEAR_ACCOUNT_ID="agent.<your-account>.near"
 export NEAR_PRIVATE_KEY="ed25519:<scoped_function_call_private_key>"
 export POLICY_CONTRACT_ID="guardrail.<your-account>.near"
+export TEE_ENCLAVE_SECRET_SEED_HEX="<dedicated_64_hex_production_enclave_seed>"
 export USER_KAMINO_OBLIGATION_PUBKEY="<User_Kamino_Obligation_PDA>"
 export MIN_TRIGGER_HF_BPS_OVERRIDE="14800"
 

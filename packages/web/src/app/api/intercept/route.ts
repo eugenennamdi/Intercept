@@ -69,12 +69,31 @@ export async function GET(request: Request) {
   );
 }
 
+function parseUsdcOverrideToMicro(
+  numericVal: unknown,
+  formattedVal: unknown,
+  minUsd: number,
+  maxUsd: number
+): bigint | undefined {
+  let usd = typeof numericVal === "number" ? numericVal : undefined;
+  if (usd === undefined && typeof formattedVal === "string") {
+    const cleaned = formattedVal.replace(/[$,\s]/g, "");
+    if (DECIMAL_USDC_RE.test(cleaned)) {
+      usd = Number(cleaned);
+    }
+  }
+  const clamped = clampFinite(usd, minUsd, maxUsd);
+  return clamped !== undefined ? BigInt(Math.round(clamped * 1_000_000)) : undefined;
+}
+
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as {
     mode?: ExecutionMode;
     stressShockPct?: number;
     minTriggerHfBpsOverride?: number;
     userObligationOverride?: string;
+    maxPerActionUsdcOverride?: number;
+    maxDailyUsdcOverride?: number;
     maxPerActionUsdcFormattedOverride?: string;
     maxDailyUsdcFormattedOverride?: string;
     maxSlippageBpsOverride?: number;
@@ -96,6 +115,26 @@ export async function POST(request: Request) {
     10_100,
     25_000
   );
+  const safeSlippageBps = clampFinite(body.maxSlippageBpsOverride, 1, 1_000);
+
+  const safeObligation =
+    typeof body.userObligationOverride === "string" &&
+    BASE58_PUBKEY_RE.test(body.userObligationOverride.trim())
+      ? body.userObligationOverride.trim()
+      : undefined;
+
+  const maxPerActionMicro = parseUsdcOverrideToMicro(
+    body.maxPerActionUsdcOverride,
+    body.maxPerActionUsdcFormattedOverride,
+    0.5,
+    1_000_000
+  );
+  const maxDailyMicro = parseUsdcOverrideToMicro(
+    body.maxDailyUsdcOverride,
+    body.maxDailyUsdcFormattedOverride,
+    1,
+    5_000_000
+  );
 
   const [report, preflight] = await Promise.all([
     executeInterceptRescuePipeline({
@@ -106,33 +145,32 @@ export async function POST(request: Request) {
         safeMinTriggerHfBps !== undefined
           ? Math.round(safeMinTriggerHfBps)
           : undefined,
+      customPosition: safeObligation
+        ? { obligationPubkey: safeObligation }
+        : undefined,
+      customPolicy: {
+        ...(safeObligation
+          ? { userKaminoObligationPubkey: safeObligation }
+          : {}),
+        ...(maxPerActionMicro !== undefined
+          ? { maxPerActionUsdcMicro: maxPerActionMicro }
+          : {}),
+        ...(maxDailyMicro !== undefined
+          ? {
+              maxDailyUsdcMicro:
+                maxPerActionMicro !== undefined &&
+                maxDailyMicro < maxPerActionMicro
+                  ? maxPerActionMicro
+                  : maxDailyMicro,
+            }
+          : {}),
+        ...(safeSlippageBps !== undefined
+          ? { maxSlippageBps: Math.round(safeSlippageBps) }
+          : {}),
+      },
     }),
     runMainnetPreflightCheck(),
   ]);
-
-  if (typeof body.userObligationOverride === "string") {
-    const trimmed = body.userObligationOverride.trim();
-    if (BASE58_PUBKEY_RE.test(trimmed)) {
-      report.policy.userKaminoObligationPubkey = trimmed;
-      report.kaminoBefore.obligationPubkey = trimmed;
-    }
-  }
-  if (typeof body.maxPerActionUsdcFormattedOverride === "string") {
-    const trimmed = body.maxPerActionUsdcFormattedOverride.trim();
-    if (DECIMAL_USDC_RE.test(trimmed)) {
-      report.policy.maxPerActionUsdcFormatted = trimmed;
-    }
-  }
-  if (typeof body.maxDailyUsdcFormattedOverride === "string") {
-    const trimmed = body.maxDailyUsdcFormattedOverride.trim();
-    if (DECIMAL_USDC_RE.test(trimmed)) {
-      report.policy.maxDailyUsdcFormatted = trimmed;
-    }
-  }
-  const safeSlippageBps = clampFinite(body.maxSlippageBpsOverride, 1, 1_000);
-  if (safeSlippageBps !== undefined) {
-    report.policy.maxSlippageBps = Math.round(safeSlippageBps);
-  }
 
   const adversarialSuite = runAdversarialAttackSuite();
   const backtest = runQuantitativeBacktestSuite();

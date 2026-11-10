@@ -377,12 +377,12 @@ export default function InterceptDocsPage() {
                     1. Live vs. Flash-Crash Simulation
                   </TableCell>
                   <TableCell className="font-mono text-xs">
-                    Dashboard → Simulation Controller
+                    Dashboard → Scenario Bar
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
-                    Toggle between <strong>Live Pyth (0% Shock)</strong> and{" "}
+                    Toggle between <strong>Live Mainnet (0%)</strong> and{" "}
                     <strong>-25% Crash</strong>. Watch Health Factor recover from{" "}
-                    <code className="font-mono">1.00 → 1.45</code> across the chart and
+                    <code className="font-mono">1.06 → 1.45</code> across the chart and
                     5-stage pipeline.
                   </TableCell>
                 </TableRow>
@@ -391,11 +391,11 @@ export default function InterceptDocsPage() {
                     2. Prompt-Injection Red-Team (11/11)
                   </TableCell>
                   <TableCell className="font-mono text-xs">
-                    Dashboard → Section 03 → Tab 1
+                    Dashboard → Security Tests Tab
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     Click any of the 11 attack vectors (e.g. rogue ERC-20 destination,
-                    Kamino withdraw sneak, 500 gwei gas drain) to inspect the exact Rust
+                    Kamino borrow injection, 500 gwei gas drain) to inspect the exact Rust
                     contract panic.
                   </TableCell>
                 </TableRow>
@@ -404,11 +404,11 @@ export default function InterceptDocsPage() {
                     3. Raw EIP-1559 & Solana V0 Bytes
                   </TableCell>
                   <TableCell className="font-mono text-xs">
-                    Dashboard → Section 03 → Tab 2
+                    Dashboard → Cross-Chain Execution Tab
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     Inspect the decoded RLP fields for <code className="font-mono">domain_id: 0</code>{" "}
-                    and Solana V0 instructions for <code className="font-mono">domain_id: 1</code>.
+                    and 539-byte Solana V0 instructions for <code className="font-mono">domain_id: 1</code>.
                   </TableCell>
                 </TableRow>
                 <TableRow>
@@ -420,7 +420,7 @@ export default function InterceptDocsPage() {
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     Runs live <code className="font-mono">v1.signer</code> MPC derivation,
-                    22 Rust unit tests, 11 Red-Team proofs, and 3-regime backtests.
+                    25 Rust unit &amp; adversarial tests, 11 Red-Team proofs, and 3-regime backtests.
                   </TableCell>
                 </TableRow>
               </TableBody>
@@ -455,9 +455,10 @@ export default function InterceptDocsPage() {
 
 [Domain B: NEAR AI Cloud TEE + guardrail.intercept-defi.near]
   ├── TEE Enclave signs Ed25519 Rescue Receipt (observed_hf, volatility, quote)
-  ├── Scoped NEAR FunctionCall Access Key (0.25 NEAR gas allowance)
-  │     └── Permitted methods ONLY: submit_tee_receipt, verify_and_sign_origin_leg, verify_and_sign_destination_leg
-  │     └── Forbidden: update_policy (Owner-only), TransferNEAR, DeployContract
+  ├── Scoped NEAR FunctionCall Access Key (1.00 NEAR gas allowance, 0 NEAR attached deposit)
+  │     ├── Permitted methods ONLY: request_rescue_origin_leg, request_rescue_destination_leg
+  │     ├── Contract sponsors 0.05 NEAR v1.signer fee internally (reclaimed via refund)
+  │     └── Forbidden: update_policy (Owner-only), TransferNEAR, DeployContract, AddKey
   └── Rust Guardrail parses every byte of Leg 1 & Leg 2 before calling v1.signer
 
 [Domain C: v1.signer Chain Signatures + NEAR Intents 1-Click]
@@ -562,18 +563,18 @@ export default function InterceptDocsPage() {
                     Leg 1 — Base EIP-1559 RLP Verifier
                   </CardTitle>
                   <CardDescription className="text-xs font-mono">
-                    verify_and_sign_origin_leg
+                    request_rescue_origin_leg
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="text-xs space-y-1.5 text-muted-foreground">
-                  <div>• First byte must be <code className="font-mono text-foreground">0x02</code> (EIP-1559)</div>
-                  <div>• RLP <code className="font-mono text-foreground">chain_id == 8453</code> (Base Mainnet)</div>
-                  <div>• <code className="font-mono text-foreground">max_fee_per_gas &lt;= 50 gwei</code> (Anti-griefing)</div>
+                  <div>• Receipt <code className="font-mono text-foreground">observed_hf_bps &lt; min_trigger_hf_bps</code></div>
+                  <div>• First byte must be <code className="font-mono text-foreground">0x02</code> &amp; <code className="font-mono text-foreground">chain_id == 8453</code></div>
+                  <div>• <code className="font-mono text-foreground">max_priority_fee_per_gas &lt;= 10 gwei</code>, <code className="font-mono text-foreground">max_fee &lt;= 50 gwei</code></div>
                   <div>• <code className="font-mono text-foreground">to == 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913</code></div>
                   <div>• <code className="font-mono text-foreground">value == 0</code> (Zero native ETH drain)</div>
-                  <div>• Calldata <code className="font-mono text-foreground">[0..4] == 0xa9059cbb</code> (68 bytes)</div>
-                  <div>• Calldata <code className="font-mono text-foreground">[4..36] == 1-Click Deposit Address</code></div>
-                  <div>• Calldata <code className="font-mono text-foreground">[36..68] &lt;= Max Per-Rescue &amp; Daily Cap</code></div>
+                  <div>• Calldata <code className="font-mono text-foreground">[0..4] == 0xa9059cbb</code> (68 bytes, blocks <code className="font-mono text-foreground">approve</code>)</div>
+                  <div>• Calldata <code className="font-mono text-foreground">[16..36] == 1-Click Deposit Address</code></div>
+                  <div>• Calldata <code className="font-mono text-foreground">[52..68] == Receipt Amount &lt;= Per-Action &amp; 24h Cap</code></div>
                 </CardContent>
               </Card>
 
@@ -583,18 +584,18 @@ export default function InterceptDocsPage() {
                     Leg 2 — Solana V0 Kamino Verifier
                   </CardTitle>
                   <CardDescription className="text-xs font-mono">
-                    verify_and_sign_destination_leg
+                    request_rescue_destination_leg
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="text-xs space-y-1.5 text-muted-foreground">
-                  <div>• Raw V0 message (<code className="font-mono text-foreground">180..=1232 bytes</code>, never 32B hash)</div>
-                  <div>• Prefix <code className="font-mono text-foreground">0x80</code>, <code className="font-mono text-foreground">num_required_signatures == 1</code></div>
+                  <div>• Raw V0/Legacy message (<code className="font-mono text-foreground">64..=1232B</code>; live 5-ix V0 = <code className="font-mono text-foreground">539B</code>)</div>
+                  <div>• Prefix <code className="font-mono text-foreground">0x80</code>, <code className="font-mono text-foreground">num_required_signatures == 1</code>, <code className="font-mono text-foreground">ALTs == 0</code></div>
                   <div>• ComputeBudget price <code className="font-mono text-foreground">&lt;= 5,000,000 micro-lamports</code></div>
-                  <div>• Whitelisted Kamino <code className="font-mono text-foreground">KLend2g3...</code> instructions only</div>
+                  <div>• Whitelisted Kamino <code className="font-mono text-foreground">KLend2g3...</code> refresh + 1 repay ix</div>
                   <div>• Discriminator <code className="font-mono text-foreground">0x74aed54cb435d290</code> (Repay v2)</div>
-                  <div>• Account <code className="font-mono text-foreground">[1] == Pinned User Obligation</code></div>
-                  <div>• Account <code className="font-mono text-foreground">[2] == Pinned Mainnet USDC Reserve</code></div>
-                  <div>• Account <code className="font-mono text-foreground">[4] == Derived MPC Solana USDC ATA</code></div>
+                  <div>• <code className="font-mono text-foreground">[0]</code> MPC Payer · <code className="font-mono text-foreground">[1]</code> Obligation · <code className="font-mono text-foreground">[2]</code> Main Market</div>
+                  <div>• <code className="font-mono text-foreground">[3] == Pinned Mainnet USDC Reserve (D6q6wu...)</code></div>
+                  <div>• <code className="font-mono text-foreground">[5] == Derived MPC Solana USDC ATA (2eLUYL...)</code></div>
                 </CardContent>
               </Card>
             </div>
@@ -613,14 +614,17 @@ export default function InterceptDocsPage() {
 
             <p className="text-sm text-muted-foreground leading-relaxed">
               Because NEAR cross-contract calls to <code className="font-mono">v1.signer</code>{" "}
-              execute asynchronously across blocks, Intercept enforces a strict per-receipt
-              state machine (<code className="font-mono">Verified</code> →{" "}
-              <code className="font-mono">InFlightLeg1</code> →{" "}
-              <code className="font-mono">Leg1Completed</code> →{" "}
+              execute asynchronously across blocks, Intercept enforces a strict 4-state
+              per-receipt lifecycle (<code className="font-mono">InFlightLeg1</code> →{" "}
+              <code className="font-mono">ReadyForLeg2</code> →{" "}
               <code className="font-mono">InFlightLeg2</code> →{" "}
               <code className="font-mono">Completed</code>) with non-panicking{" "}
-              <code className="font-mono">#[private]</code> callbacks that roll back
-              daily spend counters if MPC signing fails.
+              <code className="font-mono">#[private]</code> callbacks (
+              <code className="font-mono">on_origin_leg_signed</code>,{" "}
+              <code className="font-mono">on_destination_leg_signed</code>) that atomically
+              roll back <code className="font-mono">rolling_24h_spent_usdc</code> if Leg 1
+              MPC signing fails, or revert to <code className="font-mono">ReadyForLeg2</code>{" "}
+              for safe retry if Leg 2 signing fails.
             </p>
           </section>
 
@@ -646,15 +650,15 @@ export default function InterceptDocsPage() {
               </TableHeader>
               <TableBody>
                 {[
-                  ["01", "Rogue ERC-20 Recipient Drain", "Leg 1 · Base EVM", "Calldata [4..36] != 1-Click Deposit -> Panic"],
+                  ["01", "Rogue ERC-20 Recipient Hijack", "Leg 1 · Base EVM", "Calldata [16..36] != 1-Click Deposit -> Panic"],
                   ["02", "Malicious ERC-20 approve() Backdoor", "Leg 1 · Base EVM", "Selector != 0xa9059cbb -> Panic"],
                   ["03", "Per-Rescue & Daily Spend Cap Breach", "Leg 1 · Base EVM", "Amount > Policy Cap -> Panic"],
-                  ["04", "Kamino Collateral Withdraw Injection", "Leg 2 · Solana V0", "Discriminator != Repay v2/v1 -> Panic"],
+                  ["04", "Kamino Borrow / Withdraw Injection", "Leg 2 · Solana V0", "Discriminator != Repay v2/v1 -> Panic"],
                   ["05", "Repay Wrong Kamino Obligation", "Leg 2 · Solana V0", "Account [1] != User Obligation -> Panic"],
-                  ["06", "Fake Reserve / Remaining Accounts", "Leg 2 · Solana V0", "Account [2] != USDC Reserve -> Panic"],
-                  ["07", "32-Byte Blind Pre-Hash Injection", "Leg 2 · Solana V0", "Length < 180 bytes -> Panic"],
-                  ["08", "Forged / Replayed TEE Receipt", "TEE Attestation", "Ed25519 Verify / Nonce Replay -> Panic"],
-                  ["09", "Premature / Concurrent Leg 2 Race", "Async TOCTOU State", "Status != Leg1Completed -> Panic"],
+                  ["06", "Forged / Replayed TEE Signature", "TEE Attestation", "Ed25519 Verify / Nonce Replay -> Panic"],
+                  ["07", "Solana V0 ALT Account Hiding", "Leg 2 · Solana V0", "address_table_lookups_len != 0 -> Panic"],
+                  ["08", "32-Byte Blind Pre-Hash Trap", "Leg 2 · Solana V0", "Length < 64 bytes -> Panic"],
+                  ["09", "Premature / Concurrent Leg 2 Race", "Async TOCTOU State", "State != ReadyForLeg2 -> Panic"],
                   ["10", "Base 500 Gwei Gas-Griefing Drain", "Leg 1 · Base EVM", "max_fee_per_gas > 50 gwei -> Panic"],
                   ["11", "Solana ComputeBudget Priority Drain", "Leg 2 · Solana V0", "SetComputeUnitPrice > 5M -> Panic"],
                 ].map(([num, title, layer, rule]) => (
@@ -690,13 +694,13 @@ export default function InterceptDocsPage() {
             />
 
             <CodeBlock
-              title="2. Run 22 Rust Guardrail Smart Contract Unit & Red-Team Tests"
+              title="2. Run 25 Rust Guardrail Smart Contract Unit & Red-Team Tests"
               code={`cargo test --manifest-path contracts/policy-guardrail/Cargo.toml`}
             />
 
             <CodeBlock
               title="3. Configure Policy On-Chain (update_policy)"
-              code={`near contract call-function as-transaction intercept-guardrail-731008.testnet update_policy json-args '{"new_policy":{"owner_id":"intercept-guardrail-731008.testnet","authorized_agent_id":"intercept-guardrail-731008.testnet","mpc_signer_contract":"v1.signer-prod.testnet","tee_enclave_pubkey_hex":"ef03c6fb5128efac12f621f4496fd3b84aa00f3df130f925b82e5d24c2a3a054","mpc_base_vault_address_hex":"0x72faa1abaf92e0c4b791f15acedb496c8979746c","mpc_solana_payer_pubkey":"GZMAbwapG99YKCsA2CDVc4bXeBzd7nvKMQgtm9K8aKas","user_kamino_obligation_pubkey":"C5dZVpvpA39SNLDkojsi98nRePRRy8ELhtxak8m2vMq","kamino_lending_market_pubkey":"7u3HeHxYDLhnCoErrtycNokbQYbWGzLs6JSDqGAv5PfF","base_derivation_path":"intercept-base-vault-1","solana_derivation_path":"intercept-solana-payer-1","max_per_action_usdc":2500000000,"max_daily_usdc":5000000000,"max_slippage_bps":100,"min_trigger_hf_bps":11500,"max_receipt_age_sec":300}}' prepaid-gas '50.0 Tgas' attached-deposit '0 NEAR' sign-as intercept-guardrail-731008.testnet network-config testnet sign-with-keychain send`}
+              code={`near contract call-function as-transaction intercept-guardrail-373299.testnet update_policy json-args '{"new_policy":{"owner_id":"intercept-guardrail-373299.testnet","authorized_agent_id":"runner.intercept-guardrail-373299.testnet","mpc_signer_contract":"v1.signer-prod.testnet","tee_enclave_pubkey_hex":"c6424a09b326739f595a362ade4ed41a16ac39908f02a4e6c60b598653574f05","mpc_base_vault_address_hex":"0xfa1d66b9f3ae95f9d21b8db2315720c2fcde5320","mpc_solana_payer_pubkey":"7AqKFEDJ13ZxpnQnBEEM6XmGq2LNa65jXBE4q96emvCo","user_kamino_obligation_pubkey":"C5dZVpvpA39SNLDkojsi98nRePRRy8ELhtxak8m2vMq","kamino_lending_market_pubkey":"7u3HeHxYDLhnCoErrtycNokbQYbWGzLs6JSDqGAv5PfF","sol_collateral_reserve_pubkey":"d4A2prbA2whesmvHaL88BH6Ewn5N4bTSU2Ze8P6Bc4Q","usdc_repay_reserve_pubkey":"D6q6wuQSrifJKZYpR1M8R4YawnLDtDsMmWM1NbBmgJ59","base_derivation_path":"intercept-base-vault-1","solana_derivation_path":"intercept-solana-payer-1","max_per_action_usdc":"2500000000","max_daily_usdc":"5000000000","max_slippage_bps":100,"min_trigger_hf_bps":11500,"max_receipt_age_sec":300}}' prepaid-gas '80.0 Tgas' attached-deposit '0 NEAR' sign-as intercept-guardrail-373299.testnet network-config testnet sign-with-keychain send`}
             />
 
             <Table>
@@ -710,57 +714,85 @@ export default function InterceptDocsPage() {
               <TableBody>
                 <TableRow>
                   <TableCell className="text-xs font-medium">Contract Deploy &amp; Init</TableCell>
-                  <TableCell className="font-mono text-xs">intercept-guardrail-731008.testnet::new</TableCell>
+                  <TableCell className="font-mono text-xs">intercept-guardrail-373299.testnet::new</TableCell>
                   <TableCell className="font-mono text-xs">
                     <a
-                      href="https://testnet.nearblocks.io/txns/CedSJ6iioQUux7FyTQ9BWvKXimh2d3v5LcvU3rjjcZ6J"
+                      href="https://testnet.nearblocks.io/txns/FHbKGEa9q2h3Pu4adQpyVhSHVAfiPZSFQTk9DNCb6ns9"
                       target="_blank"
                       rel="noreferrer"
                       className="underline underline-offset-4 hover:text-zinc-600"
                     >
-                      CedSJ6iioQUux7FyTQ9BWvKXimh2d3v5LcvU3rjjcZ6J
+                      FHbKGEa9q2h3Pu4adQpyVhSHVAfiPZSFQTk9DNCb6ns9
                     </a>
                   </TableCell>
                 </TableRow>
                 <TableRow>
-                  <TableCell className="text-xs font-medium">Owner Policy Update</TableCell>
-                  <TableCell className="font-mono text-xs">update_policy</TableCell>
+                  <TableCell className="text-xs font-medium">WASM Upgrade &amp; Owner Policy Update</TableCell>
+                  <TableCell className="font-mono text-xs">DeployContract + update_policy</TableCell>
                   <TableCell className="font-mono text-xs">
                     <a
-                      href="https://testnet.nearblocks.io/txns/FJYFVxh3DC8Y1YUsK5iejsFUd8SVfzLo4n7kTXDu1skd"
+                      href="https://testnet.nearblocks.io/txns/AtGgegrK4nGFX7Lksu66zSBvgGoqP8Wr7jAQepfaW3Bf"
                       target="_blank"
                       rel="noreferrer"
                       className="underline underline-offset-4 hover:text-zinc-600"
                     >
-                      FJYFVxh3DC8Y1YUsK5iejsFUd8SVfzLo4n7kTXDu1skd
+                      AtGgegrK4nGFX7Lksu66zSBvgGoqP8Wr7jAQepfaW3Bf
                     </a>
                   </TableCell>
                 </TableRow>
                 <TableRow>
-                  <TableCell className="text-xs font-medium">Leg 1 Base Rescue (domain_id: 0 Secp256k1)</TableCell>
+                  <TableCell className="text-xs font-medium">Scoped FunctionCall Key Provisioning</TableCell>
+                  <TableCell className="font-mono text-xs">runner.intercept-guardrail-373299.testnet (AddKey)</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    <a
+                      href="https://testnet.nearblocks.io/txns/3TFzFZ6vF1uEYBEPtvf8X5PDiWo3VKZojJSMzuiKriVF"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline underline-offset-4 hover:text-zinc-600"
+                    >
+                      3TFzFZ6vF1uEYBEPtvf8X5PDiWo3VKZojJSMzuiKriVF
+                    </a>
+                  </TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="text-xs font-medium">Leg 1 Zero-Deposit FunctionCall Rescue (Secp256k1)</TableCell>
                   <TableCell className="font-mono text-xs">request_rescue_origin_leg → v1.signer-prod.testnet</TableCell>
                   <TableCell className="font-mono text-xs">
                     <a
-                      href="https://testnet.nearblocks.io/txns/8SMLnn6YKav94Xczjfp56WQ7vWzATkq7rJvDwwEHVS2R"
+                      href="https://testnet.nearblocks.io/txns/5GZMVE9fokSqLqNNxZTLZEzeHrBbkQSAfLro5NMeZFJt"
                       target="_blank"
                       rel="noreferrer"
                       className="underline underline-offset-4 hover:text-zinc-600"
                     >
-                      8SMLnn6YKav94Xczjfp56WQ7vWzATkq7rJvDwwEHVS2R
+                      5GZMVE9fokSqLqNNxZTLZEzeHrBbkQSAfLro5NMeZFJt
                     </a>
                   </TableCell>
                 </TableRow>
                 <TableRow>
-                  <TableCell className="text-xs font-medium">Leg 2 Solana Repay (domain_id: 1 Ed25519)</TableCell>
+                  <TableCell className="text-xs font-medium">Leg 2 Zero-Deposit FunctionCall Repay (Ed25519)</TableCell>
                   <TableCell className="font-mono text-xs">request_rescue_destination_leg → v1.signer-prod.testnet</TableCell>
                   <TableCell className="font-mono text-xs">
                     <a
-                      href="https://testnet.nearblocks.io/txns/A97bw66AcyJzyfg3C3cg8vAhmMyDA9wFz7BW2jE2b7Mx"
+                      href="https://testnet.nearblocks.io/txns/9mHD6Qp7tCeaMieWyLTYb7wE3YyHRR3BmtqcdzG2xeFr"
                       target="_blank"
                       rel="noreferrer"
                       className="underline underline-offset-4 hover:text-zinc-600"
                     >
-                      A97bw66AcyJzyfg3C3cg8vAhmMyDA9wFz7BW2jE2b7Mx
+                      9mHD6Qp7tCeaMieWyLTYb7wE3YyHRR3BmtqcdzG2xeFr
+                    </a>
+                  </TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="text-xs font-medium">On-Chain Healthy-Position Block (HF &gt;= Trigger)</TableCell>
+                  <TableCell className="font-mono text-xs">PositionHealthyAboveTrigger Revert</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    <a
+                      href="https://testnet.nearblocks.io/txns/i1YgQ5EMZ78FWUoD8kZFKyqpADY6RNo6kKNYTCKrudJ"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline underline-offset-4 hover:text-zinc-600"
+                    >
+                      i1YgQ5EMZ78FWUoD8kZFKyqpADY6RNo6kKNYTCKrudJ
                     </a>
                   </TableCell>
                 </TableRow>

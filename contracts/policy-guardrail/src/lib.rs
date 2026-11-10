@@ -19,8 +19,28 @@ use tee_receipt::{deserialize_u128_str_or_num, TeeDecisionReceipt};
 /// Default gas attached to `v1.signer::sign` cross-contract call (250 TGas required by NEAR MPC threshold signing)
 pub const MPC_SIGN_GAS: Gas = Gas::from_tgas(250);
 
+/// Default deposit sponsored by the guardrail contract for `v1.signer::sign` when invoked by a
+/// zero-deposit NEAR `FunctionCall` access key (`InvalidAccessKeyError::DepositWithFunctionCall`
+/// forbids `FunctionCall` keys from attaching > 0 yoctoNEAR). `v1.signer` refunds unused deposit
+/// directly back to `predecessor_account_id` (this guardrail contract).
+pub const DEFAULT_MPC_SIGN_DEPOSIT: NearToken = NearToken::from_millinear(50);
+
 /// Gas reserved for the local `on_origin_leg_signed` / `on_destination_leg_signed` callback (30 TGas)
 pub const MPC_CALLBACK_GAS: Gas = Gas::from_tgas(30);
+
+fn resolve_mpc_sign_deposit() -> NearToken {
+    let attached = env::attached_deposit();
+    if attached.as_yoctonear() > 0 {
+        attached
+    } else {
+        assert!(
+            env::account_balance() >= DEFAULT_MPC_SIGN_DEPOSIT,
+            "GUARDRAIL REVERT (MPC DEPOSIT): Contract balance ({} yoctoNEAR) insufficient to sponsor 0.05 NEAR v1.signer deposit for zero-deposit FunctionCall key",
+            env::account_balance().as_yoctonear()
+        );
+        DEFAULT_MPC_SIGN_DEPOSIT
+    }
+}
 
 /// Seconds in a 24-hour rolling spending limit window
 pub const ROLLING_WINDOW_SECONDS: u64 = 86_400;
@@ -482,13 +502,14 @@ impl InterceptPolicyContract {
         );
 
         let sign_args = self.build_origin_leg_sign_args(&verified_evm.signing_hash_keccak256);
+        let mpc_deposit = resolve_mpc_sign_deposit();
 
         Promise::new(self.policy.mpc_signer_contract.clone())
             .function_call(
                 "sign".to_string(),
                 near_sdk::serde_json::to_vec(&sign_args)
                     .expect("Failed to serialize v1.signer args"),
-                env::attached_deposit(),
+                mpc_deposit,
                 MPC_SIGN_GAS,
             )
             .then(
@@ -696,13 +717,14 @@ impl InterceptPolicyContract {
 
         let raw_msg_len = raw_msg.len();
         let sign_args = self.build_destination_leg_sign_args(&raw_msg);
+        let mpc_deposit = resolve_mpc_sign_deposit();
 
         Promise::new(self.policy.mpc_signer_contract.clone())
             .function_call(
                 "sign".to_string(),
                 near_sdk::serde_json::to_vec(&sign_args)
                     .expect("Failed to serialize v1.signer args"),
-                NearToken::from_yoctonear(env::attached_deposit().as_yoctonear()),
+                mpc_deposit,
                 MPC_SIGN_GAS,
             )
             .then(
@@ -788,7 +810,9 @@ impl InterceptPolicyContract {
                 "request_rescue_destination_leg".to_string(),
             ],
             forbidden_admin_methods: vec!["new".to_string(), "update_policy".to_string()],
-            recommended_allowance_near: "0.25".to_string(),
+            // ponytail: 300 TGas cross-contract v1.signer calls reserve ~0.3009 NEAR upfront under NEAR's
+            // pessimistic gas inflation rules before refunding unused gas (~0.25 NEAR fails with NotEnoughAllowance).
+            recommended_allowance_near: "1.00".to_string(),
         }
     }
 
@@ -871,11 +895,12 @@ impl InterceptPolicyContract {
     ) -> VerifiedEvmTransfer {
         let now_sec = env::block_timestamp() / 1_000_000_000;
 
-        // 1. Verify Ed25519 TeeDecisionReceipt signature, regime, timestamp, obligation, and slippage
+        // 1. Verify Ed25519 TeeDecisionReceipt signature, regime, HF threshold, timestamp, obligation, and slippage
         let deposit_address = receipt
             .verify(
                 &self.tee_enclave_pubkey,
                 &self.user_kamino_obligation_pubkey,
+                self.policy.min_trigger_hf_bps,
                 self.policy.max_slippage_bps,
                 now_sec,
                 self.policy.max_receipt_age_sec,

@@ -517,14 +517,8 @@ export default function InterceptDashboardPage() {
             stressShockPct: -Math.abs(dropPct),
             minTriggerHfBpsOverride: policyCfg.minTriggerHfBps,
             userObligationOverride: policyCfg.userKaminoObligationPubkey,
-            maxPerActionUsdcFormattedOverride: `$${policyCfg.maxPerActionUsdc.toLocaleString(
-              "en-US",
-              { minimumFractionDigits: 2, maximumFractionDigits: 2 }
-            )}`,
-            maxDailyUsdcFormattedOverride: `$${policyCfg.maxDailyUsdc.toLocaleString(
-              "en-US",
-              { minimumFractionDigits: 2, maximumFractionDigits: 2 }
-            )}`,
+            maxPerActionUsdcOverride: policyCfg.maxPerActionUsdc,
+            maxDailyUsdcOverride: policyCfg.maxDailyUsdc,
             maxSlippageBpsOverride: policyCfg.maxSlippageBps,
           }),
         });
@@ -1140,7 +1134,16 @@ export default function InterceptDashboardPage() {
                 <div className="flex items-center justify-between text-xs text-muted-foreground tabular-nums pt-2 border-t border-border/60">
                   <span>Per-Rescue Limit</span>
                   <span className="font-mono text-foreground font-medium">
-                    {report?.policy.maxPerActionUsdcFormatted ?? "$2,500.00"}
+                    {report?.policy.maxPerActionUsdcFormatted
+                      ? report.policy.maxPerActionUsdcFormatted.startsWith("$")
+                        ? report.policy.maxPerActionUsdcFormatted
+                        : `$${Number(
+                            report.policy.maxPerActionUsdcFormatted
+                          ).toLocaleString("en-US", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}`
+                      : "$2,500.00"}
                   </span>
                 </div>
               </CardContent>

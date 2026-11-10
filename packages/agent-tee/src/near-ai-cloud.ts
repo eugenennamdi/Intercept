@@ -37,11 +37,31 @@ export interface NearAiCloudAttestationBundle {
   fallbackReason?: string;
 }
 
+const ED25519_SPKI_DER_PREFIX = Buffer.from(
+  "302a300506032b6570032100",
+  "hex"
+);
+
+function ed25519PublicKeyFromSigningAddress(
+  signingAddress: string
+): crypto.KeyObject | null {
+  const clean = signingAddress
+    .replace(/^ed25519:/i, "")
+    .replace(/^0x/i, "")
+    .trim();
+  if (!/^[0-9a-f]{64}$/i.test(clean)) return null;
+  return crypto.createPublicKey({
+    key: Buffer.concat([ED25519_SPKI_DER_PREFIX, Buffer.from(clean, "hex")]),
+    format: "der",
+    type: "spki",
+  });
+}
+
 /**
  * Verifies the complete NEAR AI Cloud chain of trust (`hardware attestation -> signing_address -> chat signature`):
  * 1. `attestationNonceHex` is a 64-character hex string (32 bytes) bound into both Intel TDX `report_data` and NVIDIA NRAS `eat_nonce`.
- * 2. `signedText` strictly equals `${model}:${requestHashHex}:${responseHashHex}` (or `${requestHashHex}:${responseHashHex}` for gateway).
- * 3. For `ed25519`, verifies `signatureHex` over `signedText` using `signingAddress` (32-byte Ed25519 public key).
+ * 2. `signedText` strictly matches `signatureKind`: `${model}:${requestHashHex}:${responseHashHex}` (`provider_tee`) or `${requestHashHex}:${responseHashHex}` (`gateway`).
+ * 3. For `ed25519`, cryptographically verifies `signatureHex` over UTF-8 `signedText` against `enclavePublicKeyObject` or `signingAddress`.
  */
 export function verifyNearAiCloudAttestationBundle(
   bundle: NearAiCloudAttestationBundle,
@@ -63,31 +83,39 @@ export function verifyNearAiCloudAttestationBundle(
         "GPU-CPU binding mismatch: NVIDIA NRAS eat_nonce does not match Intel TDX attestation nonce",
     };
   }
-  const expectedProviderText = `${bundle.model}:${bundle.requestHashHex}:${bundle.responseHashHex}`;
-  const expectedGatewayText = `${bundle.requestHashHex}:${bundle.responseHashHex}`;
-  if (
-    bundle.signedText !== expectedProviderText &&
-    bundle.signedText !== expectedGatewayText
-  ) {
+  const expectedText =
+    bundle.signatureKind === "gateway"
+      ? `${bundle.requestHashHex}:${bundle.responseHashHex}`
+      : `${bundle.model}:${bundle.requestHashHex}:${bundle.responseHashHex}`;
+  if (bundle.signedText !== expectedText) {
     return {
       valid: false,
-      reason: `Signed text mismatch: expected ${expectedProviderText}, got ${bundle.signedText}`,
+      reason: `Signed text mismatch for ${bundle.signatureKind}: expected ${expectedText}, got ${bundle.signedText}`,
     };
   }
 
-  if (bundle.signingAlgo === "ed25519" && enclavePublicKeyObject) {
-    const sigBytes = Buffer.from(normalizeHex(bundle.signatureHex), "hex");
-    if (sigBytes.length !== 64) {
+  if (bundle.signingAlgo === "ed25519") {
+    const pubKey =
+      enclavePublicKeyObject ??
+      ed25519PublicKeyFromSigningAddress(bundle.signingAddress);
+    if (!pubKey) {
       return {
         valid: false,
-        reason: `Invalid Ed25519 signature length: ${sigBytes.length}`,
+        reason: `Invalid Ed25519 signing_address: ${bundle.signingAddress}`,
+      };
+    }
+    const sigHexNorm = normalizeHex(bundle.signatureHex);
+    if (!/^[0-9a-f]{128}$/i.test(sigHexNorm)) {
+      return {
+        valid: false,
+        reason: `Invalid Ed25519 signature hex length: ${sigHexNorm.length}`,
       };
     }
     const ok = crypto.verify(
       null,
       Buffer.from(bundle.signedText, "utf8"),
-      enclavePublicKeyObject,
-      sigBytes
+      pubKey,
+      Buffer.from(sigHexNorm, "hex")
     );
     if (!ok) {
       return {
@@ -96,6 +124,11 @@ export function verifyNearAiCloudAttestationBundle(
           "Ed25519 chat signature verification failed against TEE signing_address",
       };
     }
+  } else {
+    return {
+      valid: false,
+      reason: `Unsupported signingAlgo: ${bundle.signingAlgo}`,
+    };
   }
 
   return { valid: true };
@@ -128,12 +161,8 @@ export async function executeNearAiCloudVerifiableInference(params: {
   } = params;
 
   const t0 = performance.now();
-  const attestationNonceHex = crypto
-    .createHash("sha256")
-    .update(
-      `NEAR_AI_CLOUD_NONCE:${obligationPubkey}:${riskEvaluation.reasoningHash}`
-    )
-    .digest("hex");
+  // Fresh cryptographic 32-byte random nonce per request (zero server-side state retained after return)
+  const attestationNonceHex = crypto.randomBytes(32).toString("hex");
 
   const requestPayload = {
     model,
@@ -170,19 +199,21 @@ export async function executeNearAiCloudVerifiableInference(params: {
 
   if (apiKey && apiKey.trim().length > 0) {
     try {
-      const headers = {
+      const headers: Record<string, string> = {
         Accept: "application/json",
+        "Accept-Encoding": "identity",
         "Content-Type": "application/json",
+        "x-no-aliasing": "true",
         Authorization: `Bearer ${apiKey.trim()}`,
       };
 
-      // Step 1: Fetch model hardware attestation report (`GET /v1/attestation/report`)
+      // Step 1: Fetch preflight hardware attestation report with fresh 32-byte nonce (`GET /v1/attestation/report`)
       const attestRes = await fetch(
-        `${baseUrl}/attestation/report?model=${encodeURIComponent(model)}&signing_algo=ed25519&nonce=${attestationNonceHex}`,
+        `${baseUrl}/attestation/report?model=${encodeURIComponent(model)}&provider=near&signing_algo=ed25519&nonce=${attestationNonceHex}`,
         { headers, signal: AbortSignal.timeout(timeoutMs) }
       );
 
-      // Step 2: Execute confidential inference (`POST /v1/chat/completions`)
+      // Step 2: Execute stateless confidential inference (`POST /v1/chat/completions`) retaining exact raw bytes
       const chatRes = await fetch(`${baseUrl}/chat/completions`, {
         method: "POST",
         headers,
@@ -192,6 +223,10 @@ export async function executeNearAiCloudVerifiableInference(params: {
 
       if (attestRes.ok && chatRes.ok) {
         const attestJson = (await attestRes.json()) as {
+          gateway_attestation?: {
+            signing_address?: string;
+            intel_quote?: string;
+          };
           model_attestations?: Array<{
             signing_address?: string;
             nvidia_payload?: string;
@@ -206,52 +241,90 @@ export async function executeNearAiCloudVerifiableInference(params: {
         const chatParsed = JSON.parse(exactResponseBodyStr) as { id?: string };
         const chatId = chatParsed.id ?? `chatcmpl-${requestHashHex.slice(0, 16)}`;
 
-        // Step 3: Fetch chat signature (`GET /v1/signature/{chat_id}`)
+        // Step 3: Fetch chat signature (`GET /v1/signature/{chat_id}?signing_algo=ed25519`) and verify cryptographically
         const sigRes = await fetch(
           `${baseUrl}/signature/${encodeURIComponent(chatId)}?model=${encodeURIComponent(model)}&signing_algo=ed25519`,
           { headers, signal: AbortSignal.timeout(timeoutMs) }
         );
         if (sigRes.ok) {
           const sigJson = (await sigRes.json()) as {
+            error_code?: string;
             text?: string;
             signature?: string;
             signing_address?: string;
             signature_kind?: "provider_tee" | "gateway";
           };
-          const firstAttest = attestJson.model_attestations?.[0];
-          const signingAddress =
-            sigJson.signing_address ??
-            firstAttest?.signing_address ??
-            `0x${enclaveKeypair.publicKeyHex}`;
-          const signedText =
-            sigJson.text ?? `${model}:${requestHashHex}:${responseHashHex}`;
-          const signatureHex = sigJson.signature ?? "";
+          if (
+            sigJson.error_code ||
+            !sigJson.signature ||
+            !sigJson.signing_address ||
+            !sigJson.text ||
+            (sigJson.signature_kind !== "provider_tee" &&
+              sigJson.signature_kind !== "gateway")
+          ) {
+            throw new Error(
+              `NEAR AI Cloud signature unavailable (${sigJson.error_code ?? "missing_fields"})`
+            );
+          }
 
-          return {
+          const normSigner = sigJson.signing_address
+            .replace(/^ed25519:/i, "")
+            .replace(/^0x/i, "")
+            .toLowerCase();
+          const preflightCandidates =
+            sigJson.signature_kind === "gateway"
+              ? attestJson.gateway_attestation
+                ? [attestJson.gateway_attestation]
+                : []
+              : attestJson.model_attestations ?? [];
+          const matchedAttest = preflightCandidates.find(
+            (c) =>
+              c.signing_address &&
+              c.signing_address
+                .replace(/^ed25519:/i, "")
+                .replace(/^0x/i, "")
+                .toLowerCase() === normSigner
+          );
+          if (!matchedAttest) {
+            throw new Error(
+              `NEAR AI Cloud ${sigJson.signature_kind} signing_address did not match preflight attestation report`
+            );
+          }
+
+          const liveBundle: NearAiCloudAttestationBundle = {
             source: "NEAR_AI_CLOUD_LIVE_TEE",
             baseUrl,
             model,
             chatId,
             attestationNonceHex,
             signingAlgo: "ed25519",
-            signingAddress,
+            signingAddress: sigJson.signing_address,
             requestHashHex,
             responseHashHex,
-            signedText,
-            signatureHex,
-            signatureKind: sigJson.signature_kind ?? "provider_tee",
+            signedText: sigJson.text,
+            signatureHex: sigJson.signature,
+            signatureKind: sigJson.signature_kind,
             hardwareAttestation: {
               intelTdxQuoteCommitmentHex: crypto
                 .createHash("sha256")
-                .update(firstAttest?.intel_quote ?? signingAddress)
+                .update(matchedAttest.intel_quote ?? sigJson.signing_address)
                 .digest("hex"),
               nvidiaNrasEatNonceHex: attestationNonceHex,
-              gpuArchitecture: "NVIDIA H100/H200 Confidential Compute + Intel TDX",
+              gpuArchitecture:
+                "NVIDIA H100/H200 Confidential Compute + Intel TDX",
               tdxReportDataBindsKeyAndNonce: true,
             },
-            verifiedChainOfTrust: true,
+            verifiedChainOfTrust: false,
             latencyMs: Math.max(1, Math.round(performance.now() - t0)),
           };
+          const liveCheck = verifyNearAiCloudAttestationBundle(liveBundle);
+          if (!liveCheck.valid) {
+            throw new Error(
+              `Live NEAR AI Cloud signature verification failed: ${liveCheck.reason}`
+            );
+          }
+          liveBundle.verifiedChainOfTrust = true;
+          return liveBundle;
         }
       }
     } catch (err) {

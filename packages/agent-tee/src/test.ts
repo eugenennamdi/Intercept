@@ -468,6 +468,25 @@ test("Multi-instruction Kamino refresh+repay passes, sneaking withdraw after ref
   );
   assert.equal(validBundleCheck.valid, true);
 
+  // Verify live-mode signature verification directly from `signingAddress` (no pre-supplied KeyObject)
+  const derivedSigningAddrCheck = verifyNearAiCloudAttestationBundle(
+    stressReport.nearAiCloudAttestation
+  );
+  assert.equal(derivedSigningAddrCheck.valid, true);
+  assert.equal(
+    /^[0-9a-f]{64}$/.test(
+      stressReport.nearAiCloudAttestation.attestationNonceHex
+    ),
+    true
+  );
+
+  // Tamper with Ed25519 signatureHex -> must fail live signingAddress verification
+  const tamperedSigCheck = verifyNearAiCloudAttestationBundle({
+    ...stressReport.nearAiCloudAttestation,
+    signatureHex: "00".repeat(64),
+  });
+  assert.equal(tamperedSigCheck.valid, false);
+
   // Tamper with NVIDIA NRAS eat_nonce -> must fail GPU-CPU binding check
   const tamperedNonceCheck = verifyNearAiCloudAttestationBundle(
     {
@@ -480,6 +499,22 @@ test("Multi-instruction Kamino refresh+repay passes, sneaking withdraw after ref
     enclave.publicKeyObject
   );
   assert.equal(tamperedNonceCheck.valid, false);
+
+  // Verify customPolicy spending-cap override clamps riskEvaluation & Leg 1/2 payloads (e.g. $2.00 Micro Test)
+  const microCappedReport = await executeInterceptRescuePipeline({
+    mode: "STRESS_TEST_MAINNET_MODE",
+    stressShockPct: -25,
+    customPolicy: {
+      maxPerActionUsdcMicro: 2_000_000n,
+      maxDailyUsdcMicro: 10_000_000n,
+    },
+  });
+  assert.equal(microCappedReport.riskEvaluation.repayAmountUsdcMicro, 2_000_000n);
+  assert.equal(microCappedReport.policy.maxPerActionUsdcFormatted, "2.00");
+  assert.equal(
+    String(microCappedReport.teeReceipt?.receipt.repay_amount_usdc),
+    "2000000"
+  );
 
   // 8. Verify 1-Click safety abort when dryRun=false and API fails (never synthesize a fake depositAddress for live broadcasts)
   await assert.rejects(
