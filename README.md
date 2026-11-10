@@ -5,7 +5,8 @@
 - **License:** [MIT License](file:///Users/apple/Desktop/Intercept/LICENSE)
 - **Live Production App (Zero-Install Command Center):** https://intercept-inky.vercel.app
 - **Technical Documentation Portal:** https://intercept-inky.vercel.app/docs
-- **NEAR Ecosystem Technologies Used:** NEAR Intents (`1-Click Swap API` `/v0/tokens`, `/v0/quote`, `/v0/deposit/submit`, `/v0/status`), NEAR Chain Signatures (`v1.signer` `domain_id: 0` Secp256k1 & `domain_id: 1` Ed25519), NEAR AI Cloud (`https://cloud-api.near.ai/v1` Intel TDX + NVIDIA NRAS Hardware Attestation & Signed Chat Verification), Scoped NEAR Function Call Keys (`AccessKeyPermission::FunctionCall`), `near-sdk-rs` v5.x Byte-Level Policy Guardrails with NEP-297 Structured Events.
+- **Live Deployed NEAR Policy Guardrail Contract (`near-sdk-rs`):** [`intercept-guardrail-731008.testnet`](https://testnet.nearblocks.io/address/intercept-guardrail-731008.testnet) (wired to `v1.signer-prod.testnet`)
+- **NEAR Ecosystem Technologies Used:** NEAR Intents (`1-Click Swap API` `/v0/tokens`, `/v0/quote`, `/v0/deposit/submit`, `/v0/status`), NEAR Chain Signatures (`v1.signer` / `v1.signer-prod.testnet` `domain_id: 0` Secp256k1 & `domain_id: 1` Ed25519), NEAR AI Cloud (`https://cloud-api.near.ai/v1` Intel TDX + NVIDIA NRAS Hardware Attestation & Signed Chat Verification), Scoped NEAR Function Call Keys (`AccessKeyPermission::FunctionCall`), `near-sdk-rs` v5.x Byte-Level Policy Guardrails with NEP-297 Structured Events.
 
 ---
 
@@ -24,9 +25,21 @@ Existing automated protection bots force an unacceptable security trade-off:
 
 ---
 
-## 2. Deterministic Security & Mainnet Verification
+## 2. Deterministic Security & On-Chain Verification
 
-Every architectural guarantee in this repository is verifiable locally in under 60 seconds with zero secret keys required.
+### Live On-Chain NEAR Testnet Deployment & Cross-Contract MPC Execution Receipts
+
+The `intercept-policy-guardrail` Rust smart contract (`254 KB` optimized WASM) is deployed live on **NEAR Testnet** at [`intercept-guardrail-731008.testnet`](https://testnet.nearblocks.io/address/intercept-guardrail-731008.testnet) and verified end-to-end against the live **`v1.signer-prod.testnet`** Chain Signatures MPC network:
+
+| Step | On-Chain Action | Transaction Hash / Explorer Link | Verified On-Chain Outcome |
+| :--- | :--- | :--- | :--- |
+| **1. Contract Deploy & Init** | `DeployContract` + `new(policy)` | [`CedSJ6iioQUux7FyTQ9BWvKXimh2d3v5LcvU3rjjcZ6J`](https://testnet.nearblocks.io/txns/CedSJ6iioQUux7FyTQ9BWvKXimh2d3v5LcvU3rjjcZ6J) / [`FgNJTBz3t5KxU9PHGxt9TApLJGAWtJ8Z85RB1JJ5esfx`](https://testnet.nearblocks.io/txns/FgNJTBz3t5KxU9PHGxt9TApLJGAWtJ8Z85RB1JJ5esfx) | Contract deployed & initialized (`EVENT_JSON: policy_initialized`) |
+| **2. User Policy Update** | `update_policy(new_policy)` | [`FJYFVxh3DC8Y1YUsK5iejsFUd8SVfzLo4n7kTXDu1skd`](https://testnet.nearblocks.io/txns/FJYFVxh3DC8Y1YUsK5iejsFUd8SVfzLo4n7kTXDu1skd) | Owner-restricted policy update (`EVENT_JSON: policy_updated`) |
+| **3. Leg 1 Base EVM Rescue** | `request_rescue_origin_leg` -> `v1.signer-prod.testnet::sign` (`domain_id: 0` Secp256k1) | [`8SMLnn6YKav94Xczjfp56WQ7vWzATkq7rJvDwwEHVS2R`](https://testnet.nearblocks.io/txns/8SMLnn6YKav94Xczjfp56WQ7vWzATkq7rJvDwwEHVS2R) | Ed25519 TEE receipt + EIP-1559 Base USDC bytes verified; MPC Secp256k1 signature returned (`big_r: 020c06fe...`, `s: 329f00d8...`, `recovery_id: 0`); state transitioned `InFlightLeg1 -> ReadyForLeg2` |
+| **4. Leg 2 Solana Kamino Repay** | `request_rescue_destination_leg` -> `v1.signer-prod.testnet::sign` (`domain_id: 1` Ed25519) | [`A97bw66AcyJzyfg3C3cg8vAhmMyDA9wFz7BW2jE2b7Mx`](https://testnet.nearblocks.io/txns/A97bw66AcyJzyfg3C3cg8vAhmMyDA9wFz7BW2jE2b7Mx) | 539-byte 5-instruction Solana `V0` Kamino `repay_obligation_liquidity_v2` message verified; MPC Ed25519 signature returned (`2b6e1025...`); state transitioned `InFlightLeg2 -> Completed` |
+| **5. Async TOCTOU Rollback Proof** | `on_origin_leg_signed` failure rollback | [`GnXXpAsFo6w9c77SjkK8VNYvY3uAwY49rPdFPbnzhvkk`](https://testnet.nearblocks.io/txns/GnXXpAsFo6w9c77SjkK8VNYvY3uAwY49rPdFPbnzhvkk) | Proves non-panicking callback state rollback (`EVENT_JSON: rescue_origin_leg_rolled_back`) refunding `rolling_24h_spent_usdc` on downstream failure |
+
+Every architectural guarantee in this repository is also verifiable locally in under 60 seconds with zero secret keys required.
 
 ### Step A: Verify the Rust Smart Contract & Adversarial Unit Tests (`contracts/policy-guardrail`)
 

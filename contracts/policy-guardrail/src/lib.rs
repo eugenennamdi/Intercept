@@ -154,9 +154,13 @@ pub enum SignPayloadV2 {
 }
 
 /// Payload format for NEAR Chain Signatures `v1.signer::sign`
+/// Note: `v1.signer` enforces that `payload` (legacy v1) and `payload_v2` (multi-domain v2)
+/// are mutually exclusive in JSON serialization; `payload` is retained in-memory for local inspection
+/// and skipped during JSON serialization so `v1.signer` receives `payload_v2`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(crate = "near_sdk::serde")]
 pub struct ChainSignatureSignRequest {
+    #[serde(skip_serializing, default)]
     pub payload: Vec<u8>,
     pub payload_v2: SignPayloadV2,
     pub path: String,
