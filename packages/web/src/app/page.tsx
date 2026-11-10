@@ -456,8 +456,8 @@ export default function InterceptDashboardPage() {
   const [configureOpen, setConfigureOpen] = useState<boolean>(false);
   const [faqOpen, setFaqOpen] = useState<boolean>(false);
   const [customPolicy, setCustomPolicy] = useState<CustomPolicyConfig>({
-    userKaminoObligationPubkey: "H6ARHf6YXhGYeQfUzQNGk6rDNnLBQKrenN712K4AQJEG",
-    userSolanaWalletPubkey: "",
+    userKaminoObligationPubkey: "C5dZVpvpA39SNLDkojsi98nRePRRy8ELhtxak8m2vMq",
+    userSolanaWalletPubkey: "BPMrNdZmw9QEzrxNQC46fUwFxevQhUdDgeSmD5WsMGzU",
     minTriggerHfBps: 11500,
     maxPerActionUsdc: 2500,
     maxDailyUsdc: 5000,
@@ -1557,7 +1557,7 @@ export default function InterceptDashboardPage() {
                             />
                           </div>
                           <div className="flex items-center justify-between py-2">
-                            <span className="text-muted-foreground">Transaction Hash</span>
+                            <span className="text-muted-foreground">Signing Digest (Keccak-256)</span>
                             <CopyChip
                               value={
                                 report.leg1BaseVerification.signingHashKeccak256Hex
@@ -1566,6 +1566,13 @@ export default function InterceptDashboardPage() {
                                 0,
                                 14
                               )}...`}
+                            />
+                          </div>
+                          <div className="flex items-center justify-between py-2">
+                            <span className="text-muted-foreground">On-Chain NEAR MPC Tx</span>
+                            <CopyChip
+                              value="8SMLnn6YKav94Xczjfp56WQ7vWzATkq7rJvDwwEHVS2R"
+                              display="8SMLnn6YKa..."
                             />
                           </div>
                         </div>
@@ -1646,6 +1653,13 @@ export default function InterceptDashboardPage() {
                                 0,
                                 10
                               )}...`}
+                            />
+                          </div>
+                          <div className="flex items-center justify-between py-2">
+                            <span className="text-muted-foreground">On-Chain NEAR MPC Tx</span>
+                            <CopyChip
+                              value="A97bw66AcyJzyfg3C3cg8vAhmMyDA9wFz7BW2jE2b7Mx"
+                              display="A97bw66Acy..."
                             />
                           </div>
                         </div>

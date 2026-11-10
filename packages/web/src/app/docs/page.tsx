@@ -696,7 +696,7 @@ export default function InterceptDocsPage() {
 
             <CodeBlock
               title="3. Configure Policy On-Chain (update_policy)"
-              code={`near contract call-function as-transaction guardrail.intercept-defi.near update_policy json-args '{"user_kamino_obligation_pubkey":"H6ARHf6YXhGYeQfUzQNGk6rDNnLBQKrenN712K4AQJEG","min_trigger_hf_bps":11500,"max_single_rescue_usdc":"2500000000","max_daily_rescue_usdc":"5000000000","max_slippage_bps":50}' prepaid-gas '30.0 Tgas' attached-deposit '0 NEAR' sign-as <YOUR_ACCOUNT.near> network-config mainnet sign-with-keychain send`}
+              code={`near contract call-function as-transaction intercept-guardrail-731008.testnet update_policy json-args '{"user_kamino_obligation_pubkey":"C5dZVpvpA39SNLDkojsi98nRePRRy8ELhtxak8m2vMq","min_trigger_hf_bps":11500,"max_single_rescue_usdc":"2500000000","max_daily_rescue_usdc":"5000000000","max_slippage_bps":50}' prepaid-gas '30.0 Tgas' attached-deposit '0 NEAR' sign-as <YOUR_ACCOUNT.near> network-config testnet sign-with-keychain send`}
             />
           </section>
         </main>

@@ -421,7 +421,7 @@ export function ConfigurePolicyModal({
   const handleApplyLive = () => {
     onApplyConfig({
       userKaminoObligationPubkey:
-        obligation.trim() || "H6ARHf6YXhGYeQfUzQNGk6rDNnLBQKrenN712K4AQJEG",
+        obligation.trim() || "C5dZVpvpA39SNLDkojsi98nRePRRy8ELhtxak8m2vMq",
       userSolanaWalletPubkey: solanaWallet.trim(),
       minTriggerHfBps,
       maxPerActionUsdc: maxPerAction,
@@ -508,7 +508,7 @@ export function ConfigurePolicyModal({
               variant="secondary"
               size="sm"
               onClick={() =>
-                setObligation("H6ARHf6YXhGYeQfUzQNGk6rDNnLBQKrenN712K4AQJEG")
+                setObligation("C5dZVpvpA39SNLDkojsi98nRePRRy8ELhtxak8m2vMq")
               }
             >
               Mainnet Preset
