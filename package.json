@@ -2,7 +2,7 @@
   "name": "intercept-monorepo",
   "version": "1.0.0",
   "private": true,
-  "description": "Intercept: Zero-trust cross-chain Kamino liquidation defense powered by NEAR AI Cloud (TEE), NEAR Policy Guardrail Contracts, NEAR Chain Signatures (v1.signer), and NEAR Intents (1-Click Swap API)",
+  "description": "Non-custodial cross-chain liquidation defense for DeFi borrowers, built on NEAR Intents, Chain Signatures, and Confidential AI.",
   "workspaces": [
     "packages/agent-tee",
     "packages/web"

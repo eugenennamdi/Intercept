@@ -139,46 +139,46 @@ export function WalkthroughModal({
     {
       index: "01",
       shortLabel: "Keep Self-Custody",
-      title: "Keep Full Self-Custody of Your Solana Position",
+      title: "Keep Full Self-Custody of Your Solana Collateral",
       summary:
-        "Your SOL collateral and USDC loan stay inside your personal Solana wallet at all times.",
+        "Your SOL collateral and Kamino obligation remain inside your personal Solana wallet at all times.",
       whatYouDo:
-        "You only provide your public Solana address or Kamino position address. Because Kamino Lend allows any authorized third party to pay down a loan's debt without granting withdrawal access, Intercept never asks for your private key or permission to touch your collateral.",
+        "Register only your public Solana wallet or Kamino obligation address. Because Kamino Lend natively permits third-party debt repayment without granting withdrawal or borrowing authority, Intercept never requests your private key or collateral delegation.",
       guarantee:
-        "Neither Intercept nor any automated agent can ever withdraw your SOL collateral.",
+        "Neither Intercept nor any off-chain agent can ever withdraw your SOL collateral or draw additional debt.",
     },
     {
       index: "02",
-      shortLabel: "Set Protection Rules",
-      title: "Set Your Protection Rules & Spending Caps",
+      shortLabel: "Lock NEAR Policy",
+      title: "Define Your Trigger & Spending Caps on NEAR",
       summary:
-        "You define strict rules that control exactly when a rescue triggers and the maximum USDC that can be spent.",
+        "An on-chain NEAR smart contract enforces exactly when a rescue can execute and the maximum USDC that can move.",
       whatYouDo:
-        "You choose four settings: (1) the Kamino position to protect, (2) the Health Factor threshold that triggers a rescue (default 1.15x), (3) your maximum USDC limit per rescue, and (4) your maximum daily USDC limit.",
+        "Configure four parameters: (1) your pinned Kamino obligation address, (2) your minimum Health Factor trigger (default 1.15x), (3) your per-rescue USDC limit, and (4) your rolling 24-hour USDC cap.",
       guarantee:
-        "Only you control these limits; the automated risk engine cannot override or raise them.",
+        "Only the policy owner can modify these bounds; the off-chain risk engine holds zero administrative permissions.",
     },
     {
       index: "03",
-      shortLabel: "Hold Reserve on Base",
-      title: "Hold Idle Reserve USDC on Base",
+      shortLabel: "Hold Base Reserve",
+      title: "Hold Productive Standby USDC on Base",
       summary:
-        "A dedicated Base reserve vault holds your standby USDC until a market crash occurs.",
+        "A keyless NEAR Chain Signatures vault on Base holds your standby USDC until volatility breaches your threshold.",
       whatYouDo:
-        "You fund your Base reserve vault with USDC. As long as your Kamino Health Factor stays safely above your trigger threshold (e.g. 1.15x), 100% of your USDC remains untouched on Base.",
+        "Fund your derived Base USDC Reserve Vault. As long as your Kamino Health Factor remains at or above your trigger (e.g. 1.15x), 100% of your Base USDC stays untouched.",
       guarantee:
-        "Reserve funds are locked by on-chain rules to only pay down your specific Kamino loan.",
+        "The NEAR guardrail contract rejects any signing request when your Health Factor is healthy above your trigger.",
     },
     {
       index: "04",
-      shortLabel: "Automatic Rescue",
-      title: "Automatic Cross-Chain Rescue During a Crash",
+      shortLabel: "Automated Rescue",
+      title: "Sub-2s Cross-Chain Settlement via NEAR Intents",
       summary:
-        "When a SOL price drop pushes your Health Factor below your threshold, Intercept bridges USDC from Base and repays your Solana debt in ~1.8 seconds.",
+        "When a SOL drawdown pushes your Health Factor below your threshold, NEAR bridges Base USDC and repays your Solana debt automatically.",
       whatYouDo:
-        "Nothing manually — the risk engine measures the severity of the market drop, calculates the exact USDC repayment needed to restore a safe buffer (1.20x for mild dips or 1.45x for severe cascades), and settles the repayment automatically.",
+        "Nothing manually—NEAR AI Cloud evaluates live Pyth volatility in a hardware enclave, sizes the exact repayment needed (1.20x for calm pullbacks or 1.45x for severe cascades), and settles via NEAR Intents 1-Click.",
       guarantee:
-        "Every transaction is verified on-chain against your spending limits and destination address before execution.",
+        "Every raw EIP-1559 and Solana V0 payload is byte-verified on NEAR before v1.signer issues an MPC signature.",
     },
   ];
 
@@ -189,7 +189,7 @@ export function WalkthroughModal({
       open={open}
       onClose={onClose}
       title="How Intercept Works"
-      subtitle="A 4-step overview of how your position is protected without giving up custody."
+      subtitle="Protect your Solana Kamino collateral from 5%–10% liquidation penalties using standby Base USDC and NEAR."
       maxWidth="max-w-2xl"
     >
       {/* Step Selector Pills */}
@@ -440,15 +440,15 @@ export function ConfigurePolicyModal({
       open={open}
       onClose={onClose}
       title="Configure Protection Policy"
-      subtitle="Link your Solana position, choose your rescue thresholds, and set your USDC spending limits."
+      subtitle="Register your public Kamino obligation, set your Health Factor trigger, and enforce on-chain USDC spending caps."
       maxWidth="max-w-2xl"
     >
       {/* Clear Context Banner Explaining What Proceeding Does */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-lg border border-border bg-secondary/60 px-3.5 py-2.5 text-xs">
         <span className="text-muted-foreground">
-          <strong className="text-foreground">Non-Custodial:</strong> Linking a
-          position only registers public addresses and safety thresholds. No
-          private keys are shared.
+          <strong className="text-foreground">Non-Custodial on NEAR:</strong>{" "}
+          Linking a position registers only public addresses and smart contract
+          spending rules—zero private keys are shared.
         </span>
         <button
           type="button"
@@ -571,8 +571,8 @@ export function ConfigurePolicyModal({
               onChange={(e) => setMaxPerAction(Number(e.target.value))}
               className="w-full rounded-md border border-border bg-secondary/40 px-2.5 py-1.5 font-mono text-xs text-foreground"
             >
-              <option value={2}>$2.00 USDC (Micro Test)</option>
-              <option value={10}>$10.00 USDC (Small Test)</option>
+              <option value={2}>$2.00 USDC</option>
+              <option value={10}>$10.00 USDC</option>
               <option value={500}>$500.00 USDC</option>
               <option value={2500}>$2,500.00 USDC (Default)</option>
               <option value={10000}>$10,000.00 USDC</option>
@@ -671,7 +671,11 @@ export function ConfigurePolicyModal({
               </div>
             </div>
             <a
-              href={`https://nearblocks.io/address/${nearContractId}`}
+              href={`https://${
+                nearContractId.endsWith(".testnet")
+                  ? "testnet.nearblocks.io"
+                  : "nearblocks.io"
+              }/address/${nearContractId}`}
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center gap-1 font-medium text-zinc-900 hover:underline"
@@ -720,27 +724,27 @@ export function FaqModal({
   const faqs = [
     {
       q: "Do I ever share my Solana private key or grant collateral withdrawal permissions?",
-      a: "Never. Your Solana wallet holds your SOL collateral and USDC loan in complete self-custody. Kamino Lend natively allows any third-party account to pay down a loan's debt without granting any permission to withdraw collateral or borrow additional funds.",
+      a: "Never. Your personal Solana wallet retains full self-custody of your SOL collateral and Kamino obligation. Kamino Lend natively permits third-party debt repayment (repay_obligation_liquidity_v2) without granting authority to withdraw collateral or borrow additional liquidity.",
     },
     {
-      q: "What happens if the automated risk engine makes a bad decision or is compromised?",
-      a: "Your funds remain protected by strict on-chain rules. Before any transaction is signed, the smart contract independently checks the destination address, token amount, and network fees. Any attempt to send funds to an unauthorized address, exceed your spending cap, or withdraw collateral is automatically rejected.",
+      q: "What happens if the off-chain AI engine hallucinates or is compromised?",
+      a: "User funds remain protected by deterministic Rust smart contract guardrails on NEAR. Before NEAR Chain Signatures (v1.signer) signs any payload, the contract byte-parses the raw Base EIP-1559 RLP bytes and Solana V0 message bytes—immediately rejecting unauthorized recipients, ERC-20 approvals, excessive gas fees, spending-cap breaches, or collateral withdrawal instructions.",
     },
     {
-      q: "How do I set up protection for my Kamino position?",
-      a: "Click 'Configure Protection Policy' on the dashboard. Connect your wallet (read-only) or paste your Kamino position address, choose your minimum Health Factor trigger (such as 1.15x) and USDC spending limits, and click 'Save Protection Policy'.",
+      q: "Why is Intercept built on NEAR Protocol?",
+      a: "NEAR uniquely unifies all four primitives required for trustless cross-chain risk defense in one stack: NEAR AI Cloud for hardware-attested confidential inference, near-sdk-rs smart contracts for deterministic byte-level policy enforcement, Chain Signatures (v1.signer) for keyless multi-curve signing across Base (Secp256k1) and Solana (Ed25519), and NEAR Intents 1-Click for sub-2s cross-chain USDC settlement.",
     },
     {
-      q: "Why use an adaptive risk engine instead of a fixed repayment bot?",
-      a: "Fixed bots fail in one of two ways: a bot that always tops up your Health Factor to 1.20x can still get liquidated during a sharp multi-candle crash, while a bot that always repays to 1.45x locks up 73.9% more USDC than needed during minor pullbacks. Intercept measures real-time market volatility to choose the right buffer automatically.",
+      q: "Why use a volatility-aware risk engine instead of a fixed threshold bot?",
+      a: "Fixed threshold scripts fail DeFi borrowers in two ways: a static 1.20x top-up bot leaves too thin a buffer and gets liquidated during sharp multi-candle cascades, while a static 1.45x bot deploys 73.9% more Base USDC than necessary during calm pullbacks. Intercept evaluates real-time Pyth volatility, confidence spread, and EMA velocity to select the optimal buffer automatically.",
     },
     {
-      q: "How does Intercept move USDC from Base to Solana without a centralized custodian?",
-      a: "Intercept uses decentralized multi-party computation (MPC) accounts bound to your on-chain policy rules. When your Health Factor drops below your threshold, the Base reserve vault bridges the exact required USDC to Solana and immediately pays down your Kamino loan.",
+      q: "How do I configure protection for my Kamino position?",
+      a: "Click 'Configure Protection Policy' on the dashboard, connect Phantom or Solflare in read-only mode (or paste your Kamino obligation address), set your Health Factor trigger and USDC spending caps, and save your policy. When ready for live coverage, fund your derived Base USDC Reserve Vault.",
     },
     {
-      q: "What is the minimum amount needed to test a live rescue on Mainnet?",
-      a: "As little as $1.00 to $2.00 USDC on Base. Network transaction fees on Base and Solana cost less than $0.01 combined, and you can also simulate any market crash on the dashboard for free before funding a reserve.",
+      q: "What is the minimum reserve needed to verify live cross-chain settlement?",
+      a: "As little as $2.00 USDC on Base. Combined L2 and Solana network fees cost less than $0.01 per rescue, and you can stress-test any SOL drawdown scenario on the dashboard before funding your vault.",
     },
   ];
 
@@ -749,7 +753,7 @@ export function FaqModal({
       open={open}
       onClose={onClose}
       title="Frequently Asked Questions"
-      subtitle="Clear answers on custody, security limits, and how cross-chain protection works."
+      subtitle="Clear answers on self-custody, NEAR smart contract guardrails, and cross-chain debt protection."
       maxWidth="max-w-2xl"
     >
       <div className="divide-y divide-border rounded-xl border border-border overflow-hidden">

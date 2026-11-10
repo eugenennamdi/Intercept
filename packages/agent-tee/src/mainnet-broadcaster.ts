@@ -904,24 +904,24 @@ export async function runMainnetPreflightCheck(options?: {
       detail: `recentBlockhash=${solanaState.recentBlockhashBase58.slice(0, 16)}..., SOL=${solanaState.solBalanceFormatted}, USDC=${solanaState.usdcBalanceFormatted} (${solanaState.latencyMs} ms)`,
     },
     {
-      item: "MPC_Base_Vault Funded (>= $10.00 USDC + Base ETH Gas)",
+      item: "Base USDC Reserve Vault Funded (Standby USDC + L2 Gas)",
       passed:
         baseState.usdcBalanceMicro >= 10_000_000n &&
         baseState.ethBalanceWei >= 50_000_000_000_000n,
       detail: `Current: ${baseState.usdcBalanceFormatted} USDC, ${baseState.ethBalanceFormatted} ETH on ${derivedMpc.mpcBaseVaultAddress}`,
     },
     {
-      item: "MPC_Solana_Payer Funded (>= 0.005 SOL for Kamino Refresh + Repay Gas)",
+      item: "Solana Repayment Account Funded (SOL Network Fee Buffer)",
       passed: solanaState.solBalanceLamports >= 5_000_000n,
       detail: `Current: ${solanaState.solBalanceFormatted} SOL on ${derivedMpc.mpcSolanaPayerPubkey}`,
     },
     {
-      item: "MPC_Solana_Payer_USDC_ATA Initialized on Solana Mainnet",
+      item: "Solana USDC Associated Token Account Initialized",
       passed: solanaState.usdcAtaExistsOnChain,
       detail: `Derived ATA: ${solanaState.usdcAtaPubkey} (bump=${solanaState.usdcAtaBump}) | ExistsOnChain=${solanaState.usdcAtaExistsOnChain} | Balance=${solanaState.usdcBalanceFormatted} USDC`,
     },
     {
-      item: "Scoped NEAR Function Call Key Credentials Configured",
+      item: "Scoped NEAR FunctionCall Access Key Configured",
       passed: liveBroadcastCredentialsConfigured,
       detail: liveBroadcastCredentialsConfigured
         ? `Configured NEAR_ACCOUNT_ID=${process.env.NEAR_ACCOUNT_ID} -> POLICY_CONTRACT_ID=${policyContractId}`

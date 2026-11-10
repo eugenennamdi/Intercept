@@ -1,7 +1,7 @@
 import { ImageResponse } from "next/og";
 
 export const alt =
-  "Intercept — Zero-Trust Cross-Chain Kamino Liquidation Defense on NEAR";
+  "Intercept — Non-Custodial Cross-Chain Liquidation Defense Built on NEAR";
 export const size = {
   width: 1200,
   height: 630,
@@ -119,7 +119,7 @@ export default function OpenGraphImage() {
                 backgroundColor: "#09090b",
               }}
             />
-            <span>NON-CUSTODIAL · 11/11 EXPLOITS BLOCKED</span>
+            <span>BUILT ON NEAR · NON-CUSTODIAL · 11/11 EXPLOITS BLOCKED</span>
           </div>
         </div>
 
@@ -141,7 +141,7 @@ export default function OpenGraphImage() {
               color: "#09090b",
             }}
           >
-            Zero-Trust Cross-Chain Liquidation Defense.
+            Cross-Chain Liquidation Defense, Built on NEAR.
           </div>
           <div
             style={{
@@ -152,9 +152,9 @@ export default function OpenGraphImage() {
               letterSpacing: "-0.01em",
             }}
           >
-            Autonomous Kamino obligation protection across Base and Solana powered
-            by NEAR AI Cloud TEE, byte-level policy guardrails, v1.signer Chain
-            Signatures, and NEAR Intents 1-Click.
+            Keep SOL collateral in self-custody on Solana and standby USDC on Base.
+            NEAR Confidential AI, Rust Policy Guardrails, Chain Signatures, and
+            Intents settle debt repayments automatically before liquidation.
           </div>
         </div>
 
@@ -170,10 +170,10 @@ export default function OpenGraphImage() {
           }}
         >
           {[
-            { label: "TEE ENCLAVE", value: "DeepSeek-V3.1 (Intel TDX)" },
-            { label: "ORIGIN LEG (0)", value: "Base 8453 EIP-1559" },
-            { label: "BRIDGE SETTLEMENT", value: "NEAR Intents 1-Click" },
-            { label: "DESTINATION LEG (1)", value: "Solana V0 Kamino KLend" },
+            { label: "CONFIDENTIAL AI", value: "NEAR AI Cloud (Intel TDX)" },
+            { label: "ON-CHAIN POLICY", value: "Rust WASM Byte Guardrail" },
+            { label: "CROSS-CHAIN BRIDGE", value: "NEAR Intents 1-Click" },
+            { label: "MULTI-CHAIN MPC", value: "Chain Signatures (v1.signer)" },
           ].map((item) => (
             <div
               key={item.label}

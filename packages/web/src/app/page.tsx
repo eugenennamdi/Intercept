@@ -413,24 +413,24 @@ function CopyChip({
 }
 
 const SHORT_STAGE_LABELS: Record<number, string> = {
-  1: "Position & Market Check",
-  2: "Risk & Buffer Sizing",
-  3: "Spending Policy Check",
-  4: "Base USDC Bridge",
-  5: "Solana Loan Repayment",
+  1: "Pyth & Kamino Telemetry",
+  2: "NEAR AI Risk & Quote Sizing",
+  3: "NEAR Guardrail · Base Signature",
+  4: "NEAR Intents 1-Click Settlement",
+  5: "NEAR Guardrail · Kamino Repayment",
 };
 
 const SHORT_LEG_BADGE: Record<string, string> = {
-  LEG_1_BASE_EVM: "Base Transfer",
-  LEG_2_SOLANA_KAMINO: "Solana Repay",
-  TEE_ATTESTATION: "Risk Engine",
-  ASYNC_TOCTOU_STATE: "Order Guard",
+  LEG_1_BASE_EVM: "Leg 1 · Base",
+  LEG_2_SOLANA_KAMINO: "Leg 2 · Solana",
+  TEE_ATTESTATION: "TEE Enclave",
+  ASYNC_TOCTOU_STATE: "Async State",
 };
 
 const REGIME_LABELS: Record<string, string> = {
-  HOLD: "Hold — Position Healthy",
-  MICRO_BUFFER_RESCUE: "Micro Buffer Rescue (1.20x)",
-  CASCADE_DEEP_RESCUE: "Deep Cascade Rescue (1.45x)",
+  HOLD: "Hold — Position Healthy (Base Capital Preserved)",
+  MICRO_BUFFER_RESCUE: "Micro Buffer Rescue (Target 1.20x)",
+  CASCADE_DEEP_RESCUE: "Deep Cascade Rescue (Target 1.45x)",
 };
 
 export default function InterceptDashboardPage() {
@@ -741,20 +741,22 @@ export default function InterceptDashboardPage() {
             <div className="space-y-3">
               <div className="inline-flex items-center gap-2 rounded-full border border-border bg-white px-3 py-1 text-[11px] font-mono text-muted-foreground shadow-2xs">
                 <span className="h-1.5 w-1.5 rounded-full bg-zinc-900" />
-                <span>NON-CUSTODIAL LIQUIDATION PROTECTION · BASE TO SOLANA</span>
+                <span>BUILT ON NEAR · INTENTS · CHAIN SIGNATURES · CONFIDENTIAL AI</span>
               </div>
 
               <h1 className="scroll-m-20 text-2xl sm:text-3xl lg:text-4xl font-semibold tracking-[-0.035em] leading-[1.08] text-foreground">
-                Zero-Trust Cross-Chain Liquidation Defense
+                Non-Custodial Cross-Chain Liquidation Defense
               </h1>
 
-              <p className="text-sm text-muted-foreground leading-relaxed max-w-[60ch]">
-                Holds your standby USDC on Base and automatically pays down your
-                Solana Kamino loan only when your Health Factor drops below{" "}
+              <p className="text-sm text-muted-foreground leading-relaxed max-w-[62ch]">
+                Keep your SOL collateral in self-custody on Solana and hold standby
+                USDC on Base. When market volatility pushes your Kamino Health Factor
+                below{" "}
                 <span className="font-mono font-medium text-zinc-900">
                   {triggerHf.toFixed(2)}x
                 </span>
-                .
+                , NEAR verifies and settles the exact debt repayment needed to prevent
+                5%–10% liquidation penalties.
               </p>
 
               {/* Single Primary Action in Hero (Pure Typography, No Slop Icons) */}
@@ -774,7 +776,7 @@ export default function InterceptDashboardPage() {
                   </strong>
                   <span>·</span>
                   <strong className="text-foreground font-medium">
-                    ${(customPolicy?.maxPerActionUsdc ?? 2500).toLocaleString()} Limit
+                    ${(customPolicy?.maxPerActionUsdc ?? 2500).toLocaleString()} Cap
                   </strong>
                 </span>
               </div>
@@ -789,33 +791,33 @@ export default function InterceptDashboardPage() {
                       01 · SELF-CUSTODY
                     </div>
                     <div className="mt-1 text-xs font-medium text-foreground">
-                      Solana Keys Never Shared
+                      SOL Collateral Stays in Your Wallet
                     </div>
                   </div>
 
                   <div className="rounded-md border border-border bg-secondary/60 px-3 py-2">
                     <div className="text-[11px] font-mono text-muted-foreground">
-                      02 · ON-CHAIN RULES
+                      02 · NEAR GUARDRAILS
                     </div>
                     <div className="mt-1 text-xs font-medium text-foreground">
-                      Strict Spending & Route Caps
+                      Byte-Verified Spending & Route Caps
                     </div>
                   </div>
 
                   <div className="rounded-md border border-border bg-secondary/60 px-3 py-2">
                     <div className="text-[11px] font-mono text-muted-foreground">
-                      03 · SETTLEMENT
+                      03 · NEAR INTENTS & MPC
                     </div>
                     <div className="mt-1 text-xs font-medium text-foreground">
-                      Base USDC → Solana Loan
+                      Sub-2s Base → Kamino Debt Repay
                     </div>
                   </div>
                 </div>
 
                 <div className="flex items-center justify-between pt-0.5 text-xs">
                   <span className="text-muted-foreground">
-                    Authorized third-party loan repayment with zero access to withdraw
-                    your SOL collateral.
+                    Third-party Kamino debt repayment governed by NEAR smart contract
+                    rules—zero authority to withdraw your SOL.
                   </span>
                   <button
                     type="button"
@@ -840,17 +842,18 @@ export default function InterceptDashboardPage() {
                       : "hidden"
                   }
                 >
-                  Your personal Solana wallet holds your Kamino position (SOL
-                  collateral and USDC loan) and{" "}
+                  Your personal Solana wallet retains full ownership of your Kamino
+                  obligation (SOL collateral and USDC debt) and{" "}
                   <strong className="text-foreground font-medium">
-                    never shares its private key
+                    never exports or delegates its private key
                   </strong>
-                  . Kamino Lend natively allows any third-party account to pay down a
-                  loan’s debt on behalf of the borrower without granting permission to
-                  withdraw collateral. Because your Solana wallet remains independent
-                  and every rescue transaction is checked against your on-chain spending
-                  limits, even a compromised agent cannot touch your collateral or
-                  redirect your USDC.
+                  . Kamino Lend natively permits any third-party account to repay a
+                  borrower’s debt without granting collateral withdrawal or borrowing
+                  authority. Standby USDC on Base is governed by decentralized NEAR
+                  Chain Signatures (<code className="font-mono">v1.signer</code>) and
+                  an on-chain Rust policy guardrail that byte-verifies every
+                  transaction against your spending caps and pinned obligation before
+                  signing.
                 </div>
               </div>
             </div>
@@ -871,8 +874,8 @@ export default function InterceptDashboardPage() {
                   </Badge>
                 </div>
                 <CardDescription className="text-xs">
-                  Select a market scenario or adjust the slider to see how your policy
-                  responds.
+                  Simulate live SOL drawdowns to inspect how NEAR Confidential AI sizes
+                  your buffer and enforces your policy rules.
                 </CardDescription>
               </CardHeader>
 
@@ -971,7 +974,8 @@ export default function InterceptDashboardPage() {
         <section className="space-y-4">
           <SectionHeader
             index="01"
-            title="Position Overview"
+            title="Position & Risk Telemetry"
+            subtitle="Live Kamino Lend collateral health, Pyth Network volatility, and volatility-sized USDC repayment."
             rightSlot={
               report && (
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -1157,7 +1161,8 @@ export default function InterceptDashboardPage() {
         <section className="space-y-4">
           <SectionHeader
             index="02"
-            title="Health Trajectory & Execution Flow"
+            title="Health Trajectory & NEAR Execution Pipeline"
+            subtitle="Projected post-rescue Health Factor alongside the 5-stage NEAR AI, Policy Guardrail, Chain Signatures, and Intents flow."
             rightSlot={
               report && (
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -1317,7 +1322,8 @@ export default function InterceptDashboardPage() {
         <section ref={workspaceRef} className="space-y-4">
           <SectionHeader
             index="03"
-            title="Security, Backtest & Reserve Verification"
+            title="Security Audit, Historical Backtest & Reserve Readiness"
+            subtitle="Inspect byte-level exploit rejections, multi-regime capital efficiency benchmarks, and live MPC reserve balances."
             rightSlot={
               <span className="hidden md:inline-block font-mono text-[11px] text-muted-foreground">
                 Hotkeys: Press 1–5 to switch views
@@ -1372,7 +1378,7 @@ export default function InterceptDashboardPage() {
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-sm font-medium">
-                        Simulated Attack Scenarios
+                        On-Chain Policy Exploit Suite
                       </CardTitle>
                       <Badge variant="contrast">
                         {adversarialSuite.length} / {adversarialSuite.length} Blocked
@@ -1426,7 +1432,7 @@ export default function InterceptDashboardPage() {
                     <CardHeader className="pb-3">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
-                          <Badge variant="contrast">Blocked by Policy Rules</Badge>
+                          <Badge variant="contrast">Blocked by NEAR Guardrail</Badge>
                           <Badge variant="outline" className="font-mono">
                             {selectedAdvCase.errorCode}
                           </Badge>
@@ -1572,11 +1578,25 @@ export default function InterceptDashboardPage() {
                             />
                           </div>
                           <div className="flex items-center justify-between py-2">
-                            <span className="text-muted-foreground">On-Chain NEAR MPC Tx</span>
-                            <CopyChip
-                              value="8SMLnn6YKav94Xczjfp56WQ7vWzATkq7rJvDwwEHVS2R"
-                              display="8SMLnn6YKa..."
-                            />
+                            <span className="text-muted-foreground">
+                              Verified NEAR MPC Tx (Secp256k1)
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <CopyChip
+                                value="5GZMVE9fokSqLqNNxZTLZEzeHrBbkQSAfLro5NMeZFJt"
+                                display="5GZMVE9fok..."
+                                label="NEAR Testnet Leg 1 MPC Tx"
+                              />
+                              <a
+                                href="https://testnet.nearblocks.io/txns/5GZMVE9fokSqLqNNxZTLZEzeHrBbkQSAfLro5NMeZFJt"
+                                target="_blank"
+                                rel="noreferrer"
+                                aria-label="View Leg 1 NEAR MPC transaction on NearBlocks"
+                                className="inline-flex items-center rounded border border-border bg-secondary/80 p-1 text-muted-foreground hover:text-foreground"
+                              >
+                                <ArrowSquareOut className="h-3 w-3" />
+                              </a>
+                            </div>
                           </div>
                         </div>
 
@@ -1659,11 +1679,25 @@ export default function InterceptDashboardPage() {
                             />
                           </div>
                           <div className="flex items-center justify-between py-2">
-                            <span className="text-muted-foreground">On-Chain NEAR MPC Tx</span>
-                            <CopyChip
-                              value="A97bw66AcyJzyfg3C3cg8vAhmMyDA9wFz7BW2jE2b7Mx"
-                              display="A97bw66Acy..."
-                            />
+                            <span className="text-muted-foreground">
+                              Verified NEAR MPC Tx (Ed25519)
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <CopyChip
+                                value="9mHD6Qp7tCeaMieWyLTYb7wE3YyHRR3BmtqcdzG2xeFr"
+                                display="9mHD6Qp7tC..."
+                                label="NEAR Testnet Leg 2 MPC Tx"
+                              />
+                              <a
+                                href="https://testnet.nearblocks.io/txns/9mHD6Qp7tCeaMieWyLTYb7wE3YyHRR3BmtqcdzG2xeFr"
+                                target="_blank"
+                                rel="noreferrer"
+                                aria-label="View Leg 2 NEAR MPC transaction on NearBlocks"
+                                className="inline-flex items-center rounded border border-border bg-secondary/80 p-1 text-muted-foreground hover:text-foreground"
+                              >
+                                <ArrowSquareOut className="h-3 w-3" />
+                              </a>
+                            </div>
                           </div>
                         </div>
 
@@ -1811,9 +1845,9 @@ export default function InterceptDashboardPage() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {activeBacktestScenario.outcomes.map((o) => {
+                          { activeBacktestScenario.outcomes.map((o) => {
                               const isIntercept =
-                                o.strategyId === "INTERCEPT_VOLATILITY_AWARE";
+                                o.strategyId === "INTERCEPT_VOLATILITY_TEE_ENGINE";
                               return (
                                 <TableRow
                                   key={o.strategyId}
@@ -1989,7 +2023,7 @@ export default function InterceptDashboardPage() {
             </span>
             <span>·</span>
             <span>
-              Automated Cross-Chain Liquidation Protection for Solana Kamino Lend
+              Non-Custodial Cross-Chain Liquidation Defense · Built on NEAR
             </span>
           </div>
           <div className="flex items-center gap-4 text-xs">

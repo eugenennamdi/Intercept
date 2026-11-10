@@ -189,16 +189,16 @@ export default function InterceptDocsPage() {
           <section id="overview" className="scroll-m-20 space-y-4">
             <div className="inline-flex items-center gap-2 rounded-full border border-border bg-white px-3 py-1 text-[11px] font-mono text-muted-foreground">
               <BookOpen className="h-3.5 w-3.5 text-zinc-900" />
-              <span>INTERCEPT TECHNICAL SPECIFICATION</span>
+              <span>INTERCEPT PROTOCOL SPECIFICATION · BUILT ON NEAR</span>
             </div>
 
             <h1 className="text-3xl sm:text-4xl font-semibold tracking-[-0.035em] leading-[1.1] text-foreground">
-              Zero-Trust Cross-Chain Liquidation Defense on NEAR
+              Non-Custodial Cross-Chain Liquidation Defense on NEAR
             </h1>
 
             <p className="text-sm sm:text-base text-muted-foreground leading-relaxed">
-              <strong className="text-foreground font-medium">Intercept</strong> is an
-              autonomous, non-custodial DeFi defense protocol built on{" "}
+              <strong className="text-foreground font-medium">Intercept</strong> is
+              non-custodial cross-chain risk infrastructure built natively on{" "}
               <strong className="text-foreground font-medium">NEAR AI Cloud (TEE)</strong>,{" "}
               <strong className="text-foreground font-medium">
                 NEAR Smart Contracts (near-sdk-rs)
@@ -211,14 +211,14 @@ export default function InterceptDocsPage() {
               <strong className="text-foreground font-medium">
                 NEAR Intents 1-Click
               </strong>
-              . It protects leveraged{" "}
+              . It protects{" "}
               <strong className="text-foreground font-medium">
-                Kamino Lend (Solana)
+                Solana Kamino Lend
               </strong>{" "}
-              obligations from flash-crash liquidations using idle USDC held on{" "}
-              <strong className="text-foreground font-medium">Base (EVM)</strong>—without
-              ever taking custody of the user’s Solana private key or allowing an AI
-              agent to sign unverified transaction bytes.
+              borrowers from 5%–10% liquidation penalties using standby USDC held on{" "}
+              <strong className="text-foreground font-medium">Base</strong>—without
+              ever taking custody of the borrower’s Solana private key or permitting
+              an off-chain agent to sign unverified transaction bytes.
             </p>
 
             <div className="grid gap-3 sm:grid-cols-3 pt-2">
@@ -294,7 +294,7 @@ export default function InterceptDocsPage() {
                     Configure Protection Policy
                   </strong>{" "}
                   on the dashboard and either click{" "}
-                  <strong className="text-foreground">Detect Phantom / Solflare</strong>{" "}
+                  <strong className="text-foreground">Connect Phantom / Solflare</strong>{" "}
                   (read-only public key detection) or paste your Kamino Obligation Base58
                   address. Because Kamino Lend natively allows third-party debt repayment
                   (<code className="font-mono">repay_obligation_liquidity_v2</code>),
@@ -314,14 +314,14 @@ export default function InterceptDocsPage() {
                   (e.g. <code className="font-mono">1.15x</code> /{" "}
                   <code className="font-mono">11500 bps</code>),{" "}
                   <strong className="text-foreground">Max Per-Rescue USDC</strong>,{" "}
-                  <strong className="text-foreground">Max Daily USDC</strong>, and{" "}
+                  <strong className="text-foreground">Max Daily Limit USDC</strong>, and{" "}
                   <strong className="text-foreground">Max Bridge Slippage</strong>. Click{" "}
                   <strong className="text-foreground">
-                    Apply Policy to Live Telemetry Engine
+                    Save Protection Policy
                   </strong>{" "}
-                  to immediately evaluate your rules in the dashboard, or copy the
-                  generated <code className="font-mono">near-cli-rs</code> command to
-                  commit them on-chain.
+                  to immediately evaluate your rules against live telemetry in the
+                  dashboard, or run the <code className="font-mono">near-cli-rs</code>{" "}
+                  command below to commit them on-chain.
                 </p>
               </div>
 
@@ -650,17 +650,17 @@ export default function InterceptDocsPage() {
               </TableHeader>
               <TableBody>
                 {[
-                  ["01", "Rogue ERC-20 Recipient Hijack", "Leg 1 · Base EVM", "Calldata [16..36] != 1-Click Deposit -> Panic"],
-                  ["02", "Malicious ERC-20 approve() Backdoor", "Leg 1 · Base EVM", "Selector != 0xa9059cbb -> Panic"],
-                  ["03", "Per-Rescue & Daily Spend Cap Breach", "Leg 1 · Base EVM", "Amount > Policy Cap -> Panic"],
-                  ["04", "Kamino Borrow / Withdraw Injection", "Leg 2 · Solana V0", "Discriminator != Repay v2/v1 -> Panic"],
-                  ["05", "Repay Wrong Kamino Obligation", "Leg 2 · Solana V0", "Account [1] != User Obligation -> Panic"],
-                  ["06", "Forged / Replayed TEE Signature", "TEE Attestation", "Ed25519 Verify / Nonce Replay -> Panic"],
-                  ["07", "Solana V0 ALT Account Hiding", "Leg 2 · Solana V0", "address_table_lookups_len != 0 -> Panic"],
-                  ["08", "32-Byte Blind Pre-Hash Trap", "Leg 2 · Solana V0", "Length < 64 bytes -> Panic"],
-                  ["09", "Premature / Concurrent Leg 2 Race", "Async TOCTOU State", "State != ReadyForLeg2 -> Panic"],
-                  ["10", "Base 500 Gwei Gas-Griefing Drain", "Leg 1 · Base EVM", "max_fee_per_gas > 50 gwei -> Panic"],
-                  ["11", "Solana ComputeBudget Priority Drain", "Leg 2 · Solana V0", "SetComputeUnitPrice > 5M -> Panic"],
+                  ["01", "Unauthorized Kamino Collateral Withdrawal", "Leg 2 · Solana V0", "Discriminator != Repay v2/v1 -> Revert"],
+                  ["02", "Base USDC Recipient Redirection", "Leg 1 · Base EVM", "Calldata [16..36] != 1-Click Deposit -> Revert"],
+                  ["03", "ERC-20 Unlimited Approval Injection", "Leg 1 · Base EVM", "Selector != 0xa9059cbb -> Revert"],
+                  ["04", "Unauthorized Kamino Debt Drawdown", "Leg 2 · Solana V0", "Borrow Discriminator Blocked -> Revert"],
+                  ["05", "Kamino Obligation Account Substitution", "Leg 2 · Solana V0", "Account [1] != User Obligation -> Revert"],
+                  ["06", "Forged Enclave Attestation Signature", "TEE Attestation", "Ed25519 Verify / Nonce Replay -> Revert"],
+                  ["07", "Solana V0 Address Lookup Table Obfuscation", "Leg 2 · Solana V0", "address_table_lookups_len != 0 -> Revert"],
+                  ["08", "Blind 32-Byte Digest Signing Attempt", "Leg 2 · Solana V0", "Length < 64 bytes -> Revert"],
+                  ["09", "Asynchronous Cross-Contract State Race", "Async TOCTOU State", "State != ReadyForLeg2 -> Revert"],
+                  ["10", "Base EIP-1559 Gas-Fee Siphoning", "Leg 1 · Base EVM", "max_fee_per_gas > 50 gwei -> Revert"],
+                  ["11", "Solana Compute-Budget Fee Siphoning", "Leg 2 · Solana V0", "SetComputeUnitPrice > 5M -> Revert"],
                 ].map(([num, title, layer, rule]) => (
                   <TableRow key={num}>
                     <TableCell className="font-mono text-xs text-muted-foreground">
@@ -820,7 +820,39 @@ export default function InterceptDocsPage() {
           <div className="sticky top-22 space-y-4">
             <div className="rounded-xl border border-border bg-white p-4 space-y-3 text-xs">
               <div className="font-semibold text-foreground">
-                Mainnet Identifiers
+                Verified NEAR Testnet
+              </div>
+              <div className="space-y-1">
+                <div className="text-[10px] font-mono text-muted-foreground">
+                  GUARDRAIL CONTRACT
+                </div>
+                <a
+                  href="https://testnet.nearblocks.io/address/intercept-guardrail-373299.testnet"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-mono text-foreground break-all underline underline-offset-4 hover:text-zinc-600 block"
+                >
+                  intercept-guardrail-373299.testnet
+                </a>
+              </div>
+              <div className="space-y-1">
+                <div className="text-[10px] font-mono text-muted-foreground">
+                  SCOPED AGENT KEY
+                </div>
+                <a
+                  href="https://testnet.nearblocks.io/address/runner.intercept-guardrail-373299.testnet"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-mono text-foreground break-all underline underline-offset-4 hover:text-zinc-600 block"
+                >
+                  runner.intercept-guardrail-373299.testnet
+                </a>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border bg-white p-4 space-y-3 text-xs">
+              <div className="font-semibold text-foreground">
+                Mainnet Architecture
               </div>
               <div className="space-y-1">
                 <div className="text-[10px] font-mono text-muted-foreground">

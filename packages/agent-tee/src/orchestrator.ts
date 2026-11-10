@@ -692,8 +692,8 @@ export async function executeInterceptRescuePipeline(options?: {
 }
 
 /**
- * Runs 6 real byte-level adversarial attack vectors against the Intercept Policy Guardrail
- * to prove that a compromised or hallucinating AI agent cannot steal collateral or redirect funds.
+ * Runs 11 deterministic byte-level adversarial exploit vectors against the Intercept Policy Guardrail
+ * to verify that an unverified or compromised agent cannot withdraw collateral, redirect funds, or siphon gas.
  */
 export function runAdversarialAttackSuite(): AdversarialAttackVectorResult[] {
   const { policy } = getDefaultInterceptSetup();
@@ -722,10 +722,10 @@ export function runAdversarialAttackSuite(): AdversarialAttackVectorResult[] {
     });
     results.push({
       attackId: "ADV_01_KAMINO_COLLATERAL_WITHDRAW",
-      title: "Rogue AI Attempts Kamino Collateral Withdrawal",
+      title: "Unauthorized Kamino Collateral Withdrawal",
       targetLeg: "LEG_2_SOLANA_KAMINO",
       attackerGoal:
-        "Replace repay_obligation_liquidity_v2 discriminator [116,174,213,76,180,53,210,144] with withdraw_obligation_collateral_v2 [202,249,117,114,231,192,47,138]",
+        "Substitute repay_obligation_liquidity_v2 [116,174,213,76,180,53,210,144] with withdraw_obligation_collateral_v2 [202,249,117,114,231,192,47,138]",
       injectedPayloadSummary: `Solana V0 Message (${rogueWithdrawMsg.rawMessageBytes.length}B) | Program: KLend | Discriminator: 0x${WITHDRAW_OBLIGATION_COLLATERAL_V2_DISCRIMINATOR.toString("hex")}`,
       guardrailBlocked: !res.ok,
       errorCode: res.errorCode ?? "NONE",
@@ -756,9 +756,9 @@ export function runAdversarialAttackSuite(): AdversarialAttackVectorResult[] {
     });
     results.push({
       attackId: "ADV_02_BASE_RECIPIENT_HIJACK",
-      title: "Rogue AI Redirects Base USDC to Attacker EOA",
+      title: "Base USDC Recipient Redirection",
       targetLeg: "LEG_1_BASE_EVM",
-      attackerGoal: `Encode attacker address ${attackerBaseWallet} in calldata[4..36] instead of 1-Click depositAddress`,
+      attackerGoal: `Encode unauthorized recipient ${attackerBaseWallet} in calldata[4..36] instead of the verified NEAR Intents 1-Click depositAddress`,
       injectedPayloadSummary: `EIP-1559 Type 0x02 (${hijackTx.rawUnsignedTxBytes.length}B) | Selector: 0xa9059cbb | Recipient: ${attackerBaseWallet}`,
       guardrailBlocked: !res.ok,
       errorCode: res.errorCode ?? "NONE",
@@ -789,10 +789,10 @@ export function runAdversarialAttackSuite(): AdversarialAttackVectorResult[] {
     });
     results.push({
       attackId: "ADV_03_ERC20_APPROVE_BACKDOOR",
-      title: "Rogue AI Substitutes ERC-20 approve() Selector",
+      title: "ERC-20 Unlimited Approval Injection",
       targetLeg: "LEG_1_BASE_EVM",
       attackerGoal:
-        "Grant unlimited USDC allowance via approve(address,uint256) (0x095ea7b3) instead of transfer (0xa9059cbb)",
+        "Grant persistent USDC spending allowance via approve(address,uint256) (0x095ea7b3) instead of a single transfer (0xa9059cbb)",
       injectedPayloadSummary: `EIP-1559 Type 0x02 (${approveTx.rawUnsignedTxBytes.length}B) | Selector: 0x095ea7b3 (approve)`,
       guardrailBlocked: !res.ok,
       errorCode: res.errorCode ?? "NONE",
@@ -825,10 +825,10 @@ export function runAdversarialAttackSuite(): AdversarialAttackVectorResult[] {
     });
     results.push({
       attackId: "ADV_04_KAMINO_BORROW_INJECTION",
-      title: "Rogue AI Attempts Kamino Debt Borrow Lever-Up",
+      title: "Unauthorized Kamino Debt Drawdown",
       targetLeg: "LEG_2_SOLANA_KAMINO",
       attackerGoal:
-        "Inject borrow_obligation_liquidity_v2 [161,128,143,245,171,199,194,6] to draw additional debt",
+        "Inject borrow_obligation_liquidity_v2 [161,128,143,245,171,199,194,6] to draw additional debt instead of repaying liquidity",
       injectedPayloadSummary: `Solana V0 Message (${rogueBorrowMsg.rawMessageBytes.length}B) | Discriminator: 0x${BORROW_OBLIGATION_LIQUIDITY_V2_DISCRIMINATOR.toString("hex")}`,
       guardrailBlocked: !res.ok,
       errorCode: res.errorCode ?? "NONE",
@@ -861,9 +861,9 @@ export function runAdversarialAttackSuite(): AdversarialAttackVectorResult[] {
     });
     results.push({
       attackId: "ADV_05_OBLIGATION_SPOOF",
-      title: "Rogue AI Repays Attacker's Own Kamino Obligation",
+      title: "Kamino Obligation Account Substitution",
       targetLeg: "LEG_2_SOLANA_KAMINO",
-      attackerGoal: `Pass attacker Obligation PDA (${attackerObligation.slice(0, 10)}...) at instruction account[1]`,
+      attackerGoal: `Route bridged USDC repayment to an external Obligation PDA (${attackerObligation.slice(0, 10)}...) at instruction account[1]`,
       injectedPayloadSummary: `Solana V0 Message | ix.accounts[1] = ${attackerObligation}`,
       guardrailBlocked: !res.ok,
       errorCode: res.errorCode ?? "NONE",
@@ -898,10 +898,10 @@ export function runAdversarialAttackSuite(): AdversarialAttackVectorResult[] {
     );
     results.push({
       attackId: "ADV_06_FORGED_TEE_ATTESTATION",
-      title: "Unregistered Enclave Key Signs Fake TeeDecisionReceipt",
+      title: "Forged Enclave Attestation Signature",
       targetLeg: "TEE_ATTESTATION",
       attackerGoal:
-        "Bypass NEAR AI Cloud TEE risk model by signing receipt with an external Ed25519 keypair",
+        "Bypass NEAR AI Cloud confidential attestation by signing a TeeDecisionReceipt with an unregistered Ed25519 keypair",
       injectedPayloadSummary: `Ed25519 pubkey 0x${rogueEnclave.publicKeyHex.slice(0, 16)}... != registered 0x${legitimateEnclave.publicKeyHex.slice(0, 16)}...`,
       guardrailBlocked: !valid,
       errorCode: "ED25519_VERIFICATION_FAILED",
@@ -935,10 +935,10 @@ export function runAdversarialAttackSuite(): AdversarialAttackVectorResult[] {
     });
     results.push({
       attackId: "ADV_07_V0_ALT_ACCOUNT_HIDING",
-      title: "Inject V0 Address Lookup Table (ALT) Indirection",
+      title: "Solana V0 Address Lookup Table Obfuscation",
       targetLeg: "LEG_2_SOLANA_KAMINO",
       attackerGoal:
-        "Hide unauthorized writable accounts or drain programs inside an off-payload V0 Address Lookup Table",
+        "Conceal unverified writable accounts or arbitrary programs inside an off-payload V0 Address Lookup Table",
       injectedPayloadSummary: `Solana V0 Message | address_table_lookups_len = 1 (opaque ALT index indirection)`,
       guardrailBlocked: !res.ok,
       errorCode: res.errorCode ?? "NONE",
@@ -964,10 +964,10 @@ export function runAdversarialAttackSuite(): AdversarialAttackVectorResult[] {
     });
     results.push({
       attackId: "ADV_08_SOLANA_32B_PREHASH_TRAP",
-      title: "Pass 32-Byte SHA-256 Pre-Hash to v1.signer (domain_id: 1)",
+      title: "Blind 32-Byte Digest Signing Attempt",
       targetLeg: "LEG_2_SOLANA_KAMINO",
       attackerGoal:
-        "Trick guardrail into signing an opaque 32-byte digest instead of inspectable raw Solana Message bytes (64..=1232B)",
+        "Submit an opaque 32-byte digest to v1.signer (domain_id: 1) instead of inspectable raw Solana Message bytes (64..=1232B)",
       injectedPayloadSummary: `32-byte digest 0x${prehashHex.slice(0, 24)}... (length=32B < 64B minimum raw Solana Message)`,
       guardrailBlocked: !res.ok,
       errorCode: res.errorCode ?? "NONE",
@@ -1031,10 +1031,10 @@ export function runAdversarialAttackSuite(): AdversarialAttackVectorResult[] {
       !prematureCheck.ok && firstLeg2.ok && !concurrentSecondLeg2.ok;
     results.push({
       attackId: "ADV_09_ASYNC_TOCTOU_RACE",
-      title: "Replay / Concurrent Leg 2 While Leg 1 Is InFlightLeg1",
+      title: "Asynchronous Cross-Contract State Race",
       targetLeg: "ASYNC_TOCTOU_STATE",
       attackerGoal:
-        "Invoke request_rescue_destination_leg before on_origin_leg_signed callback settles or concurrently during InFlightLeg2",
+        "Invoke request_rescue_destination_leg before on_origin_leg_signed settles or submit duplicate concurrent Leg 2 calls",
       injectedPayloadSummary: `receipt_hash=${sampleReceiptHash.slice(0, 14)}... | Premature InFlightLeg1 -> REVERT & Concurrent InFlightLeg2 -> REVERT`,
       guardrailBlocked: blocked,
       errorCode: prematureCheck.errorCode ?? "TOCTOU_STATE_NOT_READY_FOR_LEG2",
@@ -1067,10 +1067,10 @@ export function runAdversarialAttackSuite(): AdversarialAttackVectorResult[] {
     });
     results.push({
       attackId: "ADV_10_BASE_GAS_GRIEFING_DRAIN",
-      title: "Rogue AI Drains Base Vault ETH via 500 Gwei Fee Bribe",
+      title: "Base EIP-1559 Gas-Fee Siphoning",
       targetLeg: "LEG_1_BASE_EVM",
       attackerGoal:
-        "Set EIP-1559 max_fee_per_gas = 500 gwei (10x guardrail cap) to siphon ETH gas reserves from MPC_Base_Vault to a colluding builder",
+        "Inflate EIP-1559 max_fee_per_gas to 500 gwei (10x policy cap) to siphon ETH gas reserves from MPC_Base_Vault",
       injectedPayloadSummary: `EIP-1559 Type 0x02 | max_fee_per_gas = 500,000,000,000 wei (500 gwei > 50 gwei cap)`,
       guardrailBlocked: !res.ok,
       errorCode: res.errorCode ?? "NONE",
@@ -1105,10 +1105,10 @@ export function runAdversarialAttackSuite(): AdversarialAttackVectorResult[] {
     });
     results.push({
       attackId: "ADV_11_SOLANA_PRIORITY_FEE_DRAIN",
-      title: "Rogue AI Drains Solana Payer SOL via ComputeBudget Priority Fee",
+      title: "Solana Compute-Budget Fee Siphoning",
       targetLeg: "LEG_2_SOLANA_KAMINO",
       attackerGoal:
-        "Inject ComputeBudget::SetComputeUnitPrice(500,000,000 micro-lamports/CU) to burn MPC_Solana_Payer SOL balance as priority fees",
+        "Inject ComputeBudget::SetComputeUnitPrice(500,000,000 micro-lamports/CU) to drain SOL fee reserves from MPC_Solana_Payer",
       injectedPayloadSummary: `Solana V0 Message | ComputeBudget tag 0x03 SetComputeUnitPrice = 500,000,000 micro-lamports/CU (> 5,000,000 cap)`,
       guardrailBlocked: !res.ok,
       errorCode: res.errorCode ?? "NONE",

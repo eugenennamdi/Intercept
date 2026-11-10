@@ -157,3 +157,57 @@ $$\Delta D = \max\left(0,\; D_{\text{USDC}} - \frac{C_{\text{SOL}} \cdot P_{\tex
 - **Regime A (`HOLD`):** $\text{HF} \ge \text{HF}_{\text{trigger}} \implies \Delta D = 0$.
 - **Regime B (`MICRO_BUFFER_RESCUE`):** $1.10 \le \text{HF} < \text{HF}_{\text{trigger}}$ and realized volatility $\sigma < 5500\text{ bps} \implies \text{HF}_{\text{target}} = 1.20$.
 - **Regime C (`CASCADE_DEEP_RESCUE`):** $\text{HF} < 1.10$ OR ($\text{HF} < \text{HF}_{\text{trigger}}$ with $\sigma \ge 5500\text{ bps}$ or EMA velocity $\le -400\text{ bps}$) $\implies \text{HF}_{\text{target}} = 1.45$.
+
+---
+
+## 5. Deployment & Live Operations Guide
+
+### 5.1 Pre-Flight MPC Derivation & RPC Readiness
+
+Verify connectivity to NEAR `v1.signer`, Base Mainnet (`8453`), and Solana Mainnet (`KLend`), and inspect the deterministic MPC accounts derived for your policy contract:
+
+```bash
+POLICY_CONTRACT_ID="guardrail.<your-account>.near" npm run preflight
+```
+
+- **Origin Reserve (`MPC_Base_Vault`):** Derived via `v1.signer` (`domain_id: 0`, Secp256k1, path `"intercept-base-vault-1"`).
+- **Destination Payer (`MPC_Solana_Payer`):** Derived via `v1.signer` (`domain_id: 1`, Ed25519, path `"intercept-solana-payer-1"`).
+- **Destination Token Account (`MPC_Solana_Payer_USDC_ATA`):** Canonical Solana Native USDC Associated Token Account PDA (`bump=255`).
+
+### 5.2 Build, Deploy & Provision Scoped Agent Access
+
+Build the `near-sdk-rs` WASM contract and deploy using [`scripts/deploy-near.sh`](./scripts/deploy-near.sh) or `near-cli-rs`:
+
+```bash
+OWNER_NEAR_ID="<your-account>.near" \
+NEAR_ACCOUNT_ID="agent.<your-account>.near" \
+POLICY_CONTRACT_ID="guardrail.<your-account>.near" \
+NEAR_NETWORK="mainnet" \
+npm run deploy:near -- --deploy
+```
+
+Provision a dedicated least-privilege `FunctionCall` key on the agent account restricted exclusively to the two verified rescue entrypoints (`1.00 NEAR` allowance covers pessimistic `300 TGas` cross-contract reservations while `resolve_mpc_sign_deposit` sponsors the `0.05 NEAR` `v1.signer` fee from the guardrail contract balance):
+
+```bash
+near account add-key agent.<your-account>.near grant-function-call-access \
+  --allowance '1 NEAR' \
+  --contract-account-id guardrail.<your-account>.near \
+  --function-names 'request_rescue_origin_leg,request_rescue_destination_leg' \
+  autogenerate-new-keypair save-to-keychain network-config mainnet sign-with-keychain send
+```
+
+### 5.3 Vault Funding & End-to-End Execution
+
+1. **Base Reserve Vault:** Transfer standby Native USDC (`0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`) and a small Base ETH gas buffer (`~0.0005 ETH`) to `MPC_Base_Vault`.
+2. **Solana Repayment Account:** Transfer a small SOL fee buffer (`~0.01 SOL`) and initialize `MPC_Solana_Payer_USDC_ATA` on Solana Mainnet (`EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`).
+3. **Execute Autonomous Protection:**
+
+```bash
+export NEAR_ACCOUNT_ID="agent.<your-account>.near"
+export NEAR_PRIVATE_KEY="ed25519:<scoped_function_call_private_key>"
+export POLICY_CONTRACT_ID="guardrail.<your-account>.near"
+export TEE_ENCLAVE_SECRET_SEED_HEX="<dedicated_64_hex_production_enclave_seed>"
+export USER_KAMINO_OBLIGATION_PUBKEY="<User_Kamino_Obligation_PDA>"
+
+npm run rescue:live
+```

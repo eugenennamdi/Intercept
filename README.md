@@ -1,167 +1,191 @@
-# INTERCEPT
+# Intercept
 
-**Zero-Trust Cross-Chain Kamino Liquidation Defense Powered by NEAR AI Cloud (TEE), NEAR Policy Guardrail Contracts, NEAR Chain Signatures (`v1.signer`), and NEAR Intents (`1-Click Swap API`).**
+**Non-custodial cross-chain liquidation defense for DeFi borrowers, built natively on NEAR Intents, Chain Signatures, and Confidential AI.**
 
-- **License:** [MIT License](file:///Users/apple/Desktop/Intercept/LICENSE)
-- **Live Production App (Zero-Install Command Center):** https://intercept-inky.vercel.app
-- **Technical Documentation Portal:** https://intercept-inky.vercel.app/docs
-- **Live Deployed NEAR Policy Guardrail Contract (`near-sdk-rs`):** [`intercept-guardrail-373299.testnet`](https://testnet.nearblocks.io/address/intercept-guardrail-373299.testnet) + Scoped `FunctionCall` Agent Account [`runner.intercept-guardrail-373299.testnet`](https://testnet.nearblocks.io/address/runner.intercept-guardrail-373299.testnet) (wired to `v1.signer-prod.testnet`)
-- **NEAR Ecosystem Technologies Used:** NEAR Intents (`1-Click Swap API` `/v0/tokens`, `/v0/quote`, `/v0/deposit/submit`, `/v0/status`), NEAR Chain Signatures (`v1.signer` / `v1.signer-prod.testnet` `domain_id: 0` Secp256k1 & `domain_id: 1` Ed25519), NEAR AI Cloud (`https://cloud-api.near.ai/v1` Intel TDX + NVIDIA NRAS Hardware Attestation & Signed Chat Verification), Scoped NEAR Function Call Keys (`AccessKeyPermission::FunctionCall`), `near-sdk-rs` v5.x Byte-Level Policy Guardrails with NEP-297 Structured Events.
+[Live Application](https://intercept-inky.vercel.app) · [Technical Documentation](https://intercept-inky.vercel.app/docs) · [Architecture Specification](./ARCHITECTURE.md) · [NEAR Testnet Contract](https://testnet.nearblocks.io/address/intercept-guardrail-373299.testnet) · [MIT License](./LICENSE)
 
 ---
 
-## 1. The Problem & What Intercept Solves
+## Overview
 
-DeFi borrowers on **Solana Kamino Lend** (`KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD`) frequently hold idle stablecoin liquidity on EVM L2s like **Base**, while their Solana SOL/USDC lending positions face sudden liquidation cascades during high-volatility drawdowns (incurring `300 bps` to `1000 bps` liquidation penalties).
+DeFi capital is structurally fragmented across chains. Borrowers routinely post volatile collateral on high-throughput execution layers such as **Solana Kamino Lend**, while holding standby stablecoin reserves or earning yield on EVM rollups such as **Base**. During sharp market drawdowns, borrowers face steep **5%–10% liquidation penalties** unless they either leave idle buffer capital stranded on every chain or surrender raw private keys to a custodial bot.
 
-Existing automated protection bots force an unacceptable security trade-off:
-1. **Custodial Key Risk:** Handing a bot private keys or moving collateral into a shared vault means a compromised or hallucinating AI agent can drain the user's collateral.
-2. **Blind Threshold Scripts:** Naive `if hf < 1.15` scripts either over-repay during calm markets (destroying Base yield) or under-repay during violent volatility cascades (getting liquidated 2 minutes later).
+**Intercept** eliminates both compromises by using **NEAR Protocol** as a verifiable, non-custodial cross-chain risk control plane:
 
-**How Intercept Solves This:**
-1. **Strict Collateral Isolation (Third-Party Kamino Repayment):** Your Kamino collateral stays in your personal Solana wallet (`User_Solana_EOA`) and can **never** be withdrawn by Intercept. In Kamino Lend, `withdraw_obligation_collateral_v2` and `borrow_obligation_liquidity_v2` require `obligation.owner` to sign, whereas `repay_obligation_liquidity_v2` allows *any* third-party signer to repay debt on behalf of an obligation. Your idle Base rescue reserve is governed by decentralized NEAR MPC (`v1.signer`) and byte-level smart contract guardrails—no single custodian and no raw private keys.
-2. **On-Chain Byte-Level Policy Guardrails (`near-sdk-rs`):** The AI agent holds only a scoped NEAR Function Call Key permitted to call `request_rescue_origin_leg` and `request_rescue_destination_leg`. Before calling `v1.signer::sign`, the NEAR contract parses the raw unsigned EIP-1559 RLP bytes (`0x02 || rlp(...)`) on Leg 1 and the raw serialized Solana `V0`/`Legacy` `Message` bytes on Leg 2. Any attempt to call `approve()`, transfer to an unauthorized address, include an unauthorized Solana program, use opaque V0 Address Lookup Tables, or invoke `withdraw_obligation_collateral_v2` reverts deterministically on-chain.
-3. **Quantitative TEE Risk Engine:** Runs inside a NEAR AI Cloud TEE enclave, ingesting live on-chain **Pyth Network** SOL/USD price, confidence intervals, and EMA velocity from Solana Mainnet alongside live **NEAR Intents 1-Click API** quotes to dynamically select between `HOLD`, `MICRO_BUFFER_RESCUE` (`HF -> 1.20`), and `CASCADE_DEEP_RESCUE` (`HF -> 1.45`), signing an Ed25519 `TeeDecisionReceipt` verified on-chain.
-
-### Security & Privacy Architecture Guarantees
-
-- **Scoped `FunctionCall` Access Key Capabilities, Sponsorship & Caveats:** The agent authenticates with a NEAR `AccessKeyPermission::FunctionCall` key scoped strictly to `receiver_id = policy_contract_id` and `method_names = ["request_rescue_origin_leg", "request_rescue_destination_leg"]` (`1.00 NEAR` gas allowance—calibrated above NEAR's `~0.3009 NEAR` pessimistic upfront gas reservation on `300 TGas` `v1.signer` cross-contract calls). It **cannot** transfer NEAR, deploy WASM, add/delete keys, or call owner-only `update_policy`. Because NEAR `FunctionCall` keys natively forbid non-zero `attached_deposit` (`DepositWithFunctionCall`), the guardrail contract sponsors the `0.05 NEAR` `v1.signer::sign` fee from its own balance (`resolve_mpc_sign_deposit`) and automatically reclaims unused deposit refunds from `v1.signer`. *Operational caveat:* if an attacker or loop exhausts the key's `1.00 NEAR` gas allowance, the agent key is rate-limited until the separate `owner_id` FullAccess key rotates or tops up the allowance—user collateral and owner recovery keys are never locked out.
-- **Verifiable Confidential AI & Stateless Zero-Retention:** Every NEAR AI Cloud inference request generates a fresh 32-byte cryptographic random nonce (`crypto.randomBytes(32)`), queries `/v1/attestation/report?nonce=<64-hex>&signing_algo=ed25519`, binds Intel TDX `report_data` to NVIDIA Hopper NRAS `eat_nonce`, sends `x-no-aliasing: true` + `Accept-Encoding: identity` on `/v1/chat/completions`, and verifies `sha256(reqBody):sha256(rawResBody)` against the enclave's Ed25519 `signing_address`. Neither `/api/intercept` nor `@intercept/agent-tee` persists wallet addresses, positions, prompts, or telemetry server-side after a response returns (**zero server-side data retention**).
+1. **Self-Custodial Collateral Isolation:** Borrowers keep their SOL collateral and Kamino `Obligation` inside their personal Solana wallet (`User_Solana_EOA`). Because Kamino Lend natively permits third-party debt repayment (`repay_obligation_liquidity_v2`) without granting withdrawal or borrowing authority, Intercept never holds keys to the borrower's collateral.
+2. **Confidential Volatility-Aware Sizing (`NEAR AI Cloud`):** An Intel TDX + NVIDIA Hopper confidential enclave evaluates live **Pyth Network** spot prices, orderbook confidence spreads, and EMA downward velocity alongside live **Kamino** zero-copy `Obligation` state (`3,344` bytes), signing a deterministic Ed25519 `TeeDecisionReceipt` only when intervention is economically optimal.
+3. **Byte-Level Smart Contract Policy Enforcement (`near-sdk-rs`):** Before any signature is issued, an on-chain Rust guardrail contract decodes the raw unsigned **Base EIP-1559** RLP payload (`Leg 1`) and the raw serialized **Solana `V0` Message** bytes (`Leg 2`). Any deviation from the borrower's spending limits, approved **NEAR Intents** deposit address, or pinned Kamino `Obligation` reverts deterministically.
+4. **Keyless Cross-Chain Settlement (`Chain Signatures` + `NEAR Intents`):** Verified payloads are signed via decentralized threshold MPC (`v1.signer`) across both `Secp256k1` (`domain_id: 0`, Base) and `Ed25519` (`domain_id: 1`, Solana), while **NEAR Intents (`1-Click API`)** settles Base Native USDC into Solana Native USDC in seconds.
 
 ---
 
-## 2. Deterministic Security & On-Chain Verification
+## Built on the NEAR Stack
 
-### Live On-Chain NEAR Testnet Deployment & Cross-Contract MPC Execution Receipts
+| NEAR Layer | Production Component | Role in Intercept |
+| :--- | :--- | :--- |
+| **Confidential Compute** | [NEAR AI Cloud](https://cloud.near.ai) (`cloud-api.near.ai/v1`) | Hardware-attested inference (Intel TDX + NVIDIA NRAS) binds fresh 32-byte nonces and signs canonical `TeeDecisionReceipt` payloads. |
+| **On-Chain Policy Engine** | `near-sdk-rs` (`5.7.0` WASM) | Enforces 4-state async cross-contract execution (`InFlightLeg1 -> ReadyForLeg2 -> InFlightLeg2 -> Completed`) and byte-parses EVM & Solana transactions prior to signing. |
+| **Multi-Curve MPC** | NEAR Chain Signatures (`v1.signer`) | Derives keyless deterministic accounts on Base (`domain_id: 0`, Secp256k1) and Solana (`domain_id: 1`, Ed25519) governed exclusively by the guardrail contract. |
+| **Cross-Chain Liquidity** | NEAR Intents (`1click.chaindefuser.com`) | Routes standby Base USDC (`0x8335...2913`) to Solana USDC (`EPjFW...Dt1v`) with slippage bounds verified on-chain. |
 
-The `intercept-policy-guardrail` Rust smart contract (`261 KB` optimized WASM, `code_hash: 33SRp6wPfQstENEvnpEo7LfWNmiCcR7HYbxTrzwaG5fF`) is deployed live on **NEAR Testnet** at [`intercept-guardrail-373299.testnet`](https://testnet.nearblocks.io/address/intercept-guardrail-373299.testnet), paired with dedicated zero-FullAccess agent subaccount [`runner.intercept-guardrail-373299.testnet`](https://testnet.nearblocks.io/address/runner.intercept-guardrail-373299.testnet) (`ed25519:AyiYySwH7ePxaphzQmct6ttuGu62eZeuSa8WSmSuyx6z` `AccessKeyPermission::FunctionCall`), and verified end-to-end against **`v1.signer-prod.testnet`**:
+---
 
-| Step | On-Chain Action | Transaction Hash / Explorer Link | Verified On-Chain Outcome |
+## System Architecture
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────────────────┐
+│                     1. CONFIDENTIAL TELEMETRY & RISK ENGINE (NEAR AI CLOUD)              │
+│   Solana Mainnet RPC: Pyth PriceUpdateV2 (`7UVimff...`) + Kamino Obligation (`KLend2g`)  │
+│                                            │                                             │
+│                                            ▼                                             │
+│   • Evaluates realized volatility (σ_bps), confidence spread, and EMA downward velocity  │
+│   • Selects regime: HOLD | MICRO_BUFFER_RESCUE (1.20x) | CASCADE_DEEP_RESCUE (1.45x)     │
+│   • Requests Base USDC -> Solana USDC quote from NEAR Intents 1-Click API                │
+│   • Signs deterministic Ed25519 `TeeDecisionReceipt` inside Intel TDX enclave            │
+└────────────────────────────────────────────┬─────────────────────────────────────────────┘
+                                             │ Scoped NEAR FunctionCall Key (0 NEAR deposit)
+                                             ▼
+┌──────────────────────────────────────────────────────────────────────────────────────────┐
+│                   2. ON-CHAIN POLICY GUARDRAIL (`contracts/policy-guardrail`)            │
+│                                                                                          │
+│   ┌──────────────────────────────────────────┐ ┌───────────────────────────────────────┐ │
+│   │ LEG 1 · `request_rescue_origin_leg`      │ │ LEG 2 · `request_rescue_destination`  │ │
+│   │ • Verifies Ed25519 `TeeDecisionReceipt`  │ │ • Requires `ReadyForLeg2` state       │ │
+│   │ • Enforces HF < trigger & 24h/tx caps    │ │ • Parses raw Solana V0 Message bytes  │ │
+│   │ • Byte-parses EIP-1559 (`chain_id=8453`) │ │ • Rejects V0 Address Lookup Tables    │ │
+│   │ • Pins Base USDC `transfer` (`0xa9059cbb`)│ │ • Whitelists ComputeBudget + KLend    │ │
+│   │ • Pins recipient == 1-Click deposit addr │ │ • Pins user Obligation & USDC Reserve │ │
+│   └────────────────────┬─────────────────────┘ └───────────────────┬───────────────────┘ │
+└────────────────────────┼───────────────────────────────────────────┼─────────────────────┘
+                         │ `v1.signer::sign` (`domain_id: 0`)        │ `v1.signer::sign` (`domain_id: 1`)
+                         ▼                                           ▼
+         ┌───────────────────────────────┐           ┌───────────────────────────────┐
+         │ Base Mainnet (`MPC_Base_Vault`)│          │ Solana (`MPC_Solana_Payer`)   │
+         │ Transfers exact Base USDC to  ├──────────►│ Executes Kamino Lend          │
+         │ NEAR Intents deposit address  │  1-Click  │ `repay_obligation_liquidity_v2`│
+         └───────────────────────────────┘  Solver   └───────────────────────────────┘
+```
+
+---
+
+## Adaptive Quantitative Risk Model
+
+Static threshold bots fail DeFi borrowers in one of two ways: under-buffering during violent liquidation cascades (resulting in liquidation on the next candle) or over-repaying during calm mean-reverting pullbacks (draining Base stablecoin yield unnecessarily). Intercept dynamically sizes debt repayments across three quantitative regimes:
+
+| Regime | Trigger Condition | Target Health Factor | Capital Behavior |
 | :--- | :--- | :--- | :--- |
-| **1. Contract Deploy & Init** | `DeployContract` + `new(policy)` | [`FHbKGEa9q2h3Pu4adQpyVhSHVAfiPZSFQTk9DNCb6ns9`](https://testnet.nearblocks.io/txns/FHbKGEa9q2h3Pu4adQpyVhSHVAfiPZSFQTk9DNCb6ns9) | Guardrail WASM deployed & initialized (`EVENT_JSON: policy_initialized`) |
-| **2. Borsh Upgrade & Policy Update** | `DeployContract` + `update_policy` | [`AtGgegrK4nGFX7Lksu66zSBvgGoqP8Wr7jAQepfaW3Bf`](https://testnet.nearblocks.io/txns/AtGgegrK4nGFX7Lksu66zSBvgGoqP8Wr7jAQepfaW3Bf) | State-preserving WASM upgrade (`without-init-call`) + owner-restricted `update_policy` (`EVENT_JSON: policy_updated`) |
-| **3. Scoped `FunctionCall` Key Provisioning** | `CreateAccount` + `AddKey(FunctionCall)` | [`3TFzFZ6vF1uEYBEPtvf8X5PDiWo3VKZojJSMzuiKriVF`](https://testnet.nearblocks.io/txns/3TFzFZ6vF1uEYBEPtvf8X5PDiWo3VKZojJSMzuiKriVF) | Creates `runner.intercept-guardrail-373299.testnet` with **only** a `1.00 NEAR` `FunctionCall` key scoped to `request_rescue_origin_leg` & `request_rescue_destination_leg` |
-| **4. Zero-Deposit `FunctionCall` Leg 1 Rescue** | `request_rescue_origin_leg` -> `v1.signer-prod.testnet::sign` (`domain_id: 0` Secp256k1) | [`5GZMVE9fokSqLqNNxZTLZEzeHrBbkQSAfLro5NMeZFJt`](https://testnet.nearblocks.io/txns/5GZMVE9fokSqLqNNxZTLZEzeHrBbkQSAfLro5NMeZFJt) | Signed by scoped `FunctionCall` key with **`0 NEAR` attached deposit** (contract sponsors `0.05 NEAR` fee); MPC Secp256k1 signature returned (`big_r: 0253d863...`, `s: 286ce954...`, `recovery_id: 0`); `InFlightLeg1 -> ReadyForLeg2` |
-| **5. Zero-Deposit `FunctionCall` Leg 2 Repay** | `request_rescue_destination_leg` -> `v1.signer-prod.testnet::sign` (`domain_id: 1` Ed25519) | [`9mHD6Qp7tCeaMieWyLTYb7wE3YyHRR3BmtqcdzG2xeFr`](https://testnet.nearblocks.io/txns/9mHD6Qp7tCeaMieWyLTYb7wE3YyHRR3BmtqcdzG2xeFr) | Signed by scoped `FunctionCall` key with **`0 NEAR` attached deposit**; 539-byte 5-instruction Solana `V0` Kamino `repay_obligation_liquidity_v2` message verified; MPC Ed25519 signature returned (`bc9a92b0...`); `InFlightLeg2 -> Completed` |
-| **6. On-Chain Healthy-Position Block** | `PositionHealthyAboveTrigger` revert proof | [`i1YgQ5EMZ78FWUoD8kZFKyqpADY6RNo6kKNYTCKrudJ`](https://testnet.nearblocks.io/txns/i1YgQ5EMZ78FWUoD8kZFKyqpADY6RNo6kKNYTCKrudJ) | Proves deterministic on-chain panic when `observed_hf_bps (12200) >= min_trigger_hf_bps (11500)` before `v1.signer` is called |
-| **7. Async TOCTOU Rollback Proof** | `on_origin_leg_signed` failure rollback | [`GnXXpAsFo6w9c77SjkK8VNYvY3uAwY49rPdFPbnzhvkk`](https://testnet.nearblocks.io/txns/GnXXpAsFo6w9c77SjkK8VNYvY3uAwY49rPdFPbnzhvkk) | Proves non-panicking callback state rollback (`EVENT_JSON: rescue_origin_leg_rolled_back`) refunding `rolling_24h_spent_usdc` on downstream failure |
+| **`HOLD`** | $\text{HF} \ge \text{HF}_{\text{trigger}}$ (default `1.15x`) | — | `100%` of standby USDC remains untouched on Base. |
+| **`MICRO_BUFFER_RESCUE`** | $1.10 \le \text{HF} < \text{HF}_{\text{trigger}}$ with calm volatility ($\sigma < 5500\text{ bps}$) | **`1.20x`** | Bridges the minimum USDC required to clear liquidation risk while preserving Base yield. |
+| **`CASCADE_DEEP_RESCUE`** | $\text{HF} < 1.10$, or $\text{HF} < \text{HF}_{\text{trigger}}$ with $\sigma \ge 5500\text{ bps}$ or EMA velocity $\le -400\text{ bps}$ | **`1.45x`** | Pre-emptively builds a deep `31.0%` collateral buffer ahead of multi-candle cascade wicks. |
 
-Every architectural guarantee in this repository is also verifiable locally in under 60 seconds with zero secret keys required.
+### Multi-Regime Historical Benchmark (`100 SOL` Collateral / `$6,000 USDC` Debt)
 
-### Step A: Verify the Rust Smart Contract & Adversarial Unit Tests (`contracts/policy-guardrail`)
-
-**Do X:**
-```bash
-cargo test --manifest-path contracts/policy-guardrail/Cargo.toml
-```
-
-**See Y:**
-- All **25 Rust unit and adversarial tests** compile and pass:
-  - `test_onchain_min_trigger_hf_enforcement_and_zero_deposit_function_call_sponsorship`: Proves that `TeeDecisionReceipt::verify` rejects rescue attempts when `observed_hf_bps >= policy.min_trigger_hf_bps` (`PositionHealthyAboveTrigger`), and proves full Leg 1 + Leg 2 cross-contract execution with `attached_deposit == 0 yoctoNEAR` via contract-sponsored `DEFAULT_MPC_SIGN_DEPOSIT`.
-  - `test_adversarial_ed25519_s_malleability_and_evm_high_gas_price_rejected`: Proves canonical RFC 8032 / ZIP-215 low-order `S < L` enforcement on Ed25519 TEE signatures and `max_priority_fee_per_gas <= 10 gwei` anti-MEV fee bounds on Base EIP-1559 payloads.
-  - `test_u128_string_and_number_json_deserialization_and_v1_signer_exclusive_payload`: Verifies that `ChainSignatureArgs` omits legacy `payload` when serializing `payload_v2` for `v1.signer::sign`, and verifies that `TeeDecisionReceipt` and `PolicyConfig` deserialize `u128` fields from both JSON strings and JSON numbers.
-  - `test_verify_kamino_anchor_discriminators_and_program_pubkeys`: Verifies exact SHA-256 preimages for `global:repay_obligation_liquidity_v2` (`[116, 174, 213, 76, 180, 53, 210, 144]`), `global:repay_obligation_liquidity` (`[145, 178, 13, 225, 76, 240, 147, 72]`), and the 4 permissionless Kamino same-slot refresh instructions (`global:refresh_reserve` `[2, 218, 138, 235, 79, 201, 25, 102]`, `global:refresh_reserves_batch` `[144, 110, 26, 103, 162, 204, 252, 147]`, `global:refresh_obligation` `[33, 132, 147, 228, 151, 192, 72, 89]`, `global:refresh_obligation_farms_for_reserve` `[140, 144, 253, 21, 10, 74, 248, 3]`), plus Base58 decoding of `ComputeBudget111111111111111111111111111111`, `KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD`, Kamino Mainnet SOL Reserve (`d4A2prbA2whesmvHaL88BH6Ewn5N4bTSU2Ze8P6Bc4Q`), and Kamino Mainnet USDC Reserve (`D6q6wuQSrifJKZYpR1M8R4YawnLDtDsMmWM1NbBmgJ59`).
-  - `test_bounded_receipt_storage_pruning_and_mpc_gas_constants` & `test_adversarial_zero_receipt_age_policy_update_rejected`: Verifies `MPC_SIGN_GAS = 250 TGas` (`MPC_CALLBACK_GAS = 30 TGas`), enforces `max_receipt_age_sec in 30..=3600`, and proves automatic bounded storage pruning of expired completed receipts.
-  - `test_adversarial_evm_and_solana_gas_griefing_and_header_attacks_rejected`: Proves that EIP-1559 gas-griefing (`gas_limit > 250,000`), Base MEV priority/base fee drains (`max_fee_per_gas > 50 gwei`), invalid EIP-1559 fee ordering (`max_priority_fee_per_gas > max_fee_per_gas`), and Solana `ComputeBudget::SetComputeUnitPrice` priority-fee drains (`micro_lamports > 5,000,000`) are deterministically rejected before `v1.signer` is ever called.
-  - `test_nep297_structured_events_and_function_call_key_spec`: Verifies NEP-297 structured JSON event logs (`EVENT_JSON:{"standard":"intercept-guardrail",...}`) and the scoped NEAR Function-Call Access Key specification (`get_agent_function_call_key_spec`).
-  - `test_full_kamino_same_slot_refresh_and_repay_sequence_passes`: Verifies the full 5-instruction Solana `V0` repayment sequence `[ComputeBudget, refresh_reserve (SOL), refresh_reserve (USDC), refresh_obligation (remaining_accounts=[SOL, USDC]), repay_obligation_liquidity_v2]` required on Solana Mainnet to avoid `ReserveStale (6009)` / `ObligationStale (6010)`.
-  - `test_adversarial_repay_reserve_and_refresh_remaining_accounts_pinning`: Proves that substituting a rogue reserve at `repay_obligation_liquidity_v2` `ix.accounts[3]` (`repay_reserve`) or passing an unauthorized reserve in `refresh_obligation` `ix.accounts[2..]` is rejected with `RepayReserveMismatch` / `UnauthorizedReserveAccount`.
-  - `test_adversarial_leg2_while_leg1_inflight_reverts` & `test_adversarial_concurrent_leg2_while_inflight_reverts`: Prove the 4-state async cross-contract TOCTOU state machine (`InFlightLeg1 -> ReadyForLeg2 -> InFlightLeg2 -> Completed`) blocks any premature or concurrent Leg 2 calls across `v1.signer::sign` promises.
-  - `test_leg1_and_leg2_mpc_failure_rollbacks_preserve_funds`: Proves that if Leg 1's `v1.signer::sign` fails, `on_origin_leg_signed` refunds `rolling_24h_spent_usdc` and removes the receipt without panicking, whereas if Leg 2's `v1.signer::sign` fails, `on_destination_leg_signed` rolls the state back to `ReadyForLeg2` (preserving the Leg 1 authorization record so bridged Solana USDC is never stranded and Leg 2 can be safely retried).
-  - `test_adversarial_sneak_withdraw_after_refresh_reverts`: Proves that attempting to sneak `withdraw_obligation_collateral_v2` after `refresh_reserve` / `refresh_obligation` (or inside a refresh slot) is deterministically blocked.
-  - `test_v1_signer_payload_v2_ecdsa_vs_eddsa_raw_message_and_callbacks`: Verifies that Leg 1 (`domain_id: 0`, Secp256k1) passes the 32-byte Keccak256 digest via `SignPayloadV2::Ecdsa`, whereas Leg 2 (`domain_id: 1`, Ed25519) passes the raw serialized Solana `Message` bytes via `SignPayloadV2::Eddsa` (never a 32-byte pre-hash), and verifies `on_origin_leg_signed` / `on_destination_leg_signed` callback parsing.
-  - `test_adversarial_solana_32_byte_prehash_rejected`: Proves that passing a 32-byte pre-hash to `domain_id: 1` reverts immediately on-chain.
-  - `test_valid_leg1_and_leg2_end_to_end`, `test_adversarial_evm_attacks_rejected`, `test_adversarial_solana_kamino_attacks_rejected`, `test_adversarial_forged_tee_signature_reverts`, `test_adversarial_tee_receipt_replay_reverts`, `test_adversarial_tee_hold_regime_reverts`, `test_adversarial_tee_slippage_breach_reverts`, `test_adversarial_daily_spending_limit_exceeded_reverts`, and `test_adversarial_agent_cannot_update_policy`: Prove contract-level panics on every policy violation.
+| Strategy | Survival Rate | Cascade Crash (`-34%` SOL) | Orderly Pullback (`-12%` SOL) | Sideways Noise (`-7.5%` SOL) |
+| :--- | :--- | :--- | :--- | :--- |
+| **Unprotected Position** | `66.7%` | **Liquidated** (`$561.00` penalty) | Survived (`$0` deployed) | Survived (`$0` deployed) |
+| **Static Micro Bot (`-> 1.20x`)** | `66.7%` | **Liquidated** at wick (`$561.00` penalty) | Survived (`$343.75` deployed) | Survived (`$0` deployed) |
+| **Static Conservative Bot (`-> 1.45x`)** | `100.0%` | Survived (`$2,586.21` deployed) | Over-deployed (`$1,318.97` USDC) | Survived (`$0` deployed) |
+| **Intercept Adaptive Engine** | **`100.0%`** | **Survived** (`$2,586.21` deployed, `$555.57` saved) | **Optimal** (`$343.75` — **`73.9%` capital saved**) | **Optimal** (`$0` deployed) |
 
 ---
 
-### Step B: Run the Live Mainnet Pre-Flight Check & End-to-End CLI Verifier (`packages/agent-tee`)
+## Security & Privacy Guarantees
 
-**Do X:**
-```bash
-npm run preflight
-npm run backtest
-npm run verify
-```
+### 1. Least-Privilege Access Keys & Contract-Sponsored MPC Fees
+- **Scoped `FunctionCall` Permission:** The off-chain runner operates exclusively through a restricted NEAR `AccessKeyPermission::FunctionCall` key (`runner.intercept-guardrail-373299.testnet`) scoped solely to `request_rescue_origin_leg` and `request_rescue_destination_leg`. It holds **zero `FullAccess` keys** and cannot invoke `update_policy`, modify contract code, or transfer NEAR.
+- **Native Zero-Deposit Compatibility:** Because NEAR `FunctionCall` keys forbid non-zero `attached_deposit` (`DepositWithFunctionCall`), `resolve_mpc_sign_deposit()` automatically sponsors the `0.05 NEAR` `v1.signer::sign` deposit from the guardrail contract's own balance (`v1.signer` refunds unused deposit directly back to the guardrail contract).
+- **Allowance Calibration & Operational Rotation:** Cross-contract `300 TGas` calls reserve `~0.3009 NEAR` upfront under NEAR pessimistic gas accounting (`actual gas burned: ~0.0021 NEAR`). Agent keys are provisioned with a `1.00 NEAR` gas allowance and monitored for rotation whenever remaining allowance drops below `0.35 NEAR`.
 
-**See Y:**
-1. **Live Mainnet Pre-Flight Check (`npm run preflight`):** Queries `v1.signer::derived_public_key` on NEAR Mainnet (`https://rpc.mainnet.near.org`) to derive `MPC_Base_Vault` (`0x72faa1abaf92e0c4b791f15acedb496c8979746c`), `MPC_Solana_Payer` (`GZMAbwapG99YKCsA2CDVc4bXeBzd7nvKMQgtm9K8aKas`), and its deterministic Solana Native USDC Associated Token Account `MPC_Solana_Payer_USDC_ATA` (`2eLUYLvdceHQTbRHQcU26x4sRj6ZAZ27otxMQS8qpskq`, `bump=255`), queries live Base Mainnet RPC (`https://mainnet.base.org`) for `nonce` + EIP-1559 gas fees + ETH/USDC balances, and queries live Solana Mainnet RPC (`https://api.mainnet-beta.solana.com`) for `recentBlockhash` + SOL balance + ATA existence & USDC balance.
-2. **Step 1 (Kamino Anchor Discriminator Verification):** Prints and verifies `repay_obligation_liquidity_v2` (`0x74aed54cb435d290`), `repay_obligation_liquidity` (`0x91b20de14cf09348`), and all 4 same-slot refresh discriminators.
-3. **Step 2 (`LIVE_MAINNET_MODE`):** Reads the live on-chain Pyth Network `PriceUpdateV2` SOL/USD account (`7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE`) and deserializes the live on-chain 3,344-byte Kamino Mainnet `Obligation` account (`C5dZVpvpA39SNLDkojsi98nRePRRy8ELhtxak8m2vMq`, `0.184738038 SOL` collateral at `offset 96` & `9.230855 USDC` debt at `offset 1208`, `source: LIVE_ONCHAIN_OBLIGATION`) on Solana Mainnet, evaluates the position (`HF ~1.436 >= 1.1500`), and outputs `Regime: HOLD`.
-4. **Step 3 (`STRESS_TEST_MAINNET_MODE` — `-25%` SOL Flash Crash):**
-   - Evaluates the `-25%` SOL shock (`HF 1.0630 < 1.1500`) and triggers `CASCADE_DEEP_RESCUE` (`Target HF 1.45`).
-   - Queries a cross-chain swap quote from **NEAR Intents 1-Click API** (`https://1click.chaindefuser.com/v0/quote`) for Base USDC -> Solana USDC.
-   - Signs the canonical `TeeDecisionReceipt` with Ed25519, builds the unsigned EIP-1559 Base USDC transaction (`domain_id: 0`) and the 5-instruction Solana `V0` Kamino refresh+repay message (`domain_id: 1`, pinning `repay_reserve` to `D6q6wuQSrifJKZYpR1M8R4YawnLDtDsMmWM1NbBmgJ59` and `user_source_liquidity` to `2eLUYLvdceHQTbRHQcU26x4sRj6ZAZ27otxMQS8qpskq`), reconstructs the signed transactions, and prints the 5-stage millisecond stopwatch telemetry + clickable explorer URLs.
-5. **Step 4 (Adversarial Red-Team Suite):** Fires **11 rogue AI attack vectors** (`ADV_01` through `ADV_11`, including collateral withdrawal, V0 ALT indirection, 32-byte Solana pre-hash, ERC-20 `approve()`, recipient hijack, concurrent TOCTOU race, Base 500 gwei gas-griefing drain, and Solana `ComputeBudget` priority-fee drain) and confirms all 11 are `BLOCKED (PASS)` with exact revert diagnostics.
-6. **Step 5 (Quantitative Multi-Regime Historical Backtest — `npm run backtest`):** Replays 3 historical SOL volatility regimes (`-34%` Flash Cascade, `-12%` Mean-Reverting Dip, and `-7.5%` Choppy Noise) on a `100 SOL / $6,000 USDC` Kamino position, proving **100% liquidation survival** (vs. `66.7%` for a Naive `HF -> 1.20` Static Bot, which gets liquidated on a `-21.4%` cascade wick exceeding its `16.67%` buffer), **`$555.57` in prevented liquidation penalties**, and **`73.9%` Base capital efficiency savings** compared to an Over-Conservative Static Bot.
+### 2. Deterministic Byte-Level Exploit Prevention (`11 / 11` Vectors Blocked)
+Every signing request is validated in Rust WASM (`< 1.5 ms`) before `v1.signer` is invoked:
+- **Base Leg 1 (`src/evm_parser.rs`):** Enforces canonical EIP-1559 RLP encoding, `chain_id == 8453`, `to == Base Native USDC`, `value == 0`, `selector == 0xa9059cbb` (explicitly blocking `approve`), `recipient == receipt.oneclick_deposit_address`, `amount == receipt.repay_amount_usdc`, and strict gas-fee bounds (`max_fee_per_gas <= 50 gwei`, `max_priority_fee_per_gas <= 10 gwei`).
+- **Solana Leg 2 (`src/solana_parser.rs`):** Rejects 32-byte blind pre-hashes (`64..=1232` byte raw `Message` required) and opaque `V0` Address Lookup Tables (`address_table_lookups_len == 0`), whitelists only `ComputeBudget` (`<= 5M micro-lamports/CU`) and `KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD` same-slot oracle refreshes + `repay_obligation_liquidity_v2`, and pins `obligation`, `lending_market`, `usdc_repay_reserve`, and `MPC_Solana_Payer`'s canonical USDC ATA.
+- **Async Cross-Contract TOCTOU Protection (`src/lib.rs`):** Deducts rolling 24-hour spend caps *before* yielding to `v1.signer` (`InFlightLeg1`) and executes non-panicking state rollbacks in `#[private]` callbacks if downstream MPC signing fails.
+
+### 3. Confidential Compute & Zero-Retention Privacy
+- **Fresh Cryptographic Nonces:** Every `NEAR AI Cloud` attestation request generates a fresh 32-byte CSPRNG nonce (`crypto.randomBytes(32)`) bound into both the Intel TDX `report_data` commitment and NVIDIA NRAS GPU `eat_nonce`, then cryptographically verifies the enclave's Ed25519 signature over `nonce:requestHash:responseHash`.
+- **Stateless Telemetry:** The web dashboard and `/api/intercept` route operate statelessly in memory with zero server-side persistence, database logging, or third-party tracking of user wallet addresses.
 
 ---
 
-### Step C: Run the Agent Unit Test Suite
+## Live On-Chain Verification (NEAR Testnet)
 
-**Do X:**
-```bash
-npm run test:agent
-```
+- **Policy Guardrail Contract:** [`intercept-guardrail-373299.testnet`](https://testnet.nearblocks.io/address/intercept-guardrail-373299.testnet)
+- **Scoped `FunctionCall` Agent Account:** [`runner.intercept-guardrail-373299.testnet`](https://testnet.nearblocks.io/address/runner.intercept-guardrail-373299.testnet)
+- **Derived `v1.signer-prod.testnet` Vaults:** `0xfa1d66b9f3ae95f9d21b8db2315720c2fcde5320` (Base `domain_id: 0`) · `7AqKFEDJ13ZxpnQnBEEM6XmGq2LNa65jXBE4q96emvCo` (Solana `domain_id: 1`)
 
-**See Y:**
-- Executes the deterministic `node:test` suite in [`packages/agent-tee/src/test.ts`](file:///Users/apple/Desktop/Intercept/packages/agent-tee/src/test.ts) covering all 3 quantitative risk regimes, Ed25519 receipt tampering rejection, live 1-Click safety aborts, idempotent Solana ATA construction, and byte-level EVM/Solana parsers (`5 passed, 0 failed`).
+| Verification Proof | Method / Action | NearBlocks Transaction |
+| :--- | :--- | :--- |
+| **1. Guardrail Deployment & Initialization** | `DeployContract` + `new(policy)` | [`FHbKGEa9q2h3Pu4adQpyVhSHVAfiPZSFQTk9DNCb6ns9`](https://testnet.nearblocks.io/txns/FHbKGEa9q2h3Pu4adQpyVhSHVAfiPZSFQTk9DNCb6ns9) |
+| **2. State-Preserving Upgrade & Policy Update** | `DeployContract` + `update_policy` | [`AtGgegrK4nGFX7Lksu66zSBvgGoqP8Wr7jAQepfaW3Bf`](https://testnet.nearblocks.io/txns/AtGgegrK4nGFX7Lksu66zSBvgGoqP8Wr7jAQepfaW3Bf) |
+| **3. Scoped `FunctionCall` Key Provisioning** | `AddKey` (`1.00 NEAR` allowance, 2 methods) | [`3TFzFZ6vF1uEYBEPtvf8X5PDiWo3VKZojJSMzuiKriVF`](https://testnet.nearblocks.io/txns/3TFzFZ6vF1uEYBEPtvf8X5PDiWo3VKZojJSMzuiKriVF) |
+| **4. Zero-Deposit Leg 1 MPC Signature (`Secp256k1`)** | `request_rescue_origin_leg` → `v1.signer-prod.testnet` | [`5GZMVE9fokSqLqNNxZTLZEzeHrBbkQSAfLro5NMeZFJt`](https://testnet.nearblocks.io/txns/5GZMVE9fokSqLqNNxZTLZEzeHrBbkQSAfLro5NMeZFJt) |
+| **5. Zero-Deposit Leg 2 MPC Signature (`Ed25519`)** | `request_rescue_destination_leg` → `v1.signer-prod.testnet` | [`9mHD6Qp7tCeaMieWyLTYb7wE3YyHRR3BmtqcdzG2xeFr`](https://testnet.nearblocks.io/txns/9mHD6Qp7tCeaMieWyLTYb7wE3YyHRR3BmtqcdzG2xeFr) |
+| **6. On-Chain Healthy-Position Guardrail Block** | `PositionHealthyAboveTrigger` (`12200 >= 11500 bps`) | [`i1YgQ5EMZ78FWUoD8kZFKyqpADY6RNo6kKNYTCKrudJ`](https://testnet.nearblocks.io/txns/i1YgQ5EMZ78FWUoD8kZFKyqpADY6RNo6kKNYTCKrudJ) |
+| **7. Async Cross-Contract Failure Rollback** | `on_origin_leg_signed` (`rescue_origin_leg_rolled_back`) | [`GnXXpAsFo6w9c77SjkK8VNYvY3uAwY49rPdFPbnzhvkk`](https://testnet.nearblocks.io/txns/GnXXpAsFo6w9c77SjkK8VNYvY3uAwY49rPdFPbnzhvkk) |
 
 ---
 
-### Step D: Launch the Institutional DeFi Command Center Web UI (`packages/web`)
+## Quickstart & Deterministic Verification
 
-**Do X:**
+### Prerequisites
+- **Node.js** `>= 22.0.0` & **npm** `>= 10.0.0`
+- **Rust** `>= 1.82` with `wasm32-unknown-unknown` target (`rustup target add wasm32-unknown-unknown`)
+
+### 1. Install Dependencies
 ```bash
+git clone https://github.com/eugenennamdi/Intercept.git
+cd Intercept
 npm install
+```
+
+### 2. Run Smart Contract, Agent & End-to-End Verification Suites
+All verification suites run deterministically out of the box without requiring external API keys or funded wallets:
+
+```bash
+# Run 25 Rust smart contract unit & adversarial security tests
+cargo test --manifest-path contracts/policy-guardrail/Cargo.toml
+
+# Run TypeScript TEE risk engine, zero-copy Kamino parser & attestation tests
+npm run test:agent
+
+# Run full 5-stage cross-chain simulation, 11-vector exploit matrix & backtest benchmark
+npm run verify
+
+# Query live NEAR v1.signer MPC derivations, Base RPC (8453) & Solana Mainnet RPC
+npm run preflight
+```
+
+### 3. Run the Web Dashboard Locally
+```bash
+cp .env.example .env
 npm run dev
 ```
-Then open `http://localhost:3000`.
-
-**See Y:**
-- **Live Kamino HF Gauge & Pyth Solana Mainnet Telemetry (`Position Overview`):** View live SOL/USD spot, EMA, confidence spread, realized volatility ($\sigma$), and Pre-Rescue vs. Post-Rescue Health Factor.
-- **Interactive Scenario Bar & Policy Modal:** Toggle between `Live Mainnet (0%)`, `-21% Dip`, `-25% Crash`, `Trigger Override (1.48x)`, or any custom shock (`-40%` to `0%`), and click **Configure Protection Policy** to test custom spending caps (e.g. `$2.00 USDC Micro Test`), trigger thresholds, or custom Solana Kamino obligations live.
-- **5-Stage Cross-Chain Execution & Byte Inspector (`Cross-Chain Execution`):** Inspect real measured millisecond latency per stage, click directly into `Solscan`, `1-Click Swap Status`, `NearBlocks (v1.signer)`, and `BaseScan`, and inspect the canonical `TeeDecisionReceipt`, Ed25519 signature hex, unsigned EIP-1559 RLP bytes, and raw 539-byte 5-instruction Solana `V0` message hex.
-- **11-Vector Red-Team Matrix & Historical Backtests (`Security Tests` & `Backtests`):** Click any of the **11** adversarial attack vectors (`withdraw` / `borrow` injection, ERC-20 `approve()`, recipient hijack, V0 ALT indirection, 32-byte pre-hash, 500 gwei gas-griefing, concurrent TOCTOU races) to inspect the exact NEAR Policy Contract revert error, or review the 3-scenario quantitative survival backtest.
+Open [`http://localhost:3000`](http://localhost:3000) for the interactive risk simulator and [`http://localhost:3000/docs`](http://localhost:3000/docs) for the full technical specification. For Mainnet deployment and live cross-chain execution instructions, see [Section 5 of `ARCHITECTURE.md`](./ARCHITECTURE.md#5-deployment--live-operations-guide).
 
 ---
 
-## 3. Repository Structure
+## Repository Structure
 
 ```text
 Intercept/
-├── .github/workflows/ci.yml      # Automated CI pipeline (cargo test, npm test, verify, build)
-├── README.md                     # Protocol overview & deterministic verification guide
-├── ARCHITECTURE.md               # Byte-level parser & cryptographic specification
-├── scripts/
-│   └── deploy-near.sh            # 1-command WASM build & NEAR contract deployment script
 ├── contracts/
-│   └── policy-guardrail/         # Rust smart contract (near-sdk-rs)
-│       ├── Cargo.toml
+│   └── policy-guardrail/        # Rust (near-sdk-rs 5.7.0) on-chain byte-level policy guardrail
 │       └── src/
-│           ├── lib.rs            # Contract entrypoints, 24h caps, v1.signer calls (250 TGas)
-│           ├── evm_parser.rs     # Zero-trust RLP / EIP-1559 Base USDC transfer verifier
-│           ├── solana_parser.rs  # Zero-trust Solana V0/Legacy Message & Kamino verifier
-│           ├── tee_receipt.rs    # Ed25519 TeeDecisionReceipt verifier
-│           └── tests.rs          # 25 unit + adversarial security tests
-└── packages/
-    ├── agent-tee/                # TypeScript TEE Quantitative Risk & Routing Service
-    │   └── src/
-    │       ├── index.ts          # Public package exports
-    │       ├── kamino-reader.ts  # Solana Mainnet Kamino Obligation reader & health math
-    │       ├── pyth-volatility.ts# Live on-chain Pyth Solana Receiver + Hermes reader
-    │       ├── risk-engine.ts    # Dynamic de-risking sizing model + Ed25519 receipt signer
-    │       ├── near-ai-cloud.ts  # NEAR AI Cloud (Intel TDX + NVIDIA NRAS) TEE attestation client
-    │       ├── oneclick-client.ts# Live NEAR Intents 1-Click API client + live safety abort
-    │       ├── payload-builder.ts# Unsigned EIP-1559 & Solana V0 Message byte builders
-    │       ├── mainnet-broadcaster.ts # Live NEAR v1.signer, Base & Solana RPC broadcaster
-    │       ├── orchestrator.ts   # 5-stage rescue state machine & 11-vector adversarial suite
-    │       ├── backtest.ts       # Multi-regime historical quantitative backtest engine
-    │       ├── cli-verify.ts     # 1-command deterministic security & RPC verifier
-    │       └── test.ts           # Unit & adversarial test suite
-    └── web/                      # Next.js + Tailwind Institutional DeFi Command Center
-        └── src/app/
-            ├── api/intercept/    # Server route executing live agent-tee pipeline
-            ├── docs/             # Dedicated technical documentation portal
-            └── page.tsx          # Interactive Command Center UI
+│           ├── lib.rs           # 4-state async MPC state machine & contract-sponsored sign deposit
+│           ├── tee_receipt.rs   # Canonical Ed25519 TeeDecisionReceipt verifier & trigger checks
+│           ├── evm_parser.rs    # Strict EIP-1559 RLP decoder & Base USDC transfer verifier
+│           ├── solana_parser.rs # Solana V0/Legacy message parser & Kamino instruction verifier
+│           └── tests.rs         # 25 unit & adversarial red-team tests
+├── packages/
+│   ├── agent-tee/               # Confidential TEE risk engine, Pyth/Kamino readers & 1-Click client
+│   └── web/                     # Next.js 15 App Router dashboard & technical documentation (/docs)
+├── scripts/
+│   └── deploy-near.sh           # Reproducible WASM build & NEAR deployment script
+├── ARCHITECTURE.md              # Deep byte-level protocol specification & Mainnet operations guide
+└── LICENSE                      # MIT License
 ```
+
+## License
+
+Released under the [MIT License](./LICENSE).

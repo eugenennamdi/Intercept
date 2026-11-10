@@ -15,11 +15,11 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL("https://intercept-inky.vercel.app"),
   title: {
-    default: "Intercept — Zero-Trust Cross-Chain Liquidation Defense",
+    default: "Intercept — Non-Custodial Cross-Chain Liquidation Defense on NEAR",
     template: "%s · Intercept",
   },
   description:
-    "Autonomous Kamino Lend liquidation defense across Base and Solana powered by NEAR AI Cloud TEE, near-sdk-rs byte-level policy guardrails, v1.signer Chain Signatures, and NEAR Intents 1-Click.",
+    "Protect Solana Kamino positions from liquidation penalties using standby USDC on Base—built on NEAR Intents, Chain Signatures, Smart Contract Guardrails, and Confidential AI.",
   applicationName: "Intercept",
   keywords: [
     "NEAR Protocol",
@@ -31,22 +31,22 @@ export const metadata: Metadata = {
     "Kamino Lend",
     "Solana",
     "Base",
-    "DeFi Security",
+    "DeFi Risk Infrastructure",
   ],
   openGraph: {
     type: "website",
     url: "https://intercept-inky.vercel.app",
     siteName: "Intercept",
-    title: "Intercept — Zero-Trust Cross-Chain Liquidation Defense",
+    title: "Intercept — Non-Custodial Cross-Chain Liquidation Defense on NEAR",
     description:
-      "Non-custodial cross-chain Kamino rescue engine powered by NEAR AI Cloud TEE, deterministic Rust byte guardrails, v1.signer MPC, and NEAR Intents 1-Click.",
+      "Keep SOL collateral in self-custody on Solana and standby USDC on Base. NEAR Confidential AI, byte-level Rust guardrails, Chain Signatures, and Intents prevent liquidations automatically.",
     locale: "en_US",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Intercept — Zero-Trust Cross-Chain Liquidation Defense",
+    title: "Intercept — Non-Custodial Cross-Chain Liquidation Defense on NEAR",
     description:
-      "Non-custodial cross-chain Kamino rescue engine on NEAR: TEE reasoning + byte-level EIP-1559 & Solana V0 guardrails + v1.signer MPC + 1-Click.",
+      "Cross-chain liquidation defense for DeFi borrowers built on NEAR Intents, Chain Signatures (v1.signer), Rust policy guardrails, and Confidential AI.",
     creator: "@NEARProtocol",
   },
 };
