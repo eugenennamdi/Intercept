@@ -259,6 +259,12 @@ async function main(): Promise<void> {
       `  Leg 2 Repay Accounts : repay_reserve=${stressReport.leg2SolanaVerification.repayReservePubkey} | user_source_liquidity_ata=${stressReport.leg2SolanaVerification.userSourceLiquidityAtaPubkey}`
     );
   }
+  if (stressReport.onChainNearWasmVerification) {
+    const w = stressReport.onChainNearWasmVerification;
+    console.log(
+      `  NEAR On-Chain WASM   : ${w.source} | ${w.contractId} (originLeg=${w.originLegVerified}, destLeg=${w.destinationLegVerified}, ${w.latencyMs} ms)`
+    );
+  }
 
   console.log("\n  5-Stage Measured Stopwatch Telemetry:");
   for (const stage of stressReport.stages) {

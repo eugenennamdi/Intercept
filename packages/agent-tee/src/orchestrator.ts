@@ -209,10 +209,11 @@ export function getDefaultInterceptSetup(): {
     },
     policy: {
       nearContractId:
-        process.env.POLICY_CONTRACT_ID ?? NEAR_TESTNET_GUARDRAIL_CONTRACT_ID,
+        process.env.POLICY_CONTRACT_ID?.trim() ||
+        NEAR_TESTNET_GUARDRAIL_CONTRACT_ID,
       ownerNearAccount: NEAR_TESTNET_GUARDRAIL_CONTRACT_ID,
       authorizedAgentNearAccount:
-        process.env.NEAR_ACCOUNT_ID ?? NEAR_TESTNET_AGENT_ACCOUNT_ID,
+        process.env.NEAR_ACCOUNT_ID?.trim() || NEAR_TESTNET_AGENT_ACCOUNT_ID,
       mpcSignerContractId: "v1.signer",
       teeEnclavePubkeyHex: enclave.publicKeyHex,
       mpcBaseVaultAddress: mpcBaseVault,

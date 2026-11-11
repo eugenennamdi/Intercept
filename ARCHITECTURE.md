@@ -188,7 +188,7 @@ NEAR_NETWORK="mainnet" \
 npm run deploy:near -- --deploy
 ```
 
-Provision a dedicated least-privilege `FunctionCall` key on the agent account restricted exclusively to the two verified rescue entrypoints (`1.00 NEAR` allowance covers pessimistic `300 TGas` cross-contract reservations while `resolve_mpc_sign_deposit` sponsors the `0.05 NEAR` `v1.signer` fee from the guardrail contract balance):
+Provision a dedicated least-privilege `FunctionCall` key on the agent account restricted exclusively to the three verified rescue entrypoints (`1.00 NEAR` allowance covers pessimistic `300 TGas` cross-contract reservations while `resolve_mpc_sign_deposit` sponsors the `0.05 NEAR` `v1.signer` fee from the guardrail contract balance):
 
 ```bash
 near account add-key agent.<your-account>.near grant-function-call-access \

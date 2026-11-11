@@ -374,21 +374,34 @@ export async function fetchKaminoObligationTelemetry(params: {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
-    const rpcRes = await fetch(solanaRpcUrl, {
+    const reqBody = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "getAccountInfo",
+      params: [
+        effectiveObligationPubkey,
+        { encoding: "base64", commitment: "confirmed" },
+      ],
+    });
+    let rpcRes = await fetch(solanaRpcUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       signal: controller.signal,
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "getAccountInfo",
-        params: [
-          effectiveObligationPubkey,
-          { encoding: "base64", commitment: "confirmed" },
-        ],
-      }),
+      body: reqBody,
     });
     clearTimeout(timer);
+    if (
+      !rpcRes.ok &&
+      !params.solanaRpcUrl &&
+      solanaRpcUrl === DEFAULT_SOLANA_RPC_URL
+    ) {
+      rpcRes = await fetch("https://solana-rpc.publicnode.com", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(timeoutMs),
+        body: reqBody,
+      });
+    }
 
     if (rpcRes.ok) {
       const json = (await rpcRes.json()) as {

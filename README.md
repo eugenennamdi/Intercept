@@ -108,6 +108,15 @@ Every signing request is validated in Rust WASM (`< 1.5 ms`, with live zero-gas 
 
 ---
 
+## Protocol Sustainability & Ecosystem Roadmap
+
+- **Performance-Aligned Protocol Economics (`0` Idle Subscription):** Standby reserves on Base incur zero custody or management fees during `HOLD`. In production, Intercept charges a `15 bps` protection fee strictly on settled emergency rescues—less than `3%` of the `500–1,000 bps` (`5%–10%`) Kamino liquidation penalty prevented.
+- **Sub-Cent NEAR Execution Overhead:** Each two-leg cross-chain rescue burns `~0.0042 NEAR` in actual compute gas across `request_rescue_origin_leg` and `request_rescue_destination_leg`, while `v1.signer` automatically refunds unused MPC deposit back into the guardrail contract's sponsored pool.
+- **Institutional Solver Spread (`NEAR Intents`):** Partner `ONECLICK_JWT` fee tiers compress stablecoin cross-chain routing from `25 bps` to `1 bp`, keeping automated micro-buffer rebalancing cheaper than manual bridge + DEX execution.
+- **Horizontal Multi-Chain Expansion:** Because the core security boundary is byte-level pre-image verification in `near-sdk-rs` + `v1.signer` dual-curve threshold signing, additional destination adapters (**Aave v3**, **Morpho Blue**, **Marginfi**, and **Hyperliquid** cross-margin) plug into the same non-custodial NEAR control plane without taking custody of borrower collateral.
+
+---
+
 ## Live On-Chain Verification (NEAR Testnet)
 
 - **Policy Guardrail Contract:** [`intercept-guardrail-373299.testnet`](https://testnet.nearblocks.io/address/intercept-guardrail-373299.testnet)
@@ -144,22 +153,22 @@ npm install
 All verification suites run deterministically out of the box without requiring external API keys or funded wallets:
 
 ```bash
-# Run 29 Rust smart contract unit & adversarial security tests
-cargo test --manifest-path contracts/policy-guardrail/Cargo.toml
+# Run all 29 Rust smart contract tests + 5 TypeScript agent/verifier suites
+npm test
 
-# Run TypeScript TEE risk engine, zero-copy Kamino parser & attestation tests
-npm run test:agent
-
-# Run full 5-stage cross-chain simulation, 11-vector exploit matrix & backtest benchmark
+# Run full 5-stage cross-chain pipeline, live NEAR WASM view check, 11-vector red-team & backtest
 npm run verify
 
 # Query live NEAR v1.signer MPC derivations, Base RPC (8453) & Solana Mainnet RPC
 npm run preflight
+
+# Compile TypeScript packages and Next.js 15 production bundle
+npm run build
 ```
 
 ### 3. Run the Web Dashboard Locally
 ```bash
-cp .env.example .env
+cp .env.example .env   # optional — works out-of-the-box with zero secrets
 npm run dev
 ```
 Open [`http://localhost:3000`](http://localhost:3000) (or the live deployment at [`https://intercept-inky.vercel.app`](https://intercept-inky.vercel.app)) and [`/docs`](https://intercept-inky.vercel.app/docs) for the full technical specification. For Mainnet deployment and live cross-chain execution instructions, see [Section 5 of `ARCHITECTURE.md`](./ARCHITECTURE.md#5-deployment--live-operations-guide).

@@ -14,6 +14,7 @@ export const PYTH_SOLANA_RECEIVER_PROGRAM_ID =
 
 export const DEFAULT_HERMES_ENDPOINT = "https://hermes.pyth.network";
 export const DEFAULT_SOLANA_RPC_URL = "https://api.mainnet-beta.solana.com";
+export const BACKUP_SOLANA_RPC_URL = "https://solana-rpc.publicnode.com";
 
 export interface PythRawPrice {
   price: string;
@@ -264,24 +265,31 @@ export async function fetchPythSolVolatility(options?: {
   timeoutMs?: number;
 }): Promise<PythVolatilityTelemetry> {
   const solanaRpcUrl =
-    options?.solanaRpcUrl ??
-    process.env.SOLANA_RPC_URL ??
+    options?.solanaRpcUrl?.trim() ||
+    process.env.SOLANA_RPC_URL?.trim() ||
     DEFAULT_SOLANA_RPC_URL;
   const stressShockPct = options?.stressShockPct ?? 0;
   const timeoutMs = options?.timeoutMs ?? 6_000;
   const t0 = performance.now();
 
   // 1. Primary path: Live on-chain Pyth Solana Receiver PriceUpdateV2 account on Solana Mainnet
-  try {
-    return await fetchPythFromSolanaMainnet({
-      solanaRpcUrl,
-      stressShockPct,
-      recentPrices: options?.recentPrices,
-      timeoutMs,
-      t0,
-    });
-  } catch {
-    // Fall through to Hermes HTTP endpoint if custom Hermes endpoint is configured
+  // ponytail: retry once against publicnode Solana Mainnet RPC when api.mainnet-beta.solana.com rate-limits (HTTP 429) during parallel CLI preflight
+  const candidateSolanaRpcs =
+    options?.solanaRpcUrl || solanaRpcUrl === BACKUP_SOLANA_RPC_URL
+      ? [solanaRpcUrl]
+      : [solanaRpcUrl, BACKUP_SOLANA_RPC_URL];
+  for (const rpcUrl of candidateSolanaRpcs) {
+    try {
+      return await fetchPythFromSolanaMainnet({
+        solanaRpcUrl: rpcUrl,
+        stressShockPct,
+        recentPrices: options?.recentPrices,
+        timeoutMs: Math.min(timeoutMs, 4_000),
+        t0,
+      });
+    } catch {
+      // Try next RPC or fall through to Pyth Hermes v2 REST API
+    }
   }
 
   // 2. Secondary path: Pyth Hermes v2 REST API

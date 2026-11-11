@@ -136,12 +136,15 @@ export async function deriveMpcAddressesFromNearSigner(params: {
   nearRpcUrl?: string;
   timeoutMs?: number;
 }): Promise<DerivedMpcVaultAddresses> {
+  const isTestnet = params.predecessorContractId.endsWith(".testnet");
   const {
     predecessorContractId,
     baseDerivationPath,
     solanaDerivationPath,
-    mpcSignerContractId = "v1.signer",
-    nearRpcUrl = process.env.NEAR_RPC_URL ?? NEAR_MAINNET_RPC_URL,
+    mpcSignerContractId = isTestnet ? "v1.signer-prod.testnet" : "v1.signer",
+    nearRpcUrl = isTestnet
+      ? NEAR_TESTNET_RPC_URL
+      : process.env.NEAR_RPC_URL?.trim() || NEAR_MAINNET_RPC_URL,
     timeoutMs = 6_000,
   } = params;
 
@@ -1006,8 +1009,8 @@ export async function runMainnetPreflightCheck(options?: {
   solanaDerivationPath?: string;
 }): Promise<MainnetPreflightReport> {
   const policyContractId =
-    options?.policyContractId ??
-    process.env.POLICY_CONTRACT_ID ??
+    options?.policyContractId?.trim() ||
+    process.env.POLICY_CONTRACT_ID?.trim() ||
     "guardrail.intercept-defi.near";
   const baseDerivationPath =
     options?.baseDerivationPath ?? "intercept-base-vault-1";
