@@ -137,6 +137,85 @@ export function verifyNearAiCloudAttestationBundle(
   return { valid: true };
 }
 
+export interface NearAiAttestationReportResponse {
+  gateway_attestation?: {
+    signing_address?: string;
+    intel_quote?: string;
+    request_nonce?: string;
+  };
+  model_attestations?: Array<{
+    signing_address?: string;
+    nvidia_payload?: string | { nonce?: string; arch?: string };
+    intel_quote?: string;
+    request_nonce?: string;
+  }>;
+}
+
+export interface PrefetchedNearAiAttestation {
+  attestationNonceHex: string;
+  liveAttestJson: NearAiAttestationReportResponse | null;
+  fallbackReason?: string;
+}
+
+/**
+ * Generates a fresh 32-byte CSPRNG nonce and immediately starts `GET /v1/attestation/report`
+ * so the hardware quote roundtrip can run concurrently with Pyth & Solana RPC reads.
+ */
+export async function prefetchNearAiCloudAttestationReport(params?: {
+  apiKey?: string;
+  baseUrl?: string;
+  model?: string;
+  timeoutMs?: number;
+}): Promise<PrefetchedNearAiAttestation> {
+  const apiKey =
+    params?.apiKey ??
+    process.env.NEAR_AI_CLOUD_API_KEY ??
+    process.env.NEARAI_API_KEY;
+  const baseUrl =
+    params?.baseUrl ?? process.env.NEAR_AI_CLOUD_BASE_URL ?? NEAR_AI_CLOUD_BASE_URL;
+  const model =
+    params?.model ??
+    process.env.NEAR_AI_CLOUD_MODEL ??
+    NEAR_AI_CLOUD_DEFAULT_MODEL;
+  const timeoutMs = params?.timeoutMs ?? 5_000;
+  const attestationNonceHex = crypto.randomBytes(32).toString("hex");
+
+  try {
+    const attestHeaders: Record<string, string> = {
+      Accept: "application/json",
+      "Accept-Encoding": "identity",
+    };
+    if (apiKey && apiKey.trim().length > 0) {
+      attestHeaders["Authorization"] = `Bearer ${apiKey.trim()}`;
+    }
+    const attestRes = await fetch(
+      `${baseUrl}/attestation/report?model=${encodeURIComponent(model)}&signing_algo=ed25519&nonce=${attestationNonceHex}`,
+      {
+        headers: attestHeaders,
+        signal: AbortSignal.timeout(Math.min(timeoutMs, 3_500)),
+      }
+    );
+    if (attestRes.ok) {
+      return {
+        attestationNonceHex,
+        liveAttestJson:
+          (await attestRes.json()) as NearAiAttestationReportResponse,
+      };
+    }
+    return {
+      attestationNonceHex,
+      liveAttestJson: null,
+      fallbackReason: `NEAR AI Cloud attestation HTTP ${attestRes.status}`,
+    };
+  } catch (err) {
+    return {
+      attestationNonceHex,
+      liveAttestJson: null,
+      fallbackReason: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 /**
  * Executes verifiable confidential inference and attestation verification via NEAR AI Cloud (`https://cloud-api.near.ai/v1`).
  * Implements the official `near/agent-skills` (`near-ai-cloud`) 3-step verification flow:
@@ -152,6 +231,7 @@ export async function executeNearAiCloudVerifiableInference(params: {
   baseUrl?: string;
   model?: string;
   timeoutMs?: number;
+  prefetchedAttestation?: Promise<PrefetchedNearAiAttestation>;
 }): Promise<NearAiCloudAttestationBundle> {
   const {
     obligationPubkey,
@@ -161,11 +241,19 @@ export async function executeNearAiCloudVerifiableInference(params: {
     baseUrl = process.env.NEAR_AI_CLOUD_BASE_URL ?? NEAR_AI_CLOUD_BASE_URL,
     model = process.env.NEAR_AI_CLOUD_MODEL ?? NEAR_AI_CLOUD_DEFAULT_MODEL,
     timeoutMs = 5_000,
+    prefetchedAttestation,
   } = params;
 
   const t0 = performance.now();
-  // Fresh cryptographic 32-byte random nonce per request (zero server-side state retained after return)
-  const attestationNonceHex = crypto.randomBytes(32).toString("hex");
+  const prefetched = await (prefetchedAttestation ??
+    prefetchNearAiCloudAttestationReport({
+      apiKey,
+      baseUrl,
+      model,
+      timeoutMs,
+    }));
+  const { attestationNonceHex, liveAttestJson } = prefetched;
+  let fallbackReason = prefetched.fallbackReason;
 
   const requestPayload = {
     model,
@@ -197,48 +285,6 @@ export async function executeNearAiCloudVerifiableInference(params: {
     .createHash("sha256")
     .update(exactRequestBodyStr, "utf8")
     .digest("hex");
-
-  let fallbackReason: string | undefined;
-  interface NearAiAttestationReportResponse {
-    gateway_attestation?: {
-      signing_address?: string;
-      intel_quote?: string;
-      request_nonce?: string;
-    };
-    model_attestations?: Array<{
-      signing_address?: string;
-      nvidia_payload?: string | { nonce?: string; arch?: string };
-      intel_quote?: string;
-      request_nonce?: string;
-    }>;
-  }
-  let liveAttestJson: NearAiAttestationReportResponse | null = null;
-
-  // Step 1: Fetch live preflight hardware attestation report (`GET /v1/attestation/report` — public & keyless)
-  try {
-    const attestHeaders: Record<string, string> = {
-      Accept: "application/json",
-      "Accept-Encoding": "identity",
-    };
-    if (apiKey && apiKey.trim().length > 0) {
-      attestHeaders["Authorization"] = `Bearer ${apiKey.trim()}`;
-    }
-    const attestRes = await fetch(
-      `${baseUrl}/attestation/report?model=${encodeURIComponent(model)}&signing_algo=ed25519&nonce=${attestationNonceHex}`,
-      {
-        headers: attestHeaders,
-        signal: AbortSignal.timeout(Math.min(timeoutMs, 3_500)),
-      }
-    );
-    if (attestRes.ok) {
-      liveAttestJson =
-        (await attestRes.json()) as NearAiAttestationReportResponse;
-    } else {
-      fallbackReason = `NEAR AI Cloud attestation HTTP ${attestRes.status}`;
-    }
-  } catch (err) {
-    fallbackReason = err instanceof Error ? err.message : String(err);
-  }
 
   const parseNvidiaAttestation = (
     raw: string | { nonce?: string; arch?: string } | undefined

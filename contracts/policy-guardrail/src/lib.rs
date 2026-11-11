@@ -45,6 +45,15 @@ fn resolve_mpc_sign_deposit() -> NearToken {
 /// Seconds in a 24-hour rolling spending limit window
 pub const ROLLING_WINDOW_SECONDS: u64 = 86_400;
 
+/// Maximum number of completed rescue records retained in `leg2_authorizations` at once
+/// (prevents Borsh state-deserialization gas bloat under high-frequency burst rescues;
+/// `consumed_receipt_hashes` independently enforces replay protection across the full TTL window).
+pub const MAX_RETAINED_COMPLETED_AUTHORIZATIONS: usize = 32;
+
+/// Minimum elapsed seconds before the scoped agent can reconcile a solver-refunded `ReadyForLeg2` authorization
+/// (`owner_id` may reconcile immediately upon verified 1-Click `REFUNDED` status).
+pub const MIN_AGENT_SOLVER_REFUND_DELAY_SEC: u64 = 120;
+
 /// NEAR Chain Signatures (`v1.signer`) domain IDs:
 /// `0` = Secp256k1 (EVM / Base Mainnet)
 /// `1` = Ed25519 (Solana Mainnet)
@@ -352,6 +361,8 @@ impl InterceptPolicyContract {
     }
 
     /// Updates policy parameters. Strictly restricted to `policy.owner_id` (cannot be called by the AI agent's Function Call Key).
+    /// Also rejects policy mutations while any rescue is actively in-flight (`InFlightLeg1`, `ReadyForLeg2`, `InFlightLeg2`)
+    /// so Leg 2 verification parameters can never desynchronize from an already-dispatched Leg 1 transfer.
     pub fn update_policy(&mut self, new_policy: PolicyConfig) {
         let mut new_policy = new_policy;
         assert_eq!(
@@ -359,6 +370,16 @@ impl InterceptPolicyContract {
             self.policy.owner_id,
             "UNAUTHORIZED: Only policy owner ({}) can modify guardrail configuration",
             self.policy.owner_id
+        );
+        let now_sec = env::block_timestamp() / 1_000_000_000;
+        self.prune_expired_receipts(now_sec);
+        let has_active_rescue = self
+            .leg2_authorizations
+            .values()
+            .any(|auth| auth.state != RescueLifecycleState::Completed);
+        assert!(
+            !has_active_rescue,
+            "GUARDRAIL REVERT (IN-FLIGHT RESCUE): Cannot modify policy while an asynchronous rescue is in flight"
         );
         if new_policy.sol_collateral_reserve_pubkey.trim().is_empty() {
             new_policy.sol_collateral_reserve_pubkey = default_sol_collateral_reserve_pubkey();
@@ -799,6 +820,64 @@ impl InterceptPolicyContract {
         }
     }
 
+    /// Reconciles a `ReadyForLeg2` rescue when NEAR Intents 1-Click returns `REFUNDED` or `FAILED`
+    /// (returning Base USDC to `MPC_Base_Vault` without settling on Solana).
+    /// Releases the pending authorization and restores `rolling_24h_spent_usdc`, while keeping
+    /// `receipt_hash` inside `consumed_receipt_hashes` so the expired receipt can never be replayed.
+    pub fn cancel_refunded_rescue(&mut self, receipt_hash_hex: String) {
+        self.assert_authorized_caller();
+        let caller = env::predecessor_account_id();
+        let now_sec = env::block_timestamp() / 1_000_000_000;
+        let norm_hash = TeeDecisionReceipt::normalize_hex(&receipt_hash_hex);
+
+        let auth = self
+            .leg2_authorizations
+            .get(&norm_hash)
+            .cloned()
+            .unwrap_or_else(|| {
+                env::panic_str(&format!(
+                    "GUARDRAIL REVERT (SOLVER REFUND): Unknown receipt_hash 0x{}",
+                    norm_hash
+                ))
+            });
+
+        assert_eq!(
+            auth.state,
+            RescueLifecycleState::ReadyForLeg2,
+            "GUARDRAIL REVERT (SOLVER REFUND): Only ReadyForLeg2 authorizations can be reconciled on solver refund (current state: {:?})",
+            auth.state
+        );
+
+        if caller != self.policy.owner_id {
+            let elapsed = now_sec.saturating_sub(auth.authorized_at_sec);
+            assert!(
+                elapsed >= MIN_AGENT_SOLVER_REFUND_DELAY_SEC,
+                "GUARDRAIL REVERT (SOLVER REFUND): Agent must wait {}s after Leg 1 before reconciling solver refund (elapsed={}s)",
+                MIN_AGENT_SOLVER_REFUND_DELAY_SEC,
+                elapsed
+            );
+        }
+
+        self.leg2_authorizations.remove(&norm_hash);
+        self.rolling_24h_spent_usdc = self
+            .rolling_24h_spent_usdc
+            .saturating_sub(auth.max_repay_amount_usdc as u128);
+
+        log!(
+            "INTERCEPT_SOLVER_REFUND_RECONCILED: receipt_hash=0x{}, restored_daily_allowance_usdc={}",
+            norm_hash,
+            auth.max_repay_amount_usdc
+        );
+        emit_nep297_event(
+            "rescue_solver_refund_reconciled",
+            near_sdk::serde_json::json!({
+                "receipt_hash_hex": format!("0x{}", norm_hash),
+                "restored_usdc": auth.max_repay_amount_usdc.to_string(),
+                "reconciled_by": caller,
+            }),
+        );
+    }
+
     /// Returns the scoped NEAR Function-Call Access Key specification (`AccessKeyPermission::FunctionCall`)
     /// for `authorized_agent_id`, proving the AI agent key is protocol-restricted from calling `update_policy` or transferring NEAR.
     pub fn get_agent_function_call_key_spec(&self) -> AgentFunctionCallKeySpec {
@@ -808,6 +887,7 @@ impl InterceptPolicyContract {
             allowed_method_names: vec![
                 "request_rescue_origin_leg".to_string(),
                 "request_rescue_destination_leg".to_string(),
+                "cancel_refunded_rescue".to_string(),
             ],
             forbidden_admin_methods: vec!["new".to_string(), "update_policy".to_string()],
             // ponytail: 300 TGas cross-contract v1.signer calls reserve ~0.3009 NEAR upfront under NEAR's
@@ -873,7 +953,7 @@ impl InterceptPolicyContract {
             })
             .collect();
 
-        let pruned_count = stale_keys.len();
+        let mut pruned_count = stale_keys.len();
         for key in stale_keys {
             self.leg2_authorizations.remove(&key);
             if let Ok(bytes) = hex::decode(&key) {
@@ -882,6 +962,28 @@ impl InterceptPolicyContract {
                     arr.copy_from_slice(&bytes);
                     self.consumed_receipt_hashes.remove(&arr);
                 }
+            }
+        }
+
+        // Enforce hard cap on retained `Completed` entries in `leg2_authorizations` during burst rescues
+        // while keeping `consumed_receipt_hashes` intact so intra-window replay remains impossible.
+        let mut completed_entries: Vec<(u64, String)> = self
+            .leg2_authorizations
+            .iter()
+            .filter_map(|(k, v)| {
+                if v.state == RescueLifecycleState::Completed {
+                    Some((v.authorized_at_sec, k.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if completed_entries.len() > MAX_RETAINED_COMPLETED_AUTHORIZATIONS {
+            completed_entries.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+            let excess = completed_entries.len() - MAX_RETAINED_COMPLETED_AUTHORIZATIONS;
+            for (_, key) in completed_entries.into_iter().take(excess) {
+                self.leg2_authorizations.remove(&key);
+                pruned_count += 1;
             }
         }
         pruned_count
@@ -1013,6 +1115,24 @@ pub fn parse_mpc_secp256k1_response(
 
     if recovery_id_u64 > 3 {
         return Err(format!("Invalid Secp256k1 recovery_id {}", recovery_id_u64));
+    }
+
+    let big_r_bytes = hex::decode(TeeDecisionReceipt::normalize_hex(&big_r_affine_hex))
+        .map_err(|_| "Invalid hex encoding in Secp256k1 `big_r.affine_point`".to_string())?;
+    if big_r_bytes.len() != 33 && big_r_bytes.len() != 65 {
+        return Err(format!(
+            "Invalid Secp256k1 `big_r.affine_point` length: expected 33 or 65 bytes, got {}",
+            big_r_bytes.len()
+        ));
+    }
+
+    let s_bytes = hex::decode(TeeDecisionReceipt::normalize_hex(&s_scalar_hex))
+        .map_err(|_| "Invalid hex encoding in Secp256k1 `s.scalar`".to_string())?;
+    if s_bytes.len() != 32 || s_bytes.iter().all(|&b| b == 0) {
+        return Err(format!(
+            "Invalid Secp256k1 `s.scalar`: must be 32 non-zero bytes, got {} bytes",
+            s_bytes.len()
+        ));
     }
 
     Ok(OriginLegSignedOutput {

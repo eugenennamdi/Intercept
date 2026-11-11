@@ -78,7 +78,7 @@ The NEAR Policy Guardrail Contract verifies:
 3. `regime` is `"MICRO_BUFFER_RESCUE"` or `"CASCADE_DEEP_RESCUE"` (rejects `"HOLD"`).
 4. Timestamp freshness & policy invariant: `policy.max_receipt_age_sec` is strictly enforced in `30..=3600`, and `receipt.timestamp + policy.max_receipt_age_sec >= block_timestamp_sec`.
 5. `bs58::decode(receipt.obligation_pubkey) == self.user_kamino_obligation_pubkey`.
-6. Slippage bound: `receipt.min_amount_out * 10_000 >= receipt.repay_amount_usdc * (10_000 - policy.max_slippage_bps)`.
+6. Slippage & cross-chain delivery fee bound: `receipt.min_amount_out >= min(proportional_floor, repay_amount_usdc.saturating_sub(MAX_FIXED_SOLVER_DELIVERY_FEE_USDC))` where `proportional_floor = ceil(repay_amount_usdc * (10_000 - policy.max_slippage_bps) / 10_000)` and `MAX_FIXED_SOLVER_DELIVERY_FEE_USDC = 350_000` (`$0.35 USDC`), accommodating fixed destination gas overhead on micro-rescues without loosening institutional proportional slippage caps.
 7. Health-factor trigger threshold: `receipt.observed_hf_bps < policy.min_trigger_hf_bps` (blocks premature Base USDC depletion when the position is healthy above the owner's configured trigger).
 
 ### 3.2 Leg 1 Byte-Level EIP-1559 RLP Verifier (`src/evm_parser.rs`)
@@ -131,16 +131,18 @@ The contract parses the raw serialized Solana `Message` bytes (`64..=1232` bytes
    - `account_keys[ix.accounts[1]] == self.user_kamino_obligation_pubkey` (`obligation` PDA)
    - `account_keys[ix.accounts[2]] == self.kamino_lending_market_pubkey` (`7u3HeHxYDLhnCoErrtycNokbQYbWGzLs6JSDqGAv5PfF`)
    - `account_keys[ix.accounts[3]] == self.usdc_repay_reserve_pubkey` (`D6q6wuQSrifJKZYpR1M8R4YawnLDtDsMmWM1NbBmgJ59` — Kamino Mainnet USDC Reserve)
-   - `ix.accounts[5]` is populated with the deterministic Solana Native USDC Associated Token Account PDA of `MPC_Solana_Payer` (`2eLUYLvdceHQTbRHQcU26x4sRj6ZAZ27otxMQS8qpskq`, `bump=255`).
+   - `ix.accounts[5]` (`user_source_liquidity`) is populated with the deterministic Solana Native USDC Associated Token Account PDA of `MPC_Solana_Payer` (`2eLUYLvdceHQTbRHQcU26x4sRj6ZAZ27otxMQS8qpskq`, `bump=255`) and explicitly verified not to alias `reserve_destination_liquidity`, `obligation`, `repay_reserve`, or `owner`.
+   - `account_keys[ix.accounts[6]] == SPL_TOKEN_PROGRAM_PUBKEY` (`TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA`, blocking Token-2022 transfer-hook CPI indirection) and `account_keys[ix.accounts[7]] == SYSVAR_INSTRUCTIONS_PUBKEY` (`Sysvar1nstructions1111111111111111111111111`).
    - `u64::from_le_bytes(ix.data[8..16])` lies within `[auth.min_repay_amount_usdc..=auth.max_repay_amount_usdc]`.
 
-### 3.4 4-State Async Cross-Contract TOCTOU State Machine (`src/lib.rs`)
+### 3.4 4-State Async Cross-Contract TOCTOU State Machine & Solver Refund Reconciliation (`src/lib.rs`)
 
-Because `v1.signer::sign` executes asynchronously across receipts on NEAR, `InterceptPolicyContract` enforces a strict 4-state lifecycle (`RescueLifecycleState`) per `receipt_hash`:
+Because `v1.signer::sign` executes asynchronously across receipts on NEAR, `InterceptPolicyContract` enforces a strict 4-state lifecycle (`RescueLifecycleState`) per `receipt_hash`, locks `update_policy` whenever any rescue has `state != Completed`, and bounds retained completed records to `MAX_RETAINED_COMPLETED_AUTHORIZATIONS = 32`:
 1. `InFlightLeg1`: Set *immediately* in `request_rescue_origin_leg` (along with deducting `rolling_24h_spent_usdc` and inserting into `consumed_receipt_hashes`) *before* dispatching the `v1.signer::sign` promise so concurrent calls in the same block cannot bypass the 24h cap or replay the receipt.
-2. `ReadyForLeg2`: Transitioned inside `#[private] pub fn on_origin_leg_signed` **only** when `v1.signer::sign` succeeds. If `v1.signer::sign` fails, `on_origin_leg_signed` removes the receipt from `consumed_receipt_hashes` + `leg2_authorizations` and refunds `rolling_24h_spent_usdc` without panicking so the NEAR VM commits the state rollback.
-3. `InFlightLeg2`: Set *immediately* in `request_rescue_destination_leg` before dispatching the Leg 2 `v1.signer::sign` promise; any call when state is not `ReadyForLeg2` (`InFlightLeg1`, `InFlightLeg2`, or `Completed`) reverts immediately.
-4. `Completed`: Transitioned inside `#[private] pub fn on_destination_leg_signed` when `v1.signer::sign` succeeds. If Leg 2's `v1.signer::sign` fails, `on_destination_leg_signed` reverts the state back to `ReadyForLeg2` (preserving the Leg 1 authorization record!) so Leg 2 can be safely retried without stranding the user's bridged USDC on Solana.
+2. `ReadyForLeg2`: Transitioned inside `#[private] pub fn on_origin_leg_signed` **only** when `v1.signer::sign` returns structurally valid `Secp256k1` `(big_r, s)` shares. If `v1.signer::sign` fails, `on_origin_leg_signed` removes the receipt from `consumed_receipt_hashes` + `leg2_authorizations` and refunds `rolling_24h_spent_usdc` without panicking so the NEAR VM commits the state rollback.
+3. **Solver Refund Reconciliation (`cancel_refunded_rescue`):** Every NEAR Intents 1-Click quote pins `refundTo = MPC_Base_Vault`. If the solver returns `REFUNDED` or `FAILED` after Leg 1 settles, the orchestrator halts before Leg 2 and invokes `cancel_refunded_rescue(receipt_hash_hex)` (`120s` grace delay for the scoped agent, immediate for the owner) to remove the `ReadyForLeg2` entry, restore `rolling_24h_spent_usdc`, preserve `consumed_receipt_hashes` against replay, and emit NEP-297 `"rescue_solver_refund_reconciled"`.
+4. `InFlightLeg2`: Set *immediately* in `request_rescue_destination_leg` before dispatching the Leg 2 `v1.signer::sign` promise; any call when state is not `ReadyForLeg2` (`InFlightLeg1`, `InFlightLeg2`, or `Completed`) reverts immediately.
+5. `Completed`: Transitioned inside `#[private] pub fn on_destination_leg_signed` when `v1.signer::sign` returns a valid 64-byte `Ed25519` signature. If Leg 2's `v1.signer::sign` fails, `on_destination_leg_signed` reverts the state back to `ReadyForLeg2` (preserving the Leg 1 authorization record!) so Leg 2 can be safely retried without stranding the user's bridged USDC on Solana.
 
 ---
 
@@ -192,7 +194,7 @@ Provision a dedicated least-privilege `FunctionCall` key on the agent account re
 near account add-key agent.<your-account>.near grant-function-call-access \
   --allowance '1 NEAR' \
   --contract-account-id guardrail.<your-account>.near \
-  --function-names 'request_rescue_origin_leg,request_rescue_destination_leg' \
+  --function-names 'request_rescue_origin_leg,request_rescue_destination_leg,cancel_refunded_rescue' \
   autogenerate-new-keypair save-to-keychain network-config mainnet sign-with-keychain send
 ```
 

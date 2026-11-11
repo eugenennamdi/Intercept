@@ -48,6 +48,7 @@ import {
   createTeeEnclaveKeypairFromSeed,
   evaluateDynamicDeRiskingModel,
   signTeeDecisionReceipt,
+  verifyTeeDecisionReceiptFull,
   verifyTeeDecisionReceiptSignature,
 } from "./risk-engine.ts";
 
@@ -580,4 +581,131 @@ test("Multi-instruction Kamino refresh+repay passes, sneaking withdraw after ref
   });
   assert.equal(trailingSolVerify.ok, false);
   assert.equal(trailingSolVerify.errorCode, "TRAILING_BYTES");
+
+  // 11. Token-2022 CPI hook program substitution, rogue sysvar, and source liquidity account collision rejection
+  const token2022Msg = buildSolanaKaminoRepayMessageBytes({
+    versionedV0: true,
+    mpcSolanaPayerPubkey: mpcPayer,
+    userObligationPubkey: obligation,
+    repayAmountUsdcMicro: amount,
+    customTokenProgramPubkey: "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+  });
+  const token2022Check = verifySolanaKaminoRepayMessageBytes({
+    rawMessageHex: token2022Msg.rawMessageHex,
+    expectedMpcSolanaPayerPubkey: mpcPayer,
+    expectedUserObligationPubkey: obligation,
+    minRepayAmountUsdcMicro: amount,
+    maxRepayAmountUsdcMicro: amount,
+  });
+  assert.equal(token2022Check.ok, false);
+  assert.equal(token2022Check.errorCode, "TOKEN_PROGRAM_MISMATCH");
+
+  const rogueSysvarMsg = buildSolanaKaminoRepayMessageBytes({
+    versionedV0: true,
+    mpcSolanaPayerPubkey: mpcPayer,
+    userObligationPubkey: obligation,
+    repayAmountUsdcMicro: amount,
+    customSysvarPubkey: "11111111111111111111111111111111",
+  });
+  const rogueSysvarCheck = verifySolanaKaminoRepayMessageBytes({
+    rawMessageHex: rogueSysvarMsg.rawMessageHex,
+    expectedMpcSolanaPayerPubkey: mpcPayer,
+    expectedUserObligationPubkey: obligation,
+    minRepayAmountUsdcMicro: amount,
+    maxRepayAmountUsdcMicro: amount,
+  });
+  assert.equal(rogueSysvarCheck.ok, false);
+  assert.equal(rogueSysvarCheck.errorCode, "SYSVAR_INSTRUCTIONS_MISMATCH");
+
+  // Mutate ix.accounts[5] (userSourceLiquidity) in the repay instruction to alias ix.accounts[4] (reserveDestinationLiquidity)
+  const mutatedAliasBytes = Buffer.from(validFullMsg.rawMessageBytes);
+  const aliasPattern = Buffer.from([0x08, 0, 1, 6, 3, 4, 5, 9, 10]);
+  const patternIdx = mutatedAliasBytes.indexOf(aliasPattern);
+  assert.ok(patternIdx >= 0);
+  mutatedAliasBytes[patternIdx + 6] = 4; // ix.accounts[5] = 4 (collides with reserveDestinationLiquidity)
+  const collidingSourceCheck = verifySolanaKaminoRepayMessageBytes({
+    rawMessageHex: mutatedAliasBytes.toString("hex"),
+    expectedMpcSolanaPayerPubkey: mpcPayer,
+    expectedUserObligationPubkey: obligation,
+    minRepayAmountUsdcMicro: amount,
+    maxRepayAmountUsdcMicro: amount,
+  });
+  assert.equal(collidingSourceCheck.ok, false);
+  assert.equal(
+    collidingSourceCheck.errorCode,
+    "INVALID_SOURCE_LIQUIDITY_ACCOUNT"
+  );
+
+  // 12. Full TEE receipt policy verification ($0.35 fixed solver fee buffer vs institutional slippage breach)
+  const microFeeReceipt = signTeeDecisionReceipt({
+    enclaveKeypair: enclave,
+    timestampSec: 1793550000,
+    obligationPubkey: obligation,
+    observedHfBps: 10_800,
+    volatilityBps: 6_100,
+    regime: "CASCADE_DEEP_RESCUE",
+    repayAmountUsdcMicro: 3_290_000n,
+    oneclickDepositAddress: "0x9999999999999999999999999999999999999999",
+    minAmountOutMicro: 3_040_000n, // $0.25 solver gas fee passes 100 bps + $0.35 fixed buffer
+    reasoningHash: "0x" + "cd".repeat(32),
+  });
+  assert.equal(
+    verifyTeeDecisionReceiptFull({
+      receipt: microFeeReceipt.receipt,
+      enclavePublicKeyObject: enclave.publicKeyObject,
+      expectedObligationPubkey: obligation,
+      minTriggerHfBps: 11_500,
+      maxSlippageBps: 100,
+      currentTimestampSec: 1793550010,
+    }).ok,
+    true
+  );
+
+  const excessiveSlippageReceipt = signTeeDecisionReceipt({
+    enclaveKeypair: enclave,
+    timestampSec: 1793550000,
+    obligationPubkey: obligation,
+    observedHfBps: 10_800,
+    volatilityBps: 6_100,
+    regime: "CASCADE_DEEP_RESCUE",
+    repayAmountUsdcMicro: 100_000_000n, // $100.00
+    oneclickDepositAddress: "0x9999999999999999999999999999999999999999",
+    minAmountOutMicro: 95_000_000n, // $95.00 (5% loss > 1% + $0.35) -> must fail!
+    reasoningHash: "0x" + "ef".repeat(32),
+  });
+  const slipRes = verifyTeeDecisionReceiptFull({
+    receipt: excessiveSlippageReceipt.receipt,
+    enclavePublicKeyObject: enclave.publicKeyObject,
+    expectedObligationPubkey: obligation,
+    minTriggerHfBps: 11_500,
+    maxSlippageBps: 100,
+    currentTimestampSec: 1793550010,
+  });
+  assert.equal(slipRes.ok, false);
+  assert.equal(slipRes.errorCode, "SLIPPAGE_EXCEEDED");
+
+  // 13. Stage 4 solver REFUNDED circuit breaker halts safely before Leg 2 and preserves Base vault funds
+  const refundReport = await executeInterceptRescuePipeline({
+    mode: "STRESS_TEST_MAINNET_MODE",
+    stressShockPct: -25,
+    simulateSolverRefund: true,
+  });
+  assert.equal(refundReport.stages[3].status, "REFUNDED_TO_BASE_VAULT");
+  assert.equal(refundReport.stages[4].status, "SKIPPED_SOLVER_REFUND");
+  assert.equal(refundReport.leg2SolanaVerification, null);
+  assert.equal(
+    refundReport.kaminoAfter.borrowedUsdcMicro,
+    refundReport.kaminoBefore.borrowedUsdcMicro
+  );
+
+  // 14. Verify onChainNearWasmVerification populated on stressReport
+  assert.ok(stressReport.onChainNearWasmVerification !== null);
+  assert.equal(
+    stressReport.onChainNearWasmVerification?.originLegVerified,
+    true
+  );
+  assert.equal(
+    stressReport.onChainNearWasmVerification?.destinationLegVerified,
+    true
+  );
 });

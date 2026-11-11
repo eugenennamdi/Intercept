@@ -13,7 +13,8 @@ use crate::solana_parser::{
     REFRESH_OBLIGATION_DISCRIMINATOR, REFRESH_OBLIGATION_FARMS_FOR_RESERVE_DISCRIMINATOR,
     REFRESH_RESERVES_BATCH_DISCRIMINATOR, REFRESH_RESERVE_DISCRIMINATOR,
     REPAY_OBLIGATION_LIQUIDITY_V1_DISCRIMINATOR, REPAY_OBLIGATION_LIQUIDITY_V2_DISCRIMINATOR,
-    SolanaParseError, WITHDRAW_OBLIGATION_COLLATERAL_V2_DISCRIMINATOR,
+    SPL_TOKEN_PROGRAM_ID_STR, SPL_TOKEN_PROGRAM_PUBKEY, SYSVAR_INSTRUCTIONS_ID_STR,
+    SYSVAR_INSTRUCTIONS_PUBKEY, SolanaParseError, WITHDRAW_OBLIGATION_COLLATERAL_V2_DISCRIMINATOR,
 };
 use crate::tee_receipt::{RiskRegime, TeeDecisionReceipt};
 use crate::{
@@ -305,8 +306,8 @@ fn test_valid_leg1_and_leg2_end_to_end() {
         &KAMINO_MAINNET_USDC_RESERVE_PUBKEY,
         &[0x55; 32],
         &[0x66; 32],
-        &[0x77; 32],
-        &[0x88; 32],
+        &SPL_TOKEN_PROGRAM_PUBKEY,
+        &SYSVAR_INSTRUCTIONS_PUBKEY,
         &[0xaa; 32],
         49_850_000, // actual settled USDC on Solana within [min_amount_out..=repay_amount_usdc]
         true,       // v2 discriminator [116, 174, 213, 76, 180, 53, 210, 144]
@@ -353,8 +354,8 @@ fn test_valid_leg1_and_leg2_end_to_end() {
         &KAMINO_MAINNET_USDC_RESERVE_PUBKEY,
         &[0x55; 32],
         &[0x66; 32],
-        &[0x77; 32],
-        &[0x88; 32],
+        &SPL_TOKEN_PROGRAM_PUBKEY,
+        &SYSVAR_INSTRUCTIONS_PUBKEY,
         &[0xbb; 32],
         49_850_000,
         false, // v1 discriminator [145, 178, 13, 225, 76, 240, 147, 72]
@@ -513,8 +514,8 @@ fn test_adversarial_solana_kamino_attacks_rejected() {
         &usdc_reserve,
         &[0x55; 32],
         &[0x66; 32],
-        &[0x77; 32],
-        &[0x88; 32],
+        &SPL_TOKEN_PROGRAM_PUBKEY,
+        &SYSVAR_INSTRUCTIONS_PUBKEY,
         &[0xaa; 32],
         10_000_000,
         true,
@@ -574,8 +575,8 @@ fn test_adversarial_solana_kamino_attacks_rejected() {
         &usdc_reserve,
         &[0x55; 32],
         &[0x66; 32],
-        &[0x77; 32],
-        &[0x88; 32],
+        &SPL_TOKEN_PROGRAM_PUBKEY,
+        &SYSVAR_INSTRUCTIONS_PUBKEY,
         &[0xaa; 32],
         10_000_000,
         true,
@@ -607,8 +608,8 @@ fn test_adversarial_solana_kamino_attacks_rejected() {
         &usdc_reserve,
         &[0x55; 32],
         &[0x66; 32],
-        &[0x77; 32],
-        &[0x88; 32],
+        &SPL_TOKEN_PROGRAM_PUBKEY,
+        &SYSVAR_INSTRUCTIONS_PUBKEY,
         &[0xaa; 32],
         10_000_000,
         true,
@@ -645,8 +646,8 @@ fn test_adversarial_solana_kamino_attacks_rejected() {
         &usdc_reserve,
         &[0x55; 32],
         &[0x66; 32],
-        &[0x77; 32],
-        &[0x88; 32],
+        &SPL_TOKEN_PROGRAM_PUBKEY,
+        &SYSVAR_INSTRUCTIONS_PUBKEY,
         &[0xaa; 32],
         10_000_000,
         true,
@@ -909,8 +910,8 @@ fn test_full_kamino_same_slot_refresh_and_repay_sequence_passes() {
         &[0x66; 32], // user source liquidity (MPC Solana USDC ATA)
         &[0x77; 32], // Pyth SOL oracle
         &[0x88; 32], // Pyth USDC oracle
-        &[0x91; 32], // Token Program
-        &[0x92; 32], // Instruction Sysvar
+        &SPL_TOKEN_PROGRAM_PUBKEY,
+        &SYSVAR_INSTRUCTIONS_PUBKEY,
         &[0xaa; 32], // recent blockhash
         10_000_000,  // 10.00 USDC
     );
@@ -953,8 +954,8 @@ fn test_adversarial_sneak_withdraw_after_refresh_reverts() {
         &[0x66; 32],
         &[0x77; 32],
         &[0x88; 32],
-        &[0x91; 32],
-        &[0x92; 32],
+        &SPL_TOKEN_PROGRAM_PUBKEY,
+        &SYSVAR_INSTRUCTIONS_PUBKEY,
         &[0xaa; 32],
         10_000_000,
     );
@@ -1120,8 +1121,8 @@ fn test_v1_signer_payload_v2_ecdsa_vs_eddsa_raw_message_and_callbacks() {
         &[0x66; 32],
         &[0x77; 32],
         &[0x88; 32],
-        &[0x91; 32],
-        &[0x92; 32],
+        &SPL_TOKEN_PROGRAM_PUBKEY,
+        &SYSVAR_INSTRUCTIONS_PUBKEY,
         &[0xaa; 32],
         9_980_000,
     );
@@ -1220,8 +1221,8 @@ fn test_adversarial_leg2_while_leg1_inflight_reverts() {
         &[0x66; 32],
         &[0x77; 32],
         &[0x88; 32],
-        &[0x91; 32],
-        &[0x92; 32],
+        &SPL_TOKEN_PROGRAM_PUBKEY,
+        &SYSVAR_INSTRUCTIONS_PUBKEY,
         &[0xaa; 32],
         9_980_000,
     );
@@ -1293,8 +1294,8 @@ fn test_adversarial_concurrent_leg2_while_inflight_reverts() {
         &[0x66; 32],
         &[0x77; 32],
         &[0x88; 32],
-        &[0x91; 32],
-        &[0x92; 32],
+        &SPL_TOKEN_PROGRAM_PUBKEY,
+        &SYSVAR_INSTRUCTIONS_PUBKEY,
         &[0xaa; 32],
         9_980_000,
     );
@@ -1397,8 +1398,8 @@ fn test_leg1_and_leg2_mpc_failure_rollbacks_preserve_funds() {
         &[0x66; 32],
         &[0x77; 32],
         &[0x88; 32],
-        &[0x91; 32],
-        &[0x92; 32],
+        &SPL_TOKEN_PROGRAM_PUBKEY,
+        &SYSVAR_INSTRUCTIONS_PUBKEY,
         &[0xaa; 32],
         9_980_000,
     );
@@ -1463,8 +1464,8 @@ fn test_adversarial_repay_reserve_and_refresh_remaining_accounts_pinning() {
         &rogue_reserve,
         &[0x55; 32],
         &[0x66; 32],
-        &[0x77; 32],
-        &[0x88; 32],
+        &SPL_TOKEN_PROGRAM_PUBKEY,
+        &SYSVAR_INSTRUCTIONS_PUBKEY,
         &[0xaa; 32],
         10_000_000,
         true,
@@ -1499,8 +1500,8 @@ fn test_adversarial_repay_reserve_and_refresh_remaining_accounts_pinning() {
         &[0x66; 32],
         &[0x77; 32],
         &[0x88; 32],
-        &[0x91; 32],
-        &[0x92; 32],
+        &SPL_TOKEN_PROGRAM_PUBKEY,
+        &SYSVAR_INSTRUCTIONS_PUBKEY,
         &[0xaa; 32],
         10_000_000,
     );
@@ -1534,7 +1535,8 @@ fn test_nep297_structured_events_and_function_call_key_spec() {
         fc_spec.allowed_method_names,
         vec![
             "request_rescue_origin_leg".to_string(),
-            "request_rescue_destination_leg".to_string()
+            "request_rescue_destination_leg".to_string(),
+            "cancel_refunded_rescue".to_string(),
         ]
     );
     assert!(fc_spec
@@ -1792,8 +1794,8 @@ fn test_bounded_receipt_storage_pruning_and_mpc_gas_constants() {
         &[0x66; 32],
         &[0x77; 32],
         &[0x88; 32],
-        &[0x91; 32],
-        &[0x92; 32],
+        &SPL_TOKEN_PROGRAM_PUBKEY,
+        &SYSVAR_INSTRUCTIONS_PUBKEY,
         &[0xaa; 32],
         9_980_000,
     );
@@ -1969,8 +1971,8 @@ fn test_security_audit_invariants_inverted_leg2_bounds_mev_priority_bribe_and_so
         &KAMINO_MAINNET_USDC_RESERVE_PUBKEY,
         &[0x44; 32],
         &[0x55; 32],
-        &[0x66; 32],
-        &[0x77; 32],
+        &SPL_TOKEN_PROGRAM_PUBKEY,
+        &SYSVAR_INSTRUCTIONS_PUBKEY,
         &[0x88; 32],
         2_500_000,
         true,
@@ -2122,8 +2124,8 @@ fn test_onchain_min_trigger_hf_enforcement_and_zero_deposit_function_call_sponso
         &[0x66; 32],
         &[0x77; 32],
         &[0x88; 32],
-        &[0x91; 32],
-        &[0x92; 32],
+        &SPL_TOKEN_PROGRAM_PUBKEY,
+        &SYSVAR_INSTRUCTIONS_PUBKEY,
         &[0xaa; 32],
         9_980_000,
     );
@@ -2133,4 +2135,235 @@ fn test_onchain_min_trigger_hf_enforcement_and_zero_deposit_function_call_sponso
         contract.leg2_authorizations.get(&receipt_hash_hex).unwrap().state,
         RescueLifecycleState::InFlightLeg2
     );
+}
+
+#[test]
+fn test_solana_token_program_sysvar_and_source_liquidity_pinning() {
+    assert_eq!(
+        bs58::decode(SPL_TOKEN_PROGRAM_ID_STR).into_vec().unwrap().as_slice(),
+        &SPL_TOKEN_PROGRAM_PUBKEY
+    );
+    assert_eq!(
+        bs58::decode(SYSVAR_INSTRUCTIONS_ID_STR).into_vec().unwrap().as_slice(),
+        &SYSVAR_INSTRUCTIONS_PUBKEY
+    );
+
+    let mpc_solana_payer = [0x22; 32];
+    let user_obligation = [0x33; 32];
+    let lending_market = KAMINO_MAIN_MARKET_PUBKEY;
+    let sol_reserve = KAMINO_MAINNET_SOL_RESERVE_PUBKEY;
+    let usdc_reserve = KAMINO_MAINNET_USDC_RESERVE_PUBKEY;
+
+    // 1. Rogue Token-2022 / fake token_program at ix.accounts[6] must be rejected
+    let rogue_token_prog = [0xde; 32];
+    let bad_token_prog_msg = build_solana_kamino_repay_message(
+        true,
+        &mpc_solana_payer,
+        &user_obligation,
+        &lending_market,
+        &usdc_reserve,
+        &[0x55; 32],
+        &[0x66; 32],
+        &rogue_token_prog,
+        &SYSVAR_INSTRUCTIONS_PUBKEY,
+        &[0xaa; 32],
+        10_000_000,
+        true,
+        true,
+    );
+    assert_eq!(
+        verify_solana_kamino_repay_message(
+            &bad_token_prog_msg,
+            &mpc_solana_payer,
+            &user_obligation,
+            &lending_market,
+            &sol_reserve,
+            &usdc_reserve,
+            9_900_000,
+            10_000_000,
+        ),
+        Err(SolanaParseError::TokenProgramMismatch {
+            expected: SPL_TOKEN_PROGRAM_PUBKEY,
+            actual: rogue_token_prog,
+        })
+    );
+
+    // 2. Rogue instruction_sysvar at ix.accounts[7] must be rejected
+    let rogue_sysvar = [0xef; 32];
+    let bad_sysvar_msg = build_solana_kamino_repay_message(
+        true,
+        &mpc_solana_payer,
+        &user_obligation,
+        &lending_market,
+        &usdc_reserve,
+        &[0x55; 32],
+        &[0x66; 32],
+        &SPL_TOKEN_PROGRAM_PUBKEY,
+        &rogue_sysvar,
+        &[0xaa; 32],
+        10_000_000,
+        true,
+        true,
+    );
+    assert_eq!(
+        verify_solana_kamino_repay_message(
+            &bad_sysvar_msg,
+            &mpc_solana_payer,
+            &user_obligation,
+            &lending_market,
+            &sol_reserve,
+            &usdc_reserve,
+            9_900_000,
+            10_000_000,
+        ),
+        Err(SolanaParseError::InstructionSysvarMismatch {
+            expected: SYSVAR_INSTRUCTIONS_PUBKEY,
+            actual: rogue_sysvar,
+        })
+    );
+}
+
+#[test]
+#[should_panic(expected = "Cannot modify policy while an asynchronous rescue is in flight")]
+fn test_update_policy_blocked_while_rescue_in_flight() {
+    let (policy, tee_sk, _base_vault, _mpc_solana_payer, _user_obligation, _lending_market) =
+        sample_policy_and_keys();
+    setup_context("alice.near", TEST_TIMESTAMP_SEC);
+    let mut contract = InterceptPolicyContract::new(policy.clone());
+
+    setup_context("agent.intercept.near", TEST_TIMESTAMP_SEC);
+    let deposit_addr = [0x99; 20];
+    let receipt = sign_test_receipt(
+        &tee_sk,
+        &policy.user_kamino_obligation_pubkey,
+        RiskRegime::MicroBufferRescue,
+        10_000_000,
+        9_950_000,
+        &deposit_addr,
+        TEST_TIMESTAMP_SEC,
+    );
+    let calldata = build_erc20_transfer_calldata(&deposit_addr, 10_000_000);
+    let tx = build_unsigned_eip1559_tx(
+        BASE_MAINNET_CHAIN_ID,
+        1,
+        1_000_000,
+        20_000_000,
+        60_000,
+        &BASE_USDC_ADDRESS,
+        0,
+        &calldata,
+    );
+    let _ = contract.request_rescue_origin_leg(
+        receipt,
+        policy.mpc_solana_payer_pubkey.clone(),
+        hex::encode(tx),
+    );
+
+    // Owner tries to mutate policy while rescue is InFlightLeg1 -> must panic!
+    setup_context("alice.near", TEST_TIMESTAMP_SEC + 1);
+    let mut updated = policy;
+    updated.max_daily_usdc = 2_000_000_000;
+    contract.update_policy(updated);
+}
+
+#[test]
+fn test_cancel_refunded_rescue_reconciles_daily_allowance_and_preserves_replay_lock() {
+    let (policy, tee_sk, _base_vault, _mpc_solana_payer, _user_obligation, _lending_market) =
+        sample_policy_and_keys();
+    setup_context("alice.near", TEST_TIMESTAMP_SEC);
+    let mut contract = InterceptPolicyContract::new(policy.clone());
+
+    setup_context("agent.intercept.near", TEST_TIMESTAMP_SEC);
+    let deposit_addr = [0x99; 20];
+    let repay_amount = 25_000_000u128;
+    let receipt = sign_test_receipt(
+        &tee_sk,
+        &policy.user_kamino_obligation_pubkey,
+        RiskRegime::MicroBufferRescue,
+        repay_amount,
+        24_900_000,
+        &deposit_addr,
+        TEST_TIMESTAMP_SEC,
+    );
+    let receipt_hash_hex = hex::encode(receipt.receipt_hash());
+    let calldata = build_erc20_transfer_calldata(&deposit_addr, repay_amount);
+    let tx = build_unsigned_eip1559_tx(
+        BASE_MAINNET_CHAIN_ID,
+        1,
+        1_000_000,
+        20_000_000,
+        60_000,
+        &BASE_USDC_ADDRESS,
+        0,
+        &calldata,
+    );
+    let tx_hex = hex::encode(tx);
+
+    let _ = contract.request_rescue_origin_leg(
+        receipt,
+        policy.mpc_solana_payer_pubkey.clone(),
+        tx_hex,
+    );
+    let _ = contract.on_origin_leg_signed(
+        receipt_hash_hex.clone(),
+        "aa".repeat(32),
+        repay_amount,
+        Ok(near_sdk::serde_json::json!({
+            "big_r": { "affine_point": format!("02{}", "11".repeat(32)) },
+            "s": { "scalar": "22".repeat(32) },
+            "recovery_id": 0
+        })),
+    );
+    assert_eq!(contract.get_telemetry().rolling_24h_spent_usdc, repay_amount);
+
+    // After 1-Click solver refunds Base USDC (>= 120s delay for agent), cancel_refunded_rescue restores 24h cap
+    setup_context("agent.intercept.near", TEST_TIMESTAMP_SEC + 125);
+    contract.cancel_refunded_rescue(receipt_hash_hex);
+
+    let telemetry = contract.get_telemetry();
+    assert_eq!(telemetry.rolling_24h_spent_usdc, 0);
+    assert!(telemetry.pending_leg2_authorizations.is_empty());
+    // Receipt hash remains consumed so the old receipt cannot be replayed
+    assert_eq!(telemetry.consumed_receipt_count, 1);
+}
+
+#[test]
+fn test_micro_rescue_fixed_solver_fee_calibration_and_secp256k1_scalar_bounds() {
+    let (policy, tee_sk, _base_vault, _mpc_solana_payer, user_obligation, _lending_market) =
+        sample_policy_and_keys();
+    let tee_pk_bytes = tee_sk.verifying_key().to_bytes();
+    let deposit_addr = [0x99; 20];
+
+    // 1. Live $3.29 micro-rescue (3,292,625 micro-USDC) with real 1-Click $3.04 minOut (3,040,205 micro-USDC, ~$0.22 fixed fee) passes under 50 bps policy
+    let micro_receipt = sign_test_receipt(
+        &tee_sk,
+        &policy.user_kamino_obligation_pubkey,
+        RiskRegime::CascadeDeepRescue,
+        3_292_625,
+        3_040_205,
+        &deposit_addr,
+        TEST_TIMESTAMP_SEC,
+    );
+    assert!(micro_receipt
+        .verify(
+            &tee_pk_bytes,
+            &user_obligation,
+            policy.min_trigger_hf_bps,
+            50, // 0.50% proportional + $0.35 fixed solver delivery gas cap
+            TEST_TIMESTAMP_SEC,
+            policy.max_receipt_age_sec,
+        )
+        .is_ok());
+
+    // 2. Malformed zero Secp256k1 s-scalar in MPC callback is rejected
+    let zero_scalar_res = crate::parse_mpc_secp256k1_response(
+        "ab".repeat(32).as_str(),
+        "cd".repeat(32).as_str(),
+        &near_sdk::serde_json::json!({
+            "big_r": { "affine_point": format!("02{}", "11".repeat(32)) },
+            "s": { "scalar": "00".repeat(32) },
+            "recovery_id": 0
+        }),
+    );
+    assert!(zero_scalar_res.is_err());
 }

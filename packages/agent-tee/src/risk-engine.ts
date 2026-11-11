@@ -9,6 +9,17 @@ export type RiskRegime =
 
 export const TEE_RECEIPT_DOMAIN_PREFIX = "INTERCEPT_TEE_RECEIPT_V1";
 
+/**
+ * Maximum fixed cross-chain solver delivery fee buffer ($0.35 USDC = 350,000 micro-USDC),
+ * matching `MAX_FIXED_SOLVER_DELIVERY_FEE_USDC` in `contracts/policy-guardrail/src/tee_receipt.rs`.
+ * ponytail: Real NEAR Intents 1-Click quotes charge a fixed ~$0.20-$0.25 destination gas fee on Solana
+ * regardless of notional size, plus proportional bps spread.
+ */
+export const MAX_FIXED_SOLVER_DELIVERY_FEE_USDC_MICRO = 350_000n;
+
+/** Estimated fixed cross-chain gas & solver delivery overhead in USD (~$0.22 across Base L2 + Solana) */
+export const FIXED_CROSS_CHAIN_DELIVERY_GAS_USD = 0.22;
+
 export interface TeeEnclaveKeypair {
   publicKeyHex: string; // 32-byte raw Ed25519 public key hex
   privateKeyObject: crypto.KeyObject;
@@ -236,8 +247,14 @@ export function evaluateDynamicDeRiskingModel(params: {
       10_000
     ).toFixed(4)
   );
+  // ponytail: Include ~$0.22 fixed cross-chain solver delivery gas alongside proportional bps opportunity cost
   const capitalExecutionCostUsd = Number(
-    ((repayUsd * capitalOpportunityCostBps) / 10_000).toFixed(4)
+    (
+      repayUsd > 0
+        ? (repayUsd * capitalOpportunityCostBps) / 10_000 +
+          FIXED_CROSS_CHAIN_DELIVERY_GAS_USD
+        : 0
+    ).toFixed(4)
   );
   const netProtectedValueUsd = Number(
     Math.max(0, expectedLiquidationLossUsd - capitalExecutionCostUsd).toFixed(4)
@@ -356,4 +373,130 @@ export function verifyTeeDecisionReceiptSignature(
     enclavePublicKeyObject,
     sigBytes
   );
+}
+
+export interface TeeReceiptVerificationResult {
+  ok: boolean;
+  errorCode?: string;
+  errorMessage?: string;
+}
+
+/**
+ * Full policy & cryptographic verifier for `TeeDecisionReceipt`, mirroring `TeeDecisionReceipt::verify`
+ * in `contracts/policy-guardrail/src/tee_receipt.rs` 1:1.
+ */
+export function verifyTeeDecisionReceiptFull(params: {
+  receipt: TeeDecisionReceipt;
+  enclavePublicKeyObject: crypto.KeyObject;
+  expectedObligationPubkey: string;
+  minTriggerHfBps: number;
+  maxSlippageBps: number;
+  currentTimestampSec: number;
+  maxReceiptAgeSec?: number;
+}): TeeReceiptVerificationResult {
+  const {
+    receipt,
+    enclavePublicKeyObject,
+    expectedObligationPubkey,
+    minTriggerHfBps,
+    maxSlippageBps,
+    currentTimestampSec,
+    maxReceiptAgeSec = 300,
+  } = params;
+
+  if (receipt.regime === "HOLD") {
+    return {
+      ok: false,
+      errorCode: "NON_ACTIONABLE_REGIME_HOLD",
+      errorMessage: "Receipt regime is HOLD; no cross-chain rescue permitted",
+    };
+  }
+
+  if (receipt.observed_hf_bps >= minTriggerHfBps) {
+    return {
+      ok: false,
+      errorCode: "POSITION_HEALTHY_ABOVE_TRIGGER",
+      errorMessage: `Observed HF (${receipt.observed_hf_bps} bps) >= min_trigger_hf_bps (${minTriggerHfBps} bps)`,
+    };
+  }
+
+  if (receipt.timestamp > currentTimestampSec + 30) {
+    return {
+      ok: false,
+      errorCode: "FUTURE_TIMESTAMP",
+      errorMessage: `Receipt timestamp (${receipt.timestamp}) exceeds current clock (${currentTimestampSec}) + 30s skew`,
+    };
+  }
+
+  if (receipt.timestamp + maxReceiptAgeSec < currentTimestampSec) {
+    return {
+      ok: false,
+      errorCode: "EXPIRED_RECEIPT",
+      errorMessage: `Receipt expired at ${receipt.timestamp + maxReceiptAgeSec} < ${currentTimestampSec}`,
+    };
+  }
+
+  if (receipt.obligation_pubkey !== expectedObligationPubkey) {
+    return {
+      ok: false,
+      errorCode: "OBLIGATION_MISMATCH",
+      errorMessage: `Receipt obligation (${receipt.obligation_pubkey}) != policy obligation (${expectedObligationPubkey})`,
+    };
+  }
+
+  const repayAmount = BigInt(receipt.repay_amount_usdc);
+  const minOut = BigInt(receipt.min_amount_out);
+  if (repayAmount <= 0n || repayAmount > 0xffffffffffffffffn) {
+    return {
+      ok: false,
+      errorCode: "INVALID_REPAY_AMOUNT",
+      errorMessage: `Invalid repay_amount_usdc (${repayAmount.toString()})`,
+    };
+  }
+  if (minOut <= 0n || minOut > repayAmount) {
+    return {
+      ok: false,
+      errorCode: "INVALID_MIN_AMOUNT_OUT",
+      errorMessage: `min_amount_out (${minOut.toString()}) must be within [1..=${repayAmount.toString()}]`,
+    };
+  }
+
+  const proportionalMin =
+    (repayAmount * BigInt(10_000 - maxSlippageBps)) / 10_000n;
+  const minAcceptableOut =
+    proportionalMin > MAX_FIXED_SOLVER_DELIVERY_FEE_USDC_MICRO
+      ? proportionalMin - MAX_FIXED_SOLVER_DELIVERY_FEE_USDC_MICRO
+      : 1n;
+  if (minOut < minAcceptableOut) {
+    return {
+      ok: false,
+      errorCode: "SLIPPAGE_EXCEEDED",
+      errorMessage: `min_amount_out (${minOut.toString()}) < floor (${minAcceptableOut.toString()}) for max_slippage_bps=${maxSlippageBps}`,
+    };
+  }
+
+  if (!/^0x[0-9a-fA-F]{40}$/.test(receipt.oneclick_deposit_address)) {
+    return {
+      ok: false,
+      errorCode: "INVALID_DEPOSIT_ADDRESS",
+      errorMessage: `Invalid 20-byte deposit address (${receipt.oneclick_deposit_address})`,
+    };
+  }
+  if (!/^0x[0-9a-fA-F]{64}$/.test(receipt.reasoning_hash)) {
+    return {
+      ok: false,
+      errorCode: "INVALID_REASONING_HASH",
+      errorMessage: `Invalid 32-byte reasoning_hash (${receipt.reasoning_hash})`,
+    };
+  }
+
+  if (!verifyTeeDecisionReceiptSignature(receipt, enclavePublicKeyObject)) {
+    return {
+      ok: false,
+      errorCode: "INVALID_ED25519_SIGNATURE",
+      errorMessage: "Ed25519 enclave signature verification failed",
+    };
+  }
+
+  return { ok: true };
 }

@@ -36,6 +36,22 @@ pub const KAMINO_MAINNET_USDC_RESERVE_PUBKEY: [u8; 32] = [
     187, 64, 103, 200, 157, 91, 96, 42, 205, 34, 224, 108,
 ];
 
+/// Canonical Solana SPL Token Program ID: `TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA`
+/// Pinned at `repay_obligation_liquidity_v2` `ix.accounts[6]` to block Token-2022 transfer-hook CPI indirection.
+pub const SPL_TOKEN_PROGRAM_ID_STR: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+pub const SPL_TOKEN_PROGRAM_PUBKEY: [u8; 32] = [
+    6, 221, 246, 225, 215, 101, 161, 147, 217, 203, 225, 70, 206, 235, 121, 172, 28, 180, 133, 237,
+    95, 91, 55, 145, 58, 140, 245, 133, 126, 255, 0, 169,
+];
+
+/// Canonical Solana Instructions Sysvar ID: `Sysvar1nstructions1111111111111111111111111`
+/// Pinned at `repay_obligation_liquidity_v2` `ix.accounts[7]` to enforce Kamino CPI introspection integrity.
+pub const SYSVAR_INSTRUCTIONS_ID_STR: &str = "Sysvar1nstructions1111111111111111111111111";
+pub const SYSVAR_INSTRUCTIONS_PUBKEY: [u8; 32] = [
+    6, 167, 213, 23, 24, 123, 209, 102, 53, 218, 212, 4, 85, 253, 194, 192, 193, 36, 198, 143, 33,
+    86, 117, 165, 219, 186, 203, 95, 8, 0, 0, 0,
+];
+
 /// Anchor 8-byte discriminator for `global:repay_obligation_liquidity_v2`
 /// Verified via `sha256("global:repay_obligation_liquidity_v2")[0..8]` -> `[116, 174, 213, 76, 180, 53, 210, 144]` (`0x74aed54cb435d290`)
 pub const REPAY_OBLIGATION_LIQUIDITY_V2_DISCRIMINATOR: [u8; 8] =
@@ -103,6 +119,7 @@ pub struct VerifiedSolanaRepayMessage {
     pub obligation_pubkey: [u8; 32],
     pub lending_market_pubkey: [u8; 32],
     pub repay_reserve_pubkey: [u8; 32],
+    pub user_source_liquidity_pubkey: [u8; 32],
     pub repay_amount_usdc: u64,
     pub is_v2_instruction: bool,
     pub compute_budget_ix_count: usize,
@@ -141,6 +158,9 @@ pub enum SolanaParseError {
     ObligationPubkeyMismatch { expected: [u8; 32], actual: [u8; 32] },
     LendingMarketMismatch { expected: [u8; 32], actual: [u8; 32] },
     RepayReserveMismatch { expected: [u8; 32], actual: [u8; 32] },
+    InvalidSourceLiquidityAccount { actual: [u8; 32] },
+    TokenProgramMismatch { expected: [u8; 32], actual: [u8; 32] },
+    InstructionSysvarMismatch { expected: [u8; 32], actual: [u8; 32] },
     UnauthorizedReserveAccount { actual: [u8; 32] },
     OpaqueAddressTableLookupsForbidden(usize),
     TrailingBytes(usize),
@@ -319,6 +339,29 @@ impl core::fmt::Display for SolanaParseError {
                 write!(
                     f,
                     "Kamino repay_reserve account[3] ({}) does not match policy usdc_repay_reserve_pubkey ({})",
+                    bs58::encode(actual).into_string(),
+                    bs58::encode(expected).into_string()
+                )
+            }
+            SolanaParseError::InvalidSourceLiquidityAccount { actual } => {
+                write!(
+                    f,
+                    "Kamino user_source_liquidity account[5] ({}) collides with vault/protocol account",
+                    bs58::encode(actual).into_string()
+                )
+            }
+            SolanaParseError::TokenProgramMismatch { expected, actual } => {
+                write!(
+                    f,
+                    "Kamino token_program account[6] ({}) does not match canonical SPL Token program ({})",
+                    bs58::encode(actual).into_string(),
+                    bs58::encode(expected).into_string()
+                )
+            }
+            SolanaParseError::InstructionSysvarMismatch { expected, actual } => {
+                write!(
+                    f,
+                    "Kamino instruction_sysvar account[7] ({}) does not match canonical Sysvar1nstructions ({})",
                     bs58::encode(actual).into_string(),
                     bs58::encode(expected).into_string()
                 )
@@ -503,7 +546,7 @@ pub fn verify_solana_kamino_repay_message(
 
     let mut compute_budget_ix_count = 0usize;
     let mut kamino_refresh_ix_count = 0usize;
-    let mut verified_repay: Option<(u64, bool)> = None;
+    let mut verified_repay: Option<(u64, bool, [u8; 32])> = None;
 
     for _ in 0..instructions_len {
         if offset >= raw_message.len() {
@@ -799,7 +842,35 @@ pub fn verify_solana_kamino_repay_message(
                     });
                 }
 
-                verified_repay = Some((repay_amount_usdc, is_v2));
+                let reserve_dest_pk = &account_keys[ix_accounts[4] as usize];
+                let user_source_pk = &account_keys[ix_accounts[5] as usize];
+                if user_source_pk == reserve_dest_pk
+                    || user_source_pk == obligation_pk
+                    || user_source_pk == repay_reserve_pk
+                    || user_source_pk == owner_pk
+                {
+                    return Err(SolanaParseError::InvalidSourceLiquidityAccount {
+                        actual: *user_source_pk,
+                    });
+                }
+
+                let token_program_pk = &account_keys[ix_accounts[6] as usize];
+                if token_program_pk != &SPL_TOKEN_PROGRAM_PUBKEY {
+                    return Err(SolanaParseError::TokenProgramMismatch {
+                        expected: SPL_TOKEN_PROGRAM_PUBKEY,
+                        actual: *token_program_pk,
+                    });
+                }
+
+                let sysvar_pk = &account_keys[ix_accounts[7] as usize];
+                if sysvar_pk != &SYSVAR_INSTRUCTIONS_PUBKEY {
+                    return Err(SolanaParseError::InstructionSysvarMismatch {
+                        expected: SYSVAR_INSTRUCTIONS_PUBKEY,
+                        actual: *sysvar_pk,
+                    });
+                }
+
+                verified_repay = Some((repay_amount_usdc, is_v2, *user_source_pk));
             } else {
                 return Err(SolanaParseError::ForbiddenKaminoInstructionDiscriminator(disc));
             }
@@ -821,7 +892,7 @@ pub fn verify_solana_kamino_repay_message(
         return Err(SolanaParseError::TrailingBytes(raw_message.len() - offset));
     }
 
-    let (repay_amount_usdc, is_v2_instruction) =
+    let (repay_amount_usdc, is_v2_instruction, user_source_liquidity_pubkey) =
         verified_repay.ok_or(SolanaParseError::MissingKaminoRepayInstruction)?;
 
     Ok(VerifiedSolanaRepayMessage {
@@ -833,6 +904,7 @@ pub fn verify_solana_kamino_repay_message(
         obligation_pubkey: *expected_user_obligation_pubkey,
         lending_market_pubkey: *expected_lending_market_pubkey,
         repay_reserve_pubkey: *expected_usdc_repay_reserve_pubkey,
+        user_source_liquidity_pubkey,
         repay_amount_usdc,
         is_v2_instruction,
         compute_budget_ix_count,

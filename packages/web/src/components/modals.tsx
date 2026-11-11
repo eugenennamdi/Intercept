@@ -671,19 +671,39 @@ export function ConfigurePolicyModal({
               </div>
             </div>
             <a
-              href={`https://${
-                nearContractId.endsWith(".testnet")
-                  ? "testnet.nearblocks.io"
-                  : "nearblocks.io"
-              }/address/${nearContractId}`}
+              href={`https://solscan.io/account/${derivedSolanaPayer}`}
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center gap-1 font-medium text-zinc-900 hover:underline"
             >
-              <span>Explorer</span>
+              <span>Solscan</span>
               <ArrowSquareOut className="h-3.5 w-3.5" />
             </a>
           </div>
+        </div>
+
+        <div className="flex items-center justify-between rounded-md border border-border bg-secondary/30 px-3 py-2 text-xs">
+          <div>
+            <span className="text-[11px] text-muted-foreground">
+              NEAR Policy Guardrail:{" "}
+            </span>
+            <span className="font-mono font-medium text-foreground">
+              {nearContractId}
+            </span>
+          </div>
+          <a
+            href={`https://${
+              nearContractId.endsWith(".testnet")
+                ? "testnet.nearblocks.io"
+                : "nearblocks.io"
+            }/address/${nearContractId}`}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 font-medium text-zinc-900 hover:underline"
+          >
+            <span>NearBlocks</span>
+            <ArrowSquareOut className="h-3.5 w-3.5" />
+          </a>
         </div>
       </div>
 
@@ -743,8 +763,12 @@ export function FaqModal({
       a: "Click 'Configure Protection Policy' on the dashboard, connect Phantom or Solflare in read-only mode (or paste your Kamino obligation address), set your Health Factor trigger and USDC spending caps, and save your policy. When ready for live coverage, fund your derived Base USDC Reserve Vault.",
     },
     {
+      q: "What happens if cross-chain solver settlement times out or slippage breaches my limit?",
+      a: "Every NEAR Intents 1-Click quote pins refundTo directly to your derived Base USDC Reserve Vault (ORIGIN_CHAIN). If a solver fails to fill within your slippage tolerance or deadline, 1-Click automatically refunds 100% of your USDC on Base, Intercept halts before Leg 2, and cancel_refunded_rescue reconciles your 24-hour spending allowance on NEAR while keeping the receipt hash permanently replay-locked.",
+    },
+    {
       q: "What is the minimum reserve needed to verify live cross-chain settlement?",
-      a: "As little as $2.00 USDC on Base. Combined L2 and Solana network fees cost less than $0.01 per rescue, and you can stress-test any SOL drawdown scenario on the dashboard before funding your vault.",
+      a: "As little as $3.50 USDC on Base (1-Click cross-chain delivery gas is ~$0.22 fixed plus ~3–12 bps spread). You can also toggle between the Live On-Chain (0.185 SOL) position and Institutional (100 SOL / $5K Loan) scale on the dashboard to test any crash scenario before funding your vault.",
     },
   ];
 

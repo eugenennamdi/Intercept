@@ -11,7 +11,11 @@ import {
   fetchSolanaMainnetBlockhashAndBalances,
   getDefaultDerivedSecp256k1PublicKey,
   invokeNearPolicyContractLive,
+  NEAR_TESTNET_AGENT_ACCOUNT_ID,
+  NEAR_TESTNET_GUARDRAIL_CONTRACT_ID,
   secp256k1DerivedKeyToEvmAddress,
+  verifyRescuePayloadsOnNearWasmView,
+  type OnChainNearWasmVerificationReport,
 } from "./mainnet-broadcaster.ts";
 import {
   fetchOneClickRescueQuote,
@@ -21,6 +25,7 @@ import {
 } from "./oneclick-client.ts";
 import {
   executeNearAiCloudVerifiableInference,
+  prefetchNearAiCloudAttestationReport,
   type NearAiCloudAttestationBundle,
 } from "./near-ai-cloud.ts";
 import {
@@ -43,6 +48,7 @@ import {
   createTeeEnclaveKeypairFromSeed,
   evaluateDynamicDeRiskingModel,
   signTeeDecisionReceipt,
+  verifyTeeDecisionReceiptFull,
   verifyTeeDecisionReceiptSignature,
   type QuantitativeRiskEvaluation,
   type TeeDecisionReceipt,
@@ -86,7 +92,12 @@ export interface StageTimingTelemetry {
     | "STAGE_4_NEAR_INTENTS_SOLVER_SETTLEMENT"
     | "STAGE_5_NEAR_LEG2_GUARDRAIL_AND_KAMINO_REPAY";
   label: string;
-  status: "COMPLETED" | "SKIPPED_HEALTHY" | "REVERTED_BY_GUARDRAIL";
+  status:
+    | "COMPLETED"
+    | "SKIPPED_HEALTHY"
+    | "REVERTED_BY_GUARDRAIL"
+    | "REFUNDED_TO_BASE_VAULT"
+    | "SKIPPED_SOLVER_REFUND";
   measuredLatencyMs: number;
   detail: string;
   explorerUrl: string;
@@ -148,6 +159,7 @@ export interface OrchestratorExecutionReport {
     derivationPath: string;
     guardrailVerified: boolean;
   } | null;
+  onChainNearWasmVerification: OnChainNearWasmVerificationReport | null;
   stages: StageTimingTelemetry[];
 }
 
@@ -197,10 +209,10 @@ export function getDefaultInterceptSetup(): {
     },
     policy: {
       nearContractId:
-        process.env.POLICY_CONTRACT_ID ?? "guardrail.intercept-defi.near",
-      ownerNearAccount: "keeper-owner.near",
+        process.env.POLICY_CONTRACT_ID ?? NEAR_TESTNET_GUARDRAIL_CONTRACT_ID,
+      ownerNearAccount: NEAR_TESTNET_GUARDRAIL_CONTRACT_ID,
       authorizedAgentNearAccount:
-        process.env.NEAR_ACCOUNT_ID ?? "tee-agent.intercept-defi.near",
+        process.env.NEAR_ACCOUNT_ID ?? NEAR_TESTNET_AGENT_ACCOUNT_ID,
       mpcSignerContractId: "v1.signer",
       teeEnclavePubkeyHex: enclave.publicKeyHex,
       mpcBaseVaultAddress: mpcBaseVault,
@@ -210,12 +222,12 @@ export function getDefaultInterceptSetup(): {
       kaminoLendingMarketPubkey: KAMINO_MAIN_MARKET_PUBKEY,
       baseDerivationPath: "intercept-base-vault-1",
       solanaDerivationPath: "intercept-solana-payer-1",
-      maxPerActionUsdcMicro: 50_000_000n, // 50.00 USDC max per action
-      maxDailyUsdcMicro: 250_000_000n, // 250.00 USDC max per 24h
+      maxPerActionUsdcMicro: 2_500_000_000n, // 2,500.00 USDC max per action (matches live Testnet policy)
+      maxDailyUsdcMicro: 5_000_000_000n, // 5,000.00 USDC max per 24h (matches live Testnet policy)
       rolling24hSpentUsdcMicro: 0n,
-      maxSlippageBps: 100, // 1.00% max slippage
+      maxSlippageBps: 100, // 1.00% max slippage (+$0.35 fixed solver gas buffer)
       minTriggerHfBps: 11_500, // 1.1500 HF trigger threshold
-      availableBaseVaultUsdcMicro: 15_000_000n, // 15.00 USDC idle on Base MPC Vault
+      availableBaseVaultUsdcMicro: 5_000_000_000n, // 5,000.00 USDC institutional Base MPC Vault capacity
     },
   };
 }
@@ -230,6 +242,7 @@ export async function executeInterceptRescuePipeline(options?: {
   minTriggerHfBpsOverride?: number;
   customPosition?: Partial<KaminoObligationPositionInput>;
   customPolicy?: Partial<PolicyGuardrailConfig>;
+  simulateSolverRefund?: boolean;
 }): Promise<OrchestratorExecutionReport> {
   const defaults = getDefaultInterceptSetup();
   const hasCustomPositionOverride = Boolean(
@@ -264,6 +277,16 @@ export async function executeInterceptRescuePipeline(options?: {
 
   // --- STAGE 1: Live Pyth Hermes Telemetry + Kamino Obligation Health & Risk Evaluation ---
   const tStage1 = performance.now();
+  // Prefetch Base Mainnet gas/nonce, Solana Mainnet recentBlockhash, and NEAR AI Cloud hardware quote
+  // in parallel with Pyth oracle so Stages 1, 3, and 5 never block sequentially on public roundtrips.
+  const baseStatePromise = fetchBaseMainnetAccountAndGasState({
+    mpcBaseVaultAddress: policy.mpcBaseVaultAddress,
+  });
+  const solanaStatePromise = fetchSolanaMainnetBlockhashAndBalances({
+    mpcSolanaPayerPubkey: policy.mpcSolanaPayerPubkey,
+  });
+  const prefetchedAttestationPromise = prefetchNearAiCloudAttestationReport();
+
   const pythTelemetry = await fetchPythSolVolatility({
     stressShockPct,
   });
@@ -288,6 +311,7 @@ export async function executeInterceptRescuePipeline(options?: {
     obligationPubkey: policy.userKaminoObligationPubkey,
     riskEvaluation,
     enclaveKeypair,
+    prefetchedAttestation: prefetchedAttestationPromise,
   });
   const stage1Ms = Math.max(1, Math.round(performance.now() - tStage1));
 
@@ -296,6 +320,7 @@ export async function executeInterceptRescuePipeline(options?: {
     allowedMethodNames: [
       "request_rescue_origin_leg",
       "request_rescue_destination_leg",
+      "cancel_refunded_rescue",
     ],
     forbiddenAdminMethods: ["new", "update_policy"],
     // ponytail: 1.00 NEAR allowance covers NEAR's ~0.3009 NEAR pessimistic upfront reservation on 300 TGas v1.signer calls
@@ -327,8 +352,12 @@ export async function executeInterceptRescuePipeline(options?: {
         stageIndex: 3,
         stageId: "STAGE_3_NEAR_LEG1_GUARDRAIL_AND_BASE_MPC" as const,
         label: "NEAR Leg 1 Policy Check & Base v1.signer (domain_id: 0)",
-        explorerUrl: "https://nearblocks.io/address/v1.signer",
-        explorerLabel: "NearBlocks (v1.signer)",
+        explorerUrl: `https://${
+          policy.nearContractId.endsWith(".testnet")
+            ? "testnet.nearblocks.io"
+            : "nearblocks.io"
+        }/address/${policy.nearContractId}`,
+        explorerLabel: `NearBlocks (${policy.nearContractId})`,
       },
       {
         stageIndex: 4,
@@ -386,6 +415,7 @@ export async function executeInterceptRescuePipeline(options?: {
       teeReceipt: null,
       leg1BaseVerification: null,
       leg2SolanaVerification: null,
+      onChainNearWasmVerification: null,
       stages,
     };
   }
@@ -420,10 +450,20 @@ export async function executeInterceptRescuePipeline(options?: {
     reasoningHash: riskEvaluation.reasoningHash,
   });
 
-  const signatureVerified = verifyTeeDecisionReceiptSignature(
-    signedReceiptBundle.receipt,
-    enclaveKeypair.publicKeyObject
-  );
+  const receiptFullCheck = verifyTeeDecisionReceiptFull({
+    receipt: signedReceiptBundle.receipt,
+    enclavePublicKeyObject: enclaveKeypair.publicKeyObject,
+    expectedObligationPubkey: policy.userKaminoObligationPubkey,
+    minTriggerHfBps: policy.minTriggerHfBps,
+    maxSlippageBps: policy.maxSlippageBps,
+    currentTimestampSec: nowSec,
+  });
+  if (!receiptFullCheck.ok) {
+    throw new Error(
+      `TEE receipt verification failed (${receiptFullCheck.errorCode}): ${receiptFullCheck.errorMessage}`
+    );
+  }
+  const signatureVerified = receiptFullCheck.ok;
   const stage2Ms = Math.max(1, Math.round(performance.now() - tStage2));
 
   stages.push({
@@ -439,9 +479,7 @@ export async function executeInterceptRescuePipeline(options?: {
 
   // --- STAGE 3: NEAR Leg 1 Byte-Level Policy Guardrail & Base EVM Payload Verification ---
   const tStage3 = performance.now();
-  const baseAccountState = await fetchBaseMainnetAccountAndGasState({
-    mpcBaseVaultAddress: policy.mpcBaseVaultAddress,
-  });
+  const baseAccountState = await baseStatePromise;
   const calldata = buildErc20TransferCalldata(
     oneClickQuote.depositAddress,
     riskEvaluation.repayAmountUsdcMicro
@@ -512,25 +550,129 @@ export async function executeInterceptRescuePipeline(options?: {
     status: "COMPLETED",
     measuredLatencyMs: stage3Ms,
     detail: `Verified EIP-1559 chain_id=${baseAccountState.chainId}, nonce=${baseAccountState.nonce}, Base USDC 0x8335...2913, selector=0xa9059cbb → payload_v2::Ecdsa(${unsignedEip1559.signingHashHex.slice(0, 14)}...)`,
-    explorerUrl: "https://nearblocks.io/address/v1.signer",
-    explorerLabel: "NearBlocks (v1.signer MPC)",
+    explorerUrl: `https://${
+      policy.nearContractId.endsWith(".testnet")
+        ? "testnet.nearblocks.io"
+        : "nearblocks.io"
+    }/address/${policy.nearContractId}`,
+    explorerLabel: `NearBlocks (${policy.nearContractId})`,
   });
 
   // --- STAGE 4: NEAR Intents 1-Click Deposit Notification & Cross-Chain Settlement ---
   const tStage4 = performance.now();
-  await submitOneClickDepositTx({
-    depositAddress: oneClickQuote.depositAddress,
-    baseTxHash: effectiveBaseTxHashHex,
-  });
-  const settlementStatus = await pollOneClickSettlementStatus({
-    depositAddress: oneClickQuote.depositAddress,
-    expectedAmountOutMicroUsdc: oneClickQuote.expectedAmountOutMicroUsdc,
-    waitForMainnetSettlement: liveBroadcastEnabled,
-  });
+  let settlementStatus: {
+    status:
+      | "PENDING_DEPOSIT"
+      | "KNOWN_DEPOSIT_TX"
+      | "PROCESSING"
+      | "SUCCESS"
+      | "REFUNDED"
+      | "FAILED";
+    settledAmountOutMicroUsdc?: bigint;
+  };
+
+  if (options?.simulateSolverRefund) {
+    settlementStatus = { status: "REFUNDED" };
+  } else if (liveBroadcastEnabled) {
+    await submitOneClickDepositTx({
+      depositAddress: oneClickQuote.depositAddress,
+      baseTxHash: effectiveBaseTxHashHex,
+    });
+    settlementStatus = await pollOneClickSettlementStatus({
+      depositAddress: oneClickQuote.depositAddress,
+      expectedAmountOutMicroUsdc: oneClickQuote.expectedAmountOutMicroUsdc,
+      waitForMainnetSettlement: true,
+    });
+  } else {
+    // ponytail: Skip live HTTP POST /v0/deposit/submit & GET /v0/status in dryRun simulation mode
+    // so we never submit unbroadcast tx hashes to 1-Click or burn ~900ms on redundant roundtrips.
+    settlementStatus = {
+      status: "SUCCESS",
+      settledAmountOutMicroUsdc: oneClickQuote.expectedAmountOutMicroUsdc,
+    };
+  }
+
+  const stage4Ms = Math.max(1, Math.round(performance.now() - tStage4));
+
+  if (
+    settlementStatus.status === "REFUNDED" ||
+    settlementStatus.status === "FAILED"
+  ) {
+    stages.push({
+      stageIndex: 4,
+      stageId: "STAGE_4_NEAR_INTENTS_SOLVER_SETTLEMENT",
+      label: "Base USDC Deposit & NEAR Intents Cross-Chain Solver Fill",
+      status: "REFUNDED_TO_BASE_VAULT",
+      measuredLatencyMs: stage4Ms,
+      detail: `1-Click solver returned ${settlementStatus.status}: ${oneClickQuote.amountInFormatted} USDC auto-refunded on Base to MPC_Base_Vault (${policy.mpcBaseVaultAddress.slice(0, 10)}...); cancel_refunded_rescue reconciles 24h cap.`,
+      explorerUrl: `https://basescan.org/token/0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913?a=${policy.mpcBaseVaultAddress}`,
+      explorerLabel: "BaseScan (Refund Vault)",
+    });
+    stages.push({
+      stageIndex: 5,
+      stageId: "STAGE_5_NEAR_LEG2_GUARDRAIL_AND_KAMINO_REPAY",
+      label: "NEAR Leg 2 Policy Check & Solana Kamino Repay (domain_id: 1)",
+      status: "SKIPPED_SOLVER_REFUND",
+      measuredLatencyMs: 0,
+      detail: `Halted safely before Leg 2: no Solana USDC settled; funds remain in user's Base MPC Vault (${policy.mpcBaseVaultAddress.slice(0, 10)}...).`,
+      explorerUrl: `https://solscan.io/account/${policy.mpcSolanaPayerPubkey}`,
+      explorerLabel: "Solscan (MPC Solana Payer)",
+    });
+
+    return {
+      mode,
+      executedAtIso: new Date().toISOString(),
+      totalMeasuredLatencyMs: Math.max(
+        1,
+        Math.round(performance.now() - pipelineStart)
+      ),
+      policy: {
+        nearContractId: policy.nearContractId,
+        authorizedAgentNearAccount: policy.authorizedAgentNearAccount,
+        mpcBaseVaultAddress: policy.mpcBaseVaultAddress,
+        mpcSolanaPayerPubkey: policy.mpcSolanaPayerPubkey,
+        userKaminoObligationPubkey: policy.userKaminoObligationPubkey,
+        userSolanaEoaPubkey: policy.userSolanaEoaPubkey,
+        minTriggerHfBps: policy.minTriggerHfBps,
+        maxPerActionUsdcFormatted: (
+          Number(policy.maxPerActionUsdcMicro) / 1_000_000
+        ).toFixed(2),
+        maxDailyUsdcFormatted: (
+          Number(policy.maxDailyUsdcMicro) / 1_000_000
+        ).toFixed(2),
+        maxSlippageBps: policy.maxSlippageBps,
+        agentFunctionCallKeySpec,
+      },
+      pythTelemetry,
+      kaminoBefore,
+      kaminoAfter: kaminoBefore,
+      riskEvaluation,
+      nearAiCloudAttestation,
+      oneClickQuote,
+      teeReceipt: {
+        receipt: signedReceiptBundle.receipt,
+        canonicalPayload: signedReceiptBundle.canonicalPayload,
+        receiptHashHex: signedReceiptBundle.receiptHashHex,
+        signatureVerified,
+      },
+      leg1BaseVerification: {
+        rawUnsignedTxHex: unsignedEip1559.rawUnsignedTxHex,
+        signingHashKeccak256Hex: unsignedEip1559.signingHashHex,
+        reconstructedSignedTxHex: assembledBaseTx.signedTxHex,
+        baseTxHashHex: effectiveBaseTxHashHex,
+        mpcDomainId: 0,
+        derivationPath: policy.baseDerivationPath,
+        guardrailVerified: leg1Check.ok,
+      },
+      leg2SolanaVerification: null,
+      onChainNearWasmVerification: null,
+      stages,
+    };
+  }
+
   const settledAmountOutMicro =
     settlementStatus.settledAmountOutMicroUsdc ??
     oneClickQuote.expectedAmountOutMicroUsdc;
-  const stage4Ms = Math.max(1, Math.round(performance.now() - tStage4));
 
   stages.push({
     stageIndex: 4,
@@ -538,16 +680,14 @@ export async function executeInterceptRescuePipeline(options?: {
     label: "Base USDC Deposit & NEAR Intents Cross-Chain Solver Fill",
     status: "COMPLETED",
     measuredLatencyMs: stage4Ms,
-    detail: `1-Click Deposit ${oneClickQuote.depositAddress.slice(0, 12)}... (${settlementStatus.status}) → ${(Number(settledAmountOutMicro) / 1_000_000).toFixed(6)} USDC routed to MPC_Solana_Payer (${policy.mpcSolanaPayerPubkey.slice(0, 8)}...)`,
+    detail: `1-Click Deposit ${oneClickQuote.depositAddress.slice(0, 12)}... (${settlementStatus.status}) → ${(Number(settledAmountOutMicro) / 1_000_000).toFixed(6)} USDC routed to MPC_Solana_Payer (auto-refunds to ${policy.mpcBaseVaultAddress.slice(0, 8)}... on failure)`,
     explorerUrl: `https://basescan.org/token/0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913?a=${policy.mpcBaseVaultAddress}`,
     explorerLabel: "BaseScan (Base USDC Vault)",
   });
 
   // --- STAGE 5: NEAR Leg 2 Byte-Level Policy Guardrail & Solana Kamino Repay ---
   const tStage5 = performance.now();
-  const solanaChainState = await fetchSolanaMainnetBlockhashAndBalances({
-    mpcSolanaPayerPubkey: policy.mpcSolanaPayerPubkey,
-  });
+  const solanaChainState = await solanaStatePromise;
 
   const solanaMsg = buildSolanaKaminoRepayMessageBytes({
     versionedV0: true,
@@ -605,16 +745,29 @@ export async function executeInterceptRescuePipeline(options?: {
     broadcastedSolanaSigBase58 ?? assembledSolanaTx.signatureBase58;
 
   const settledRepayUsd = Number(settledAmountOutMicro) / 1_000_000;
-  const kaminoAfter = await fetchKaminoObligationTelemetry({
-    position: {
-      ...position,
-      depositedSol: kaminoBefore.depositedSol,
-      borrowedUsdc: Math.max(0, kaminoBefore.borrowedUsdc - settledRepayUsd),
-      overrideOnChainBalances: true,
-    },
-    solPriceUsd: pythTelemetry.effectiveSolUsd,
-    usdcPriceUsd: pythTelemetry.usdcSpotUsd,
-  });
+  const [kaminoAfter, onChainNearWasmVerification] = await Promise.all([
+    fetchKaminoObligationTelemetry({
+      position: {
+        ...position,
+        depositedSol: kaminoBefore.depositedSol,
+        borrowedUsdc: Math.max(0, kaminoBefore.borrowedUsdc - settledRepayUsd),
+        overrideOnChainBalances: true,
+      },
+      solPriceUsd: pythTelemetry.effectiveSolUsd,
+      usdcPriceUsd: pythTelemetry.usdcSpotUsd,
+    }),
+    verifyRescuePayloadsOnNearWasmView({
+      receipt: signedReceiptBundle.receipt,
+      unsignedEip1559TxHex: unsignedEip1559.rawUnsignedTxHex,
+      userObligationPubkey: policy.userKaminoObligationPubkey,
+      lendingMarketPubkey: policy.kaminoLendingMarketPubkey,
+      recentBlockhashBase58: solanaChainState.recentBlockhashBase58,
+      settledAmountOutMicro,
+      minRepayAmountUsdcMicro: oneClickQuote.minAmountOutMicroUsdc,
+      repayAmountUsdcMicro: riskEvaluation.repayAmountUsdcMicro,
+      contractId: policy.nearContractId,
+    }),
+  ]);
   const stage5Ms = Math.max(1, Math.round(performance.now() - tStage5));
 
   stages.push({
@@ -687,6 +840,7 @@ export async function executeInterceptRescuePipeline(options?: {
       derivationPath: policy.solanaDerivationPath,
       guardrailVerified: leg2Check.ok,
     },
+    onChainNearWasmVerification,
     stages,
   };
 }

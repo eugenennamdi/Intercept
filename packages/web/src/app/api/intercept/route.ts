@@ -4,11 +4,46 @@ import {
   runAdversarialAttackSuite,
   runMainnetPreflightCheck,
   runQuantitativeBacktestSuite,
+  type AdversarialAttackVectorResult,
   type ExecutionMode,
+  type FullBacktestSuiteReport,
+  type MainnetPreflightReport,
 } from "@intercept/agent-tee";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
+
+export type PositionScalePreset = "LIVE_MICRO" | "INSTITUTIONAL";
+
+// ponytail: Cache deterministic backtest/adversarial suites once per warm serverless isolate
+// and cache preflight RPC readiness for 25s so slider interactions respond in ~1s instead of ~8s.
+const PREFLIGHT_CACHE_TTL_MS = 25_000;
+let cachedPreflight: { report: MainnetPreflightReport; expiresAtMs: number } | null = null;
+let cachedBacktest: FullBacktestSuiteReport | null = null;
+let cachedAdversarialSuite: AdversarialAttackVectorResult[] | null = null;
+
+async function getCachedMainnetPreflight(): Promise<MainnetPreflightReport> {
+  const now = Date.now();
+  if (cachedPreflight && now < cachedPreflight.expiresAtMs) {
+    return cachedPreflight.report;
+  }
+  const report = await runMainnetPreflightCheck();
+  cachedPreflight = { report, expiresAtMs: now + PREFLIGHT_CACHE_TTL_MS };
+  return report;
+}
+
+function getCachedDeterministicSuites() {
+  if (!cachedAdversarialSuite) {
+    cachedAdversarialSuite = runAdversarialAttackSuite();
+  }
+  if (!cachedBacktest) {
+    cachedBacktest = runQuantitativeBacktestSuite();
+  }
+  return {
+    adversarialSuite: cachedAdversarialSuite,
+    backtest: cachedBacktest,
+  };
+}
 
 function serializeBigInt<T>(obj: T): unknown {
   return JSON.parse(
@@ -34,6 +69,22 @@ function clampFinite(
   return Math.min(max, Math.max(min, val));
 }
 
+function resolveInstitutionalPositionOverride(
+  scale: unknown,
+  safeObligation?: string
+) {
+  if (scale === "INSTITUTIONAL") {
+    // ponytail: 100 SOL / $5,000 USDC mirrors the live ~1.33x healthy baseline at ~$89 SOL
+    // while keeping -25% cascade rescues (~$1,555 USDC) inside the $2,500 per-action policy cap.
+    return {
+      ...(safeObligation ? { obligationPubkey: safeObligation } : {}),
+      depositedSol: 100,
+      borrowedUsdc: 5_000,
+    };
+  }
+  return safeObligation ? { obligationPubkey: safeObligation } : undefined;
+}
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const rawMode = url.searchParams.get("mode") as ExecutionMode | null;
@@ -49,16 +100,18 @@ export async function GET(request: Request) {
   );
   const stressShockPct =
     clampedDrop !== undefined ? -clampedDrop : undefined;
+  const positionScale = url.searchParams.get("positionScale");
 
   const [report, preflight] = await Promise.all([
     executeInterceptRescuePipeline({
       mode: modeParam,
       stressShockPct,
+      customPosition: resolveInstitutionalPositionOverride(positionScale),
     }),
-    runMainnetPreflightCheck(),
+    getCachedMainnetPreflight(),
   ]);
-  const adversarialSuite = runAdversarialAttackSuite();
-  const backtest = runQuantitativeBacktestSuite();
+  const { adversarialSuite, backtest } = getCachedDeterministicSuites();
+
   return NextResponse.json(
     serializeBigInt({
       report,
@@ -97,6 +150,7 @@ export async function POST(request: Request) {
     maxPerActionUsdcFormattedOverride?: string;
     maxDailyUsdcFormattedOverride?: string;
     maxSlippageBpsOverride?: number;
+    positionScale?: PositionScalePreset;
   };
 
   const safeMode: ExecutionMode =
@@ -145,9 +199,10 @@ export async function POST(request: Request) {
         safeMinTriggerHfBps !== undefined
           ? Math.round(safeMinTriggerHfBps)
           : undefined,
-      customPosition: safeObligation
-        ? { obligationPubkey: safeObligation }
-        : undefined,
+      customPosition: resolveInstitutionalPositionOverride(
+        body.positionScale,
+        safeObligation
+      ),
       customPolicy: {
         ...(safeObligation
           ? { userKaminoObligationPubkey: safeObligation }
@@ -169,11 +224,10 @@ export async function POST(request: Request) {
           : {}),
       },
     }),
-    runMainnetPreflightCheck(),
+    getCachedMainnetPreflight(),
   ]);
 
-  const adversarialSuite = runAdversarialAttackSuite();
-  const backtest = runQuantitativeBacktestSuite();
+  const { adversarialSuite, backtest } = getCachedDeterministicSuites();
 
   return NextResponse.json(
     serializeBigInt({

@@ -22,6 +22,12 @@ where
 /// Canonical domain separator prefix for TEE Decision Receipts signed by the NEAR AI Cloud enclave
 pub const TEE_RECEIPT_DOMAIN_PREFIX: &str = "INTERCEPT_TEE_RECEIPT_V1";
 
+/// ponytail: real 1-Click solver quotes (`1click.chaindefuser.com/v0/quote`) deduct a fixed ~$0.22 USDC
+/// Solana destination delivery fee regardless of swap notional; allowing up to $0.35 (350,000 micro-USDC)
+/// fixed gas overhead alongside `max_slippage_bps` prevents false `SlippageExceeded` reverts on micro-rescues
+/// while keeping proportional slippage tight on institutional sizes.
+pub const MAX_FIXED_SOLVER_DELIVERY_FEE_USDC: u128 = 350_000;
+
 /// Supported quantitative risk regimes emitted by the Intercept TEE Risk Engine
 #[derive(
     Debug,
@@ -342,11 +348,14 @@ impl TeeDecisionReceipt {
             });
         }
         let slippage_complement = 10_000u128.saturating_sub(max_slippage_bps as u128);
-        let required_min_out = self
+        let proportional_min_out = self
             .repay_amount_usdc
             .checked_mul(slippage_complement)
             .unwrap_or(u128::MAX)
             / 10_000u128;
+        let required_min_out = proportional_min_out
+            .saturating_sub(MAX_FIXED_SOLVER_DELIVERY_FEE_USDC)
+            .max(1);
         if self.min_amount_out < required_min_out {
             return Err(TeeReceiptError::SlippageExceeded {
                 repay_amount_usdc: self.repay_amount_usdc,

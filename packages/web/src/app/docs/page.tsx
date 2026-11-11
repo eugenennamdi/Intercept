@@ -307,7 +307,7 @@ export default function InterceptDocsPage() {
                   <span className="text-sm font-semibold text-foreground">
                     Step 2 — Lock Policy Bounds on NEAR (update_policy)
                   </span>
-                  <Badge variant="secondary">guardrail.intercept-defi.near</Badge>
+                  <Badge variant="secondary">intercept-guardrail-373299.testnet</Badge>
                 </div>
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   Choose your <strong className="text-foreground">Trigger Health Factor</strong>{" "}
@@ -319,8 +319,8 @@ export default function InterceptDocsPage() {
                   <strong className="text-foreground">
                     Save Protection Policy
                   </strong>{" "}
-                  to immediately evaluate your rules against live telemetry in the
-                  dashboard, or run the <code className="font-mono">near-cli-rs</code>{" "}
+                  to immediately evaluate your rules against live telemetry and the deployed
+                  NEAR Testnet WASM contract, or run the <code className="font-mono">near-cli-rs</code>{" "}
                   command below to commit them on-chain.
                 </p>
               </div>
@@ -334,9 +334,9 @@ export default function InterceptDocsPage() {
                 </div>
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   Transfer idle USDC on Base to your deterministic{" "}
-                  <code className="font-mono">v1.signer</code> Base MPC Vault (
+                  <code className="font-mono">v1.signer-prod.testnet</code> Base MPC Vault (
                   <code className="font-mono">
-                    0x72faa1abaf92e0c4b791f15acedb496c8979746c
+                    0xfa1d66b9f3ae95f9d21b8db2315720c2fcde5320
                   </code>
                   ). Even <strong className="text-foreground">$1.00–$2.00 USDC</strong>{" "}
                   is sufficient to test a complete live cross-chain rescue.
@@ -420,7 +420,7 @@ export default function InterceptDocsPage() {
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     Runs live <code className="font-mono">v1.signer</code> MPC derivation,
-                    25 Rust unit &amp; adversarial tests, 11 Red-Team proofs, and 3-regime backtests.
+                    29 Rust unit &amp; adversarial tests, 11 Red-Team proofs, and 3-regime backtests.
                   </TableCell>
                 </TableRow>
               </TableBody>
@@ -453,17 +453,17 @@ export default function InterceptDocsPage() {
   ├── Owns Kamino Obligation (SOL Collateral + USDC Debt)
   └── Private key NEVER shared with NEAR, MPC, or AI Agent
 
-[Domain B: NEAR AI Cloud TEE + guardrail.intercept-defi.near]
-  ├── TEE Enclave signs Ed25519 Rescue Receipt (observed_hf, volatility, quote)
+[Domain B: NEAR AI Cloud TEE + intercept-guardrail-373299.testnet]
+  ├── TEE Enclave signs Ed25519 Rescue Receipt (32B CSPRNG nonce + TDX/Hopper quote)
   ├── Scoped NEAR FunctionCall Access Key (1.00 NEAR gas allowance, 0 NEAR attached deposit)
-  │     ├── Permitted methods ONLY: request_rescue_origin_leg, request_rescue_destination_leg
+  │     ├── Permitted methods ONLY: request_rescue_origin_leg, request_rescue_destination_leg, cancel_refunded_rescue
   │     ├── Contract sponsors 0.05 NEAR v1.signer fee internally (reclaimed via refund)
-  │     └── Forbidden: update_policy (Owner-only), TransferNEAR, DeployContract, AddKey
+  │     └── Forbidden: update_policy (Owner-only, locked while in flight), TransferNEAR, DeployContract, AddKey
   └── Rust Guardrail parses every byte of Leg 1 & Leg 2 before calling v1.signer
 
-[Domain C: v1.signer Chain Signatures + NEAR Intents 1-Click]
-  ├── domain_id: 0 (Secp256k1) -> MPC_Base_Vault (0x72faa1abaf92e0c4b791f15acedb496c8979746c)
-  └── domain_id: 1 (Ed25519)   -> MPC_Solana_Payer (GZMAbwapG99YKCsA2CDVc4bXeBzd7nvKMQgtm9K8aKas)`}
+[Domain C: v1.signer-prod.testnet Chain Signatures + NEAR Intents 1-Click]
+  ├── domain_id: 0 (Secp256k1) -> MPC_Base_Vault (0xfa1d66b9f3ae95f9d21b8db2315720c2fcde5320)
+  └── domain_id: 1 (Ed25519)   -> MPC_Solana_Payer (7AqKFEDJ13ZxpnQnBEEM6XmGq2LNa65jXBE4q96emvCo)`}
             />
           </section>
 
@@ -595,7 +595,8 @@ export default function InterceptDocsPage() {
                   <div>• Discriminator <code className="font-mono text-foreground">0x74aed54cb435d290</code> (Repay v2)</div>
                   <div>• <code className="font-mono text-foreground">[0]</code> MPC Payer · <code className="font-mono text-foreground">[1]</code> Obligation · <code className="font-mono text-foreground">[2]</code> Main Market</div>
                   <div>• <code className="font-mono text-foreground">[3] == Pinned Mainnet USDC Reserve (D6q6wu...)</code></div>
-                  <div>• <code className="font-mono text-foreground">[5] == Derived MPC Solana USDC ATA (2eLUYL...)</code></div>
+                  <div>• <code className="font-mono text-foreground">[5] == Non-Aliasing MPC Solana USDC ATA</code></div>
+                  <div>• <code className="font-mono text-foreground">[6] == SPL_TOKEN_PROGRAM (Tokenkeg... · blocks Token-2022 hooks)</code></div>
                 </CardContent>
               </Card>
             </div>
@@ -608,7 +609,7 @@ export default function InterceptDocsPage() {
                 07
               </span>
               <h2 className="text-xl font-semibold tracking-[-0.025em]">
-                Multi-Domain v1.signer MPC & Async State Machine
+                Multi-Domain v1.signer MPC, Async State & Solver Refund Safety
               </h2>
             </div>
 
@@ -624,7 +625,12 @@ export default function InterceptDocsPage() {
               <code className="font-mono">on_destination_leg_signed</code>) that atomically
               roll back <code className="font-mono">rolling_24h_spent_usdc</code> if Leg 1
               MPC signing fails, or revert to <code className="font-mono">ReadyForLeg2</code>{" "}
-              for safe retry if Leg 2 signing fails.
+              for safe retry if Leg 2 signing fails. Furthermore, every NEAR Intents 1-Click
+              quote pins <code className="font-mono">refundTo = MPC_Base_Vault</code>: if a
+              solver returns <code className="font-mono">REFUNDED</code> or{" "}
+              <code className="font-mono">FAILED</code> after Leg 1, the orchestrator halts
+              before Leg 2 and invokes <code className="font-mono">cancel_refunded_rescue</code>{" "}
+              to restore the 24-hour cap while keeping the receipt hash permanently replay-locked.
             </p>
           </section>
 
@@ -694,13 +700,13 @@ export default function InterceptDocsPage() {
             />
 
             <CodeBlock
-              title="2. Run 25 Rust Guardrail Smart Contract Unit & Red-Team Tests"
+              title="2. Run 29 Rust Guardrail Smart Contract Unit & Red-Team Tests"
               code={`cargo test --manifest-path contracts/policy-guardrail/Cargo.toml`}
             />
 
             <CodeBlock
               title="3. Configure Policy On-Chain (update_policy)"
-              code={`near contract call-function as-transaction intercept-guardrail-373299.testnet update_policy json-args '{"new_policy":{"owner_id":"intercept-guardrail-373299.testnet","authorized_agent_id":"runner.intercept-guardrail-373299.testnet","mpc_signer_contract":"v1.signer-prod.testnet","tee_enclave_pubkey_hex":"c6424a09b326739f595a362ade4ed41a16ac39908f02a4e6c60b598653574f05","mpc_base_vault_address_hex":"0xfa1d66b9f3ae95f9d21b8db2315720c2fcde5320","mpc_solana_payer_pubkey":"7AqKFEDJ13ZxpnQnBEEM6XmGq2LNa65jXBE4q96emvCo","user_kamino_obligation_pubkey":"C5dZVpvpA39SNLDkojsi98nRePRRy8ELhtxak8m2vMq","kamino_lending_market_pubkey":"7u3HeHxYDLhnCoErrtycNokbQYbWGzLs6JSDqGAv5PfF","sol_collateral_reserve_pubkey":"d4A2prbA2whesmvHaL88BH6Ewn5N4bTSU2Ze8P6Bc4Q","usdc_repay_reserve_pubkey":"D6q6wuQSrifJKZYpR1M8R4YawnLDtDsMmWM1NbBmgJ59","base_derivation_path":"intercept-base-vault-1","solana_derivation_path":"intercept-solana-payer-1","max_per_action_usdc":"2500000000","max_daily_usdc":"5000000000","max_slippage_bps":100,"min_trigger_hf_bps":11500,"max_receipt_age_sec":300}}' prepaid-gas '80.0 Tgas' attached-deposit '0 NEAR' sign-as intercept-guardrail-373299.testnet network-config testnet sign-with-keychain send`}
+              code={`near contract call-function as-transaction intercept-guardrail-373299.testnet update_policy json-args '{"new_policy":{"owner_id":"intercept-guardrail-373299.testnet","authorized_agent_id":"runner.intercept-guardrail-373299.testnet","mpc_signer_contract":"v1.signer-prod.testnet","tee_enclave_pubkey_hex":"7885b100077bd5400dd8d3ea0ae6d3ef863e827adbdb5ba09ff4963c6e6e32c5","mpc_base_vault_address_hex":"0xfa1d66b9f3ae95f9d21b8db2315720c2fcde5320","mpc_solana_payer_pubkey":"7AqKFEDJ13ZxpnQnBEEM6XmGq2LNa65jXBE4q96emvCo","user_kamino_obligation_pubkey":"C5dZVpvpA39SNLDkojsi98nRePRRy8ELhtxak8m2vMq","kamino_lending_market_pubkey":"7u3HeHxYDLhnCoErrtycNokbQYbWGzLs6JSDqGAv5PfF","sol_collateral_reserve_pubkey":"d4A2prbA2whesmvHaL88BH6Ewn5N4bTSU2Ze8P6Bc4Q","usdc_repay_reserve_pubkey":"D6q6wuQSrifJKZYpR1M8R4YawnLDtDsMmWM1NbBmgJ59","base_derivation_path":"intercept-base-vault-1","solana_derivation_path":"intercept-solana-payer-1","max_per_action_usdc":"2500000000","max_daily_usdc":"5000000000","max_slippage_bps":100,"min_trigger_hf_bps":11500,"max_receipt_age_sec":300}}' prepaid-gas '80.0 Tgas' attached-deposit '0 NEAR' sign-as intercept-guardrail-373299.testnet network-config testnet sign-with-keychain send`}
             />
 
             <Table>
@@ -810,6 +816,20 @@ export default function InterceptDocsPage() {
                     </a>
                   </TableCell>
                 </TableRow>
+                <TableRow>
+                  <TableCell className="text-xs font-medium">Hardened v3 WASM &amp; Solver-Refund Upgrade</TableCell>
+                  <TableCell className="font-mono text-xs">DeployContract (FfC8pRQss8...) + update_policy</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    <a
+                      href="https://testnet.nearblocks.io/txns/AxUeZPcQUQWNjFfhdB84JMN8JRghu21bs9mykXEAZiwD"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline underline-offset-4 hover:text-zinc-600"
+                    >
+                      AxUeZPcQUQWNjFfhdB84JMN8JRghu21bs9mykXEAZiwD
+                    </a>
+                  </TableCell>
+                </TableRow>
               </TableBody>
             </Table>
           </section>
@@ -847,6 +867,22 @@ export default function InterceptDocsPage() {
                 >
                   runner.intercept-guardrail-373299.testnet
                 </a>
+              </div>
+              <div className="space-y-1">
+                <div className="text-[10px] font-mono text-muted-foreground">
+                  DERIVED BASE VAULT (0)
+                </div>
+                <div className="font-mono text-foreground break-all">
+                  0xfa1d66b9f3ae95f9d21b8db2315720c2fcde5320
+                </div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-[10px] font-mono text-muted-foreground">
+                  DERIVED SOLANA PAYER (1)
+                </div>
+                <div className="font-mono text-foreground break-all">
+                  7AqKFEDJ13ZxpnQnBEEM6XmGq2LNa65jXBE4q96emvCo
+                </div>
               </div>
             </div>
 

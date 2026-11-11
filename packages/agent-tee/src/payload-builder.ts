@@ -892,6 +892,8 @@ export function buildSolanaKaminoRepayMessageBytes(params: {
   customDiscriminator?: Buffer;
   customRefreshDiscriminator?: Buffer;
   customProgramIdPubkey?: string;
+  customTokenProgramPubkey?: string;
+  customSysvarPubkey?: string;
   customComputeBudgetPriceMicroLamports?: bigint;
   includeComputeBudget?: boolean;
   includeRefreshInstructions?: boolean;
@@ -921,6 +923,8 @@ export function buildSolanaKaminoRepayMessageBytes(params: {
     customDiscriminator = REPAY_OBLIGATION_LIQUIDITY_V2_DISCRIMINATOR,
     customRefreshDiscriminator,
     customProgramIdPubkey = KAMINO_LEND_PROGRAM_ID,
+    customTokenProgramPubkey = SPL_TOKEN_PROGRAM_ID,
+    customSysvarPubkey = SYSVAR_INSTRUCTIONS_PUBKEY,
     customComputeBudgetPriceMicroLamports,
     includeComputeBudget = true,
     includeRefreshInstructions = true,
@@ -962,8 +966,8 @@ export function buildSolanaKaminoRepayMessageBytes(params: {
       base58Decode(lendingMarketPubkey),
       base58Decode(pythSolOraclePubkey),
       base58Decode(pythUsdcOraclePubkey),
-      base58Decode(SPL_TOKEN_PROGRAM_ID),
-      base58Decode(SYSVAR_INSTRUCTIONS_PUBKEY),
+      base58Decode(customTokenProgramPubkey),
+      base58Decode(customSysvarPubkey),
       base58Decode(customProgramIdPubkey),
     ];
     if (includeComputeBudget) {
@@ -1084,8 +1088,8 @@ export function buildSolanaKaminoRepayMessageBytes(params: {
     base58Decode(reserveDestinationLiquidityPubkey),
     base58Decode(userSourceLiquidityPubkey),
     base58Decode(lendingMarketPubkey),
-    base58Decode(SPL_TOKEN_PROGRAM_ID),
-    base58Decode(SYSVAR_INSTRUCTIONS_PUBKEY),
+    base58Decode(customTokenProgramPubkey),
+    base58Decode(customSysvarPubkey),
     base58Decode(customProgramIdPubkey),
   ];
   if (includeComputeBudget) {
@@ -1680,7 +1684,38 @@ export function verifySolanaKaminoRepayMessageBytes(params: {
           };
         }
 
+        const reserveDestLiquidityPubkey = accountKeys[ixAccounts[4]];
         const userSourceLiquidityPubkey = accountKeys[ixAccounts[5]];
+        if (
+          userSourceLiquidityPubkey === reserveDestLiquidityPubkey ||
+          userSourceLiquidityPubkey === obligationPubkey ||
+          userSourceLiquidityPubkey === repayReservePubkey ||
+          userSourceLiquidityPubkey === ownerPubkey
+        ) {
+          return {
+            ok: false,
+            errorCode: "INVALID_SOURCE_LIQUIDITY_ACCOUNT",
+            errorMessage: `GUARDRAIL REVERT: Kamino user_source_liquidity account[5] (${userSourceLiquidityPubkey}) collides with reserve destination, obligation, reserve, or owner`,
+          };
+        }
+
+        const tokenProgramPubkey = accountKeys[ixAccounts[6]];
+        if (tokenProgramPubkey !== SPL_TOKEN_PROGRAM_ID) {
+          return {
+            ok: false,
+            errorCode: "TOKEN_PROGRAM_MISMATCH",
+            errorMessage: `GUARDRAIL REVERT: Kamino instruction_token_program account[6] (${tokenProgramPubkey}) must be canonical SPL Token Program (${SPL_TOKEN_PROGRAM_ID})`,
+          };
+        }
+
+        const sysvarInstructionsPubkey = accountKeys[ixAccounts[7]];
+        if (sysvarInstructionsPubkey !== SYSVAR_INSTRUCTIONS_PUBKEY) {
+          return {
+            ok: false,
+            errorCode: "SYSVAR_INSTRUCTIONS_MISMATCH",
+            errorMessage: `GUARDRAIL REVERT: Kamino sysvar_instructions account[7] (${sysvarInstructionsPubkey}) must be canonical Sysvar1nstructions (${SYSVAR_INSTRUCTIONS_PUBKEY})`,
+          };
+        }
 
         verifiedKamino = {
           obligationPubkey,
