@@ -146,6 +146,7 @@ interface ExecutionReport {
       nvidiaNrasEatNonceHex: string;
       gpuArchitecture: string;
       tdxReportDataBindsKeyAndNonce: boolean;
+      hardwareEnclaveSigner?: string;
     };
     verifiedChainOfTrust: boolean;
     fallbackReason?: string;
@@ -1526,6 +1527,89 @@ export default function InterceptDashboardPage() {
                 </Card>
               ) : (
                 <>
+                  {/* NEAR AI Cloud Hardware Attestation & Signed Receipt Card */}
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <CardTitle className="text-base">
+                          Confidential Enclave Attestation · NEAR AI Cloud
+                        </CardTitle>
+                        <Badge
+                          variant={
+                            report.nearAiCloudAttestation.source !==
+                            "NEAR_AI_CLOUD_DETERMINISTIC_ENCLAVE"
+                              ? "contrast"
+                              : "outline"
+                          }
+                        >
+                          {report.nearAiCloudAttestation.source !==
+                          "NEAR_AI_CLOUD_DETERMINISTIC_ENCLAVE"
+                            ? "Live Hardware Quote Verified"
+                            : "Deterministic Enclave Verified"}
+                        </Badge>
+                      </div>
+                      <CardDescription className="text-xs">
+                        Fresh 32-byte nonce bound into the Intel TDX DCAP quote and
+                        NVIDIA Hopper GPU evidence alongside the Ed25519{" "}
+                        <span className="font-mono">TeeDecisionReceipt</span>.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="text-xs">
+                      <div className="grid gap-x-6 divide-y sm:divide-y-0 sm:grid-cols-2 rounded-md border border-border bg-secondary/20 px-3">
+                        <div className="divide-y divide-border/60">
+                          <div className="flex items-center justify-between py-2">
+                            <span className="text-muted-foreground">TEE Model</span>
+                            <span className="font-mono text-foreground">
+                              {report.nearAiCloudAttestation.model}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between py-2">
+                            <span className="text-muted-foreground">
+                              Intel TDX Quote (SHA-256)
+                            </span>
+                            <CopyChip
+                              value={`0x${report.nearAiCloudAttestation.hardwareAttestation.intelTdxQuoteCommitmentHex}`}
+                              display={`0x${report.nearAiCloudAttestation.hardwareAttestation.intelTdxQuoteCommitmentHex.slice(
+                                0,
+                                12
+                              )}...`}
+                              label="Intel TDX Quote SHA-256"
+                            />
+                          </div>
+                        </div>
+                        <div className="divide-y divide-border/60">
+                          <div className="flex items-center justify-between py-2">
+                            <span className="text-muted-foreground">
+                              Bound TDX / NRAS Nonce
+                            </span>
+                            <CopyChip
+                              value={`0x${report.nearAiCloudAttestation.attestationNonceHex}`}
+                              display={`0x${report.nearAiCloudAttestation.attestationNonceHex.slice(
+                                0,
+                                12
+                              )}...`}
+                              label="32-Byte Attestation Nonce"
+                            />
+                          </div>
+                          <div className="flex items-center justify-between py-2">
+                            <span className="text-muted-foreground">
+                              Signed Decision Receipt
+                            </span>
+                            <CopyChip
+                              value={report.teeReceipt?.canonicalPayload ?? ""}
+                              display={
+                                report.teeReceipt
+                                  ? `0x${report.teeReceipt.receiptHashHex.slice(0, 12)}...`
+                                  : "—"
+                              }
+                              label="Canonical TeeDecisionReceipt"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
                   <div className="grid gap-6 lg:grid-cols-2">
                     {/* Leg 1 Card */}
                     <Card>

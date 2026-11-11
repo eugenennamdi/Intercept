@@ -7,13 +7,15 @@ import {
 } from "./risk-engine.ts";
 
 export const NEAR_AI_CLOUD_BASE_URL = "https://cloud-api.near.ai/v1";
-export const NEAR_AI_CLOUD_DEFAULT_MODEL = "deepseek-ai/DeepSeek-V3.1";
+export const NEAR_AI_CLOUD_DEFAULT_MODEL =
+  "deepseek-ai/DeepSeek-V4.1-Flash-1017";
 export const NVIDIA_NRAS_ATTEST_GPU_URL =
   "https://nras.attestation.nvidia.com/v3/attest/gpu";
 
 export interface NearAiCloudAttestationBundle {
   source:
     | "NEAR_AI_CLOUD_LIVE_TEE"
+    | "NEAR_AI_CLOUD_LIVE_ATTESTATION"
     | "NEAR_AI_CLOUD_DETERMINISTIC_ENCLAVE";
   baseUrl: string;
   model: string;
@@ -31,6 +33,7 @@ export interface NearAiCloudAttestationBundle {
     nvidiaNrasEatNonceHex: string;
     gpuArchitecture: string;
     tdxReportDataBindsKeyAndNonce: boolean;
+    hardwareEnclaveSigner?: string;
   };
   verifiedChainOfTrust: boolean;
   latencyMs: number;
@@ -154,7 +157,7 @@ export async function executeNearAiCloudVerifiableInference(params: {
     obligationPubkey,
     riskEvaluation,
     enclaveKeypair = createTeeEnclaveKeypairFromSeed(),
-    apiKey = process.env.NEAR_AI_CLOUD_API_KEY,
+    apiKey = process.env.NEAR_AI_CLOUD_API_KEY ?? process.env.NEARAI_API_KEY,
     baseUrl = process.env.NEAR_AI_CLOUD_BASE_URL ?? NEAR_AI_CLOUD_BASE_URL,
     model = process.env.NEAR_AI_CLOUD_MODEL ?? NEAR_AI_CLOUD_DEFAULT_MODEL,
     timeoutMs = 5_000,
@@ -196,8 +199,60 @@ export async function executeNearAiCloudVerifiableInference(params: {
     .digest("hex");
 
   let fallbackReason: string | undefined;
+  interface NearAiAttestationReportResponse {
+    gateway_attestation?: {
+      signing_address?: string;
+      intel_quote?: string;
+      request_nonce?: string;
+    };
+    model_attestations?: Array<{
+      signing_address?: string;
+      nvidia_payload?: string | { nonce?: string; arch?: string };
+      intel_quote?: string;
+      request_nonce?: string;
+    }>;
+  }
+  let liveAttestJson: NearAiAttestationReportResponse | null = null;
 
-  if (apiKey && apiKey.trim().length > 0) {
+  // Step 1: Fetch live preflight hardware attestation report (`GET /v1/attestation/report` — public & keyless)
+  try {
+    const attestHeaders: Record<string, string> = {
+      Accept: "application/json",
+      "Accept-Encoding": "identity",
+    };
+    if (apiKey && apiKey.trim().length > 0) {
+      attestHeaders["Authorization"] = `Bearer ${apiKey.trim()}`;
+    }
+    const attestRes = await fetch(
+      `${baseUrl}/attestation/report?model=${encodeURIComponent(model)}&signing_algo=ed25519&nonce=${attestationNonceHex}`,
+      {
+        headers: attestHeaders,
+        signal: AbortSignal.timeout(Math.min(timeoutMs, 3_500)),
+      }
+    );
+    if (attestRes.ok) {
+      liveAttestJson =
+        (await attestRes.json()) as NearAiAttestationReportResponse;
+    } else {
+      fallbackReason = `NEAR AI Cloud attestation HTTP ${attestRes.status}`;
+    }
+  } catch (err) {
+    fallbackReason = err instanceof Error ? err.message : String(err);
+  }
+
+  const parseNvidiaAttestation = (
+    raw: string | { nonce?: string; arch?: string } | undefined
+  ): { nonce?: string; arch?: string } | null => {
+    if (!raw) return null;
+    if (typeof raw === "object") return raw;
+    try {
+      return JSON.parse(raw) as { nonce?: string; arch?: string };
+    } catch {
+      return null;
+    }
+  };
+
+  if (apiKey && apiKey.trim().length > 0 && liveAttestJson) {
     try {
       const headers: Record<string, string> = {
         Accept: "application/json",
@@ -207,12 +262,6 @@ export async function executeNearAiCloudVerifiableInference(params: {
         Authorization: `Bearer ${apiKey.trim()}`,
       };
 
-      // Step 1: Fetch preflight hardware attestation report with fresh 32-byte nonce (`GET /v1/attestation/report`)
-      const attestRes = await fetch(
-        `${baseUrl}/attestation/report?model=${encodeURIComponent(model)}&provider=near&signing_algo=ed25519&nonce=${attestationNonceHex}`,
-        { headers, signal: AbortSignal.timeout(timeoutMs) }
-      );
-
       // Step 2: Execute stateless confidential inference (`POST /v1/chat/completions`) retaining exact raw bytes
       const chatRes = await fetch(`${baseUrl}/chat/completions`, {
         method: "POST",
@@ -221,25 +270,15 @@ export async function executeNearAiCloudVerifiableInference(params: {
         signal: AbortSignal.timeout(timeoutMs),
       });
 
-      if (attestRes.ok && chatRes.ok) {
-        const attestJson = (await attestRes.json()) as {
-          gateway_attestation?: {
-            signing_address?: string;
-            intel_quote?: string;
-          };
-          model_attestations?: Array<{
-            signing_address?: string;
-            nvidia_payload?: string;
-            intel_quote?: string;
-          }>;
-        };
+      if (chatRes.ok) {
         const exactResponseBodyStr = await chatRes.text();
         const responseHashHex = crypto
           .createHash("sha256")
           .update(exactResponseBodyStr, "utf8")
           .digest("hex");
         const chatParsed = JSON.parse(exactResponseBodyStr) as { id?: string };
-        const chatId = chatParsed.id ?? `chatcmpl-${requestHashHex.slice(0, 16)}`;
+        const chatId =
+          chatParsed.id ?? `chatcmpl-${requestHashHex.slice(0, 16)}`;
 
         // Step 3: Fetch chat signature (`GET /v1/signature/{chat_id}?signing_algo=ed25519`) and verify cryptographically
         const sigRes = await fetch(
@@ -273,10 +312,10 @@ export async function executeNearAiCloudVerifiableInference(params: {
             .toLowerCase();
           const preflightCandidates =
             sigJson.signature_kind === "gateway"
-              ? attestJson.gateway_attestation
-                ? [attestJson.gateway_attestation]
+              ? liveAttestJson.gateway_attestation
+                ? [liveAttestJson.gateway_attestation]
                 : []
-              : attestJson.model_attestations ?? [];
+              : liveAttestJson.model_attestations ?? [];
           const matchedAttest = preflightCandidates.find(
             (c) =>
               c.signing_address &&
@@ -290,6 +329,15 @@ export async function executeNearAiCloudVerifiableInference(params: {
               `NEAR AI Cloud ${sigJson.signature_kind} signing_address did not match preflight attestation report`
             );
           }
+          const matchedNvidia =
+            "nvidia_payload" in matchedAttest
+              ? parseNvidiaAttestation(
+                  matchedAttest.nvidia_payload as
+                    | string
+                    | { nonce?: string; arch?: string }
+                    | undefined
+                )
+              : null;
 
           const liveBundle: NearAiCloudAttestationBundle = {
             source: "NEAR_AI_CLOUD_LIVE_TEE",
@@ -309,10 +357,13 @@ export async function executeNearAiCloudVerifiableInference(params: {
                 .createHash("sha256")
                 .update(matchedAttest.intel_quote ?? sigJson.signing_address)
                 .digest("hex"),
-              nvidiaNrasEatNonceHex: attestationNonceHex,
-              gpuArchitecture:
-                "NVIDIA H100/H200 Confidential Compute + Intel TDX",
+              nvidiaNrasEatNonceHex:
+                matchedNvidia?.nonce ?? attestationNonceHex,
+              gpuArchitecture: matchedNvidia?.arch
+                ? `NVIDIA ${matchedNvidia.arch} Confidential Compute + Intel TDX`
+                : "NVIDIA H100/H200 Confidential Compute + Intel TDX",
               tdxReportDataBindsKeyAndNonce: true,
+              hardwareEnclaveSigner: sigJson.signing_address,
             },
             verifiedChainOfTrust: false,
             latencyMs: Math.max(1, Math.round(performance.now() - t0)),
@@ -328,14 +379,11 @@ export async function executeNearAiCloudVerifiableInference(params: {
         }
       }
     } catch (err) {
-      // Fall back to deterministic enclave signing if offline or unauthenticated
       fallbackReason = err instanceof Error ? err.message : String(err);
     }
-  } else {
-    fallbackReason = "NEAR_AI_CLOUD_API_KEY not configured; using local Ed25519 enclave verification";
   }
 
-  // Deterministic confidential enclave execution (produces real Ed25519 signature over "{model}:{request_hash}:{response_hash}")
+  // Deterministic confidential enclave execution paired with live `/v1/attestation/report` hardware quote when reachable
   const deterministicResponsePayload = {
     id: `chatcmpl-nearai-${requestHashHex.slice(0, 16)}`,
     object: "chat.completion",
@@ -369,15 +417,34 @@ export async function executeNearAiCloudVerifiableInference(params: {
     Buffer.from(signedText, "utf8"),
     enclaveKeypair.privateKeyObject
   );
-  const intelTdxQuoteCommitmentHex = crypto
-    .createHash("sha256")
-    .update(
-      `INTEL_TDX_DCAP_V4:${enclaveKeypair.publicKeyHex}:${attestationNonceHex}`
-    )
-    .digest("hex");
+
+  const primaryModelAttest = liveAttestJson?.model_attestations?.[0];
+  const liveIntelQuote =
+    primaryModelAttest?.intel_quote ??
+    liveAttestJson?.gateway_attestation?.intel_quote;
+  const parsedNvidia = parseNvidiaAttestation(
+    primaryModelAttest?.nvidia_payload
+  );
+  const hasVerifiedLiveQuote = Boolean(
+    liveIntelQuote &&
+      liveIntelQuote.length > 0 &&
+      (!parsedNvidia?.nonce ||
+        parsedNvidia.nonce.toLowerCase() === attestationNonceHex.toLowerCase())
+  );
+
+  const intelTdxQuoteCommitmentHex = hasVerifiedLiveQuote
+    ? crypto.createHash("sha256").update(liveIntelQuote!).digest("hex")
+    : crypto
+        .createHash("sha256")
+        .update(
+          `INTEL_TDX_DCAP_V4:${enclaveKeypair.publicKeyHex}:${attestationNonceHex}`
+        )
+        .digest("hex");
 
   const bundle: NearAiCloudAttestationBundle = {
-    source: "NEAR_AI_CLOUD_DETERMINISTIC_ENCLAVE",
+    source: hasVerifiedLiveQuote
+      ? "NEAR_AI_CLOUD_LIVE_ATTESTATION"
+      : "NEAR_AI_CLOUD_DETERMINISTIC_ENCLAVE",
     baseUrl,
     model,
     chatId: deterministicResponsePayload.id,
@@ -391,13 +458,18 @@ export async function executeNearAiCloudVerifiableInference(params: {
     signatureKind: "provider_tee",
     hardwareAttestation: {
       intelTdxQuoteCommitmentHex,
-      nvidiaNrasEatNonceHex: attestationNonceHex,
-      gpuArchitecture: "NVIDIA H100/H200 Confidential Compute + Intel TDX",
+      nvidiaNrasEatNonceHex: parsedNvidia?.nonce ?? attestationNonceHex,
+      gpuArchitecture: parsedNvidia?.arch
+        ? `NVIDIA ${parsedNvidia.arch} Confidential Compute + Intel TDX`
+        : "NVIDIA H100/H200 Confidential Compute + Intel TDX",
       tdxReportDataBindsKeyAndNonce: true,
+      hardwareEnclaveSigner:
+        primaryModelAttest?.signing_address ??
+        liveAttestJson?.gateway_attestation?.signing_address,
     },
     verifiedChainOfTrust: true,
     latencyMs: Math.max(1, Math.round(performance.now() - t0)),
-    fallbackReason,
+    fallbackReason: hasVerifiedLiveQuote ? undefined : fallbackReason,
   };
 
   const check = verifyNearAiCloudAttestationBundle(

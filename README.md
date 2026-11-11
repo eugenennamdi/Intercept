@@ -23,7 +23,7 @@ DeFi capital is structurally fragmented across chains. Borrowers routinely post 
 
 | NEAR Layer | Production Component | Role in Intercept |
 | :--- | :--- | :--- |
-| **Confidential Compute** | [NEAR AI Cloud](https://cloud.near.ai) (`cloud-api.near.ai/v1`) | Hardware-attested inference (Intel TDX + NVIDIA NRAS) binds fresh 32-byte nonces and signs canonical `TeeDecisionReceipt` payloads. |
+| **Confidential Compute** | [NEAR AI Cloud](https://cloud.near.ai) (`deepseek-ai/DeepSeek-V4.1-Flash-1017`) | Fetches live Intel TDX DCAP + NVIDIA Hopper `/v1/attestation/report` quotes bound to fresh 32-byte nonces and signs canonical `TeeDecisionReceipt` payloads. |
 | **On-Chain Policy Engine** | `near-sdk-rs` (`5.7.0` WASM) | Enforces 4-state async cross-contract execution (`InFlightLeg1 -> ReadyForLeg2 -> InFlightLeg2 -> Completed`) and byte-parses EVM & Solana transactions prior to signing. |
 | **Multi-Curve MPC** | NEAR Chain Signatures (`v1.signer`) | Derives keyless deterministic accounts on Base (`domain_id: 0`, Secp256k1) and Solana (`domain_id: 1`, Ed25519) governed exclusively by the guardrail contract. |
 | **Cross-Chain Liquidity** | NEAR Intents (`1click.chaindefuser.com`) | Routes standby Base USDC (`0x8335...2913`) to Solana USDC (`EPjFW...Dt1v`) with slippage bounds verified on-chain. |
@@ -161,7 +161,14 @@ npm run preflight
 cp .env.example .env
 npm run dev
 ```
-Open [`http://localhost:3000`](http://localhost:3000) for the interactive risk simulator and [`http://localhost:3000/docs`](http://localhost:3000/docs) for the full technical specification. For Mainnet deployment and live cross-chain execution instructions, see [Section 5 of `ARCHITECTURE.md`](./ARCHITECTURE.md#5-deployment--live-operations-guide).
+Open [`http://localhost:3000`](http://localhost:3000) (or the live deployment at [`https://intercept-inky.vercel.app`](https://intercept-inky.vercel.app)) and [`/docs`](https://intercept-inky.vercel.app/docs) for the full technical specification. For Mainnet deployment and live cross-chain execution instructions, see [Section 5 of `ARCHITECTURE.md`](./ARCHITECTURE.md#5-deployment--live-operations-guide).
+
+### 4. Interactive Verification Walkthrough (`Do X -> See Y`)
+1. **Open [`https://intercept-inky.vercel.app`](https://intercept-inky.vercel.app) (`Live Market` preset)** → Observe live Solana Mainnet Kamino `Obligation` state (`3,344` bytes) and live Pyth `SOL/USD` volatility held in **`HOLD`** (`$0` bridged while `HF >= 1.15x`).
+2. **Select `-20% Dip` vs. `-25% Crash` in the Market Stress Simulator** → Observe the risk engine shift from **`Micro Buffer` (`1.20x` target HF)** during orderly pullbacks to **`Cascade Rescue` (`1.45x` target HF)** under severe downward velocity, pulling a live `Base USDC -> Solana USDC` quote (`dry: true`) from `1click.chaindefuser.com/v0/quote`.
+3. **Open the `Transaction Proofs` tab** → Inspect the live **NEAR AI Cloud** Intel TDX + NVIDIA Hopper hardware quote commitment (`32-byte` nonce binding), the raw `68`-byte Base EIP-1559 transfer calldata, the raw `539`-byte Solana `V0` Kamino repay message, and clickable NearBlocks links for both `Secp256k1` (`Leg 1`) and `Ed25519` (`Leg 2`) Chain Signatures.
+4. **Click any of the `11` rows under `Security Guardrails`** → Inspect deterministic Rust byte-parser revert codes blocking collateral withdrawal (`0xcaf97572...`), ERC-20 `approve` (`0x095ea7b3`), `V0` Address Lookup Tables, `32`-byte blind pre-hashes, and gas-fee siphoning.
+5. **Click `Configure Policy` in the navigation bar** → Override trigger Health Factor, per-rescue/daily USDC spending limits, or supply any live Solana Kamino `Obligation` address to re-run end-to-end verification in real time.
 
 ---
 

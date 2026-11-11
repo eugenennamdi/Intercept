@@ -481,7 +481,7 @@ export default function InterceptDocsPage() {
             <p className="text-sm text-muted-foreground leading-relaxed">
               Executing inside{" "}
               <strong className="text-foreground">
-                NEAR AI Cloud (deepseek-ai/DeepSeek-V3.1 on Intel TDX + NVIDIA Hopper)
+                NEAR AI Cloud (deepseek-ai/DeepSeek-V4.1-Flash-1017 on Intel TDX + NVIDIA Hopper)
               </strong>
               , the risk engine computes expected liquidation penalty versus cross-chain
               execution cost and selects one of three deterministic regimes:
