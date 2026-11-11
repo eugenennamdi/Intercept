@@ -708,4 +708,21 @@ test("Multi-instruction Kamino refresh+repay passes, sneaking withdraw after ref
     stressReport.onChainNearWasmVerification?.destinationLegVerified,
     true
   );
+
+  // 15. Institutional-scale (100 SOL / $5,000 USDC) -25% rescue reserves 1-Click solver-spread headroom & passes WASM verification
+  const instReport = await executeInterceptRescuePipeline({
+    mode: "STRESS_TEST_MAINNET_MODE",
+    stressShockPct: -25,
+    customPosition: { depositedSol: 100, borrowedUsdc: 5_000 },
+  });
+  assert.equal(instReport.riskEvaluation.actionable, true);
+  assert.ok(instReport.oneClickQuote !== null);
+  assert.equal(
+    instReport.onChainNearWasmVerification?.originLegVerified,
+    true
+  );
+  assert.equal(
+    instReport.onChainNearWasmVerification?.destinationLegVerified,
+    true
+  );
 });

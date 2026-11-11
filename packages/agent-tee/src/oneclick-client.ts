@@ -177,10 +177,18 @@ export async function fetchOneClickRescueQuote(params: {
   const t0 = performance.now();
   const deadlineIso = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
+  // ponytail: `maxSlippageBps` is the total on-chain guardrail cap (`amountIn -> minAmountOut`),
+  // while 1-Click's `slippageTolerance` is applied on top of `amountOut` after solver spread (~2–25 bps).
+  // Reserve 35 bps headroom (min 5 bps) so institutional quotes stay strictly inside `policy.max_slippage_bps`.
+  const quoteSlippageToleranceBps = Math.max(
+    5,
+    Math.min(maxSlippageBps - 35, Math.floor(maxSlippageBps * 0.65))
+  );
+
   const requestBody: OneClickQuoteRequest = {
     dry: dryRun,
     swapType: "EXACT_INPUT",
-    slippageTolerance: maxSlippageBps,
+    slippageTolerance: quoteSlippageToleranceBps,
     originAsset: ONECLICK_ASSET_BASE_USDC,
     depositType: "ORIGIN_CHAIN",
     destinationAsset: ONECLICK_ASSET_SOLANA_USDC,
@@ -323,7 +331,7 @@ export async function fetchOneClickRescueQuote(params: {
   const expectedAmountOutMicroUsdc =
     (amountInMicroUsdc * (10_000n - solverSpreadBps)) / 10_000n;
   const minAmountOutMicroUsdc =
-    (amountInMicroUsdc * BigInt(10_000 - maxSlippageBps)) / 10_000n;
+    (amountInMicroUsdc * BigInt(10_000 - maxSlippageBps) + 9_999n) / 10_000n;
   const depositAddress = deriveDeterministicOneClickDepositAddress({
     recipientSolanaAddress: mpcSolanaPayerAddress,
     refundBaseAddress: mpcBaseVaultAddress,

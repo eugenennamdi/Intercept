@@ -86,40 +86,46 @@ function resolveInstitutionalPositionOverride(
 }
 
 export async function GET(request: Request) {
-  const url = new URL(request.url);
-  const rawMode = url.searchParams.get("mode") as ExecutionMode | null;
-  const modeParam: ExecutionMode =
-    rawMode && VALID_MODES.has(rawMode) ? rawMode : "LIVE_MAINNET_MODE";
-  const dropParam =
-    url.searchParams.get("stressShockPct") ?? url.searchParams.get("priceDropPct");
-  const parsedDrop = dropParam !== null ? Number(dropParam) : undefined;
-  const clampedDrop = clampFinite(
-    parsedDrop !== undefined ? Math.abs(parsedDrop) : undefined,
-    0,
-    95
-  );
-  const stressShockPct =
-    clampedDrop !== undefined ? -clampedDrop : undefined;
-  const positionScale = url.searchParams.get("positionScale");
+  try {
+    const url = new URL(request.url);
+    const rawMode = url.searchParams.get("mode") as ExecutionMode | null;
+    const modeParam: ExecutionMode =
+      rawMode && VALID_MODES.has(rawMode) ? rawMode : "LIVE_MAINNET_MODE";
+    const dropParam =
+      url.searchParams.get("stressShockPct") ??
+      url.searchParams.get("priceDropPct");
+    const parsedDrop = dropParam !== null ? Number(dropParam) : undefined;
+    const clampedDrop = clampFinite(
+      parsedDrop !== undefined ? Math.abs(parsedDrop) : undefined,
+      0,
+      95
+    );
+    const stressShockPct =
+      clampedDrop !== undefined ? -clampedDrop : undefined;
+    const positionScale = url.searchParams.get("positionScale");
 
-  const [report, preflight] = await Promise.all([
-    executeInterceptRescuePipeline({
-      mode: modeParam,
-      stressShockPct,
-      customPosition: resolveInstitutionalPositionOverride(positionScale),
-    }),
-    getCachedMainnetPreflight(),
-  ]);
-  const { adversarialSuite, backtest } = getCachedDeterministicSuites();
+    const [report, preflight] = await Promise.all([
+      executeInterceptRescuePipeline({
+        mode: modeParam,
+        stressShockPct,
+        customPosition: resolveInstitutionalPositionOverride(positionScale),
+      }),
+      getCachedMainnetPreflight(),
+    ]);
+    const { adversarialSuite, backtest } = getCachedDeterministicSuites();
 
-  return NextResponse.json(
-    serializeBigInt({
-      report,
-      preflight,
-      adversarialSuite,
-      backtest,
-    })
-  );
+    return NextResponse.json(
+      serializeBigInt({
+        report,
+        preflight,
+        adversarialSuite,
+        backtest,
+      })
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
 }
 
 function parseUsdcOverrideToMicro(
@@ -140,101 +146,109 @@ function parseUsdcOverrideToMicro(
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json().catch(() => ({}))) as {
-    mode?: ExecutionMode;
-    stressShockPct?: number;
-    minTriggerHfBpsOverride?: number;
-    userObligationOverride?: string;
-    maxPerActionUsdcOverride?: number;
-    maxDailyUsdcOverride?: number;
-    maxPerActionUsdcFormattedOverride?: string;
-    maxDailyUsdcFormattedOverride?: string;
-    maxSlippageBpsOverride?: number;
-    positionScale?: PositionScalePreset;
-  };
+  try {
+    const body = (await request.json().catch(() => ({}))) as {
+      mode?: ExecutionMode;
+      stressShockPct?: number;
+      priceDropPct?: number;
+      minTriggerHfBpsOverride?: number;
+      userObligationOverride?: string;
+      maxPerActionUsdcOverride?: number;
+      maxDailyUsdcOverride?: number;
+      maxPerActionUsdcFormattedOverride?: string;
+      maxDailyUsdcFormattedOverride?: string;
+      maxSlippageBpsOverride?: number;
+      positionScale?: PositionScalePreset;
+    };
 
-  const safeMode: ExecutionMode =
-    body.mode && VALID_MODES.has(body.mode)
-      ? body.mode
-      : "STRESS_TEST_MAINNET_MODE";
-  const clampedShockAbs = clampFinite(
-    typeof body.stressShockPct === "number"
-      ? Math.abs(body.stressShockPct)
-      : undefined,
-    0,
-    95
-  );
-  const safeMinTriggerHfBps = clampFinite(
-    body.minTriggerHfBpsOverride,
-    10_100,
-    25_000
-  );
-  const safeSlippageBps = clampFinite(body.maxSlippageBpsOverride, 1, 1_000);
+    const safeMode: ExecutionMode =
+      body.mode && VALID_MODES.has(body.mode)
+        ? body.mode
+        : "STRESS_TEST_MAINNET_MODE";
+    const rawShock =
+      typeof body.stressShockPct === "number"
+        ? body.stressShockPct
+        : body.priceDropPct;
+    const clampedShockAbs = clampFinite(
+      typeof rawShock === "number" ? Math.abs(rawShock) : undefined,
+      0,
+      95
+    );
+    const safeMinTriggerHfBps = clampFinite(
+      body.minTriggerHfBpsOverride,
+      10_100,
+      25_000
+    );
+    const safeSlippageBps = clampFinite(body.maxSlippageBpsOverride, 1, 1_000);
 
-  const safeObligation =
-    typeof body.userObligationOverride === "string" &&
-    BASE58_PUBKEY_RE.test(body.userObligationOverride.trim())
-      ? body.userObligationOverride.trim()
-      : undefined;
+    const safeObligation =
+      typeof body.userObligationOverride === "string" &&
+      BASE58_PUBKEY_RE.test(body.userObligationOverride.trim())
+        ? body.userObligationOverride.trim()
+        : undefined;
 
-  const maxPerActionMicro = parseUsdcOverrideToMicro(
-    body.maxPerActionUsdcOverride,
-    body.maxPerActionUsdcFormattedOverride,
-    0.5,
-    1_000_000
-  );
-  const maxDailyMicro = parseUsdcOverrideToMicro(
-    body.maxDailyUsdcOverride,
-    body.maxDailyUsdcFormattedOverride,
-    1,
-    5_000_000
-  );
+    const maxPerActionMicro = parseUsdcOverrideToMicro(
+      body.maxPerActionUsdcOverride,
+      body.maxPerActionUsdcFormattedOverride,
+      0.5,
+      1_000_000
+    );
+    const maxDailyMicro = parseUsdcOverrideToMicro(
+      body.maxDailyUsdcOverride,
+      body.maxDailyUsdcFormattedOverride,
+      1,
+      5_000_000
+    );
 
-  const [report, preflight] = await Promise.all([
-    executeInterceptRescuePipeline({
-      mode: safeMode,
-      stressShockPct:
-        clampedShockAbs !== undefined ? -clampedShockAbs : undefined,
-      minTriggerHfBpsOverride:
-        safeMinTriggerHfBps !== undefined
-          ? Math.round(safeMinTriggerHfBps)
-          : undefined,
-      customPosition: resolveInstitutionalPositionOverride(
-        body.positionScale,
-        safeObligation
-      ),
-      customPolicy: {
-        ...(safeObligation
-          ? { userKaminoObligationPubkey: safeObligation }
-          : {}),
-        ...(maxPerActionMicro !== undefined
-          ? { maxPerActionUsdcMicro: maxPerActionMicro }
-          : {}),
-        ...(maxDailyMicro !== undefined
-          ? {
-              maxDailyUsdcMicro:
-                maxPerActionMicro !== undefined &&
-                maxDailyMicro < maxPerActionMicro
-                  ? maxPerActionMicro
-                  : maxDailyMicro,
-            }
-          : {}),
-        ...(safeSlippageBps !== undefined
-          ? { maxSlippageBps: Math.round(safeSlippageBps) }
-          : {}),
-      },
-    }),
-    getCachedMainnetPreflight(),
-  ]);
+    const [report, preflight] = await Promise.all([
+      executeInterceptRescuePipeline({
+        mode: safeMode,
+        stressShockPct:
+          clampedShockAbs !== undefined ? -clampedShockAbs : undefined,
+        minTriggerHfBpsOverride:
+          safeMinTriggerHfBps !== undefined
+            ? Math.round(safeMinTriggerHfBps)
+            : undefined,
+        customPosition: resolveInstitutionalPositionOverride(
+          body.positionScale,
+          safeObligation
+        ),
+        customPolicy: {
+          ...(safeObligation
+            ? { userKaminoObligationPubkey: safeObligation }
+            : {}),
+          ...(maxPerActionMicro !== undefined
+            ? { maxPerActionUsdcMicro: maxPerActionMicro }
+            : {}),
+          ...(maxDailyMicro !== undefined
+            ? {
+                maxDailyUsdcMicro:
+                  maxPerActionMicro !== undefined &&
+                  maxDailyMicro < maxPerActionMicro
+                    ? maxPerActionMicro
+                    : maxDailyMicro,
+              }
+            : {}),
+          ...(safeSlippageBps !== undefined
+            ? { maxSlippageBps: Math.round(safeSlippageBps) }
+            : {}),
+        },
+      }),
+      getCachedMainnetPreflight(),
+    ]);
 
-  const { adversarialSuite, backtest } = getCachedDeterministicSuites();
+    const { adversarialSuite, backtest } = getCachedDeterministicSuites();
 
-  return NextResponse.json(
-    serializeBigInt({
-      report,
-      preflight,
-      adversarialSuite,
-      backtest,
-    })
-  );
+    return NextResponse.json(
+      serializeBigInt({
+        report,
+        preflight,
+        adversarialSuite,
+        backtest,
+      })
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
 }
