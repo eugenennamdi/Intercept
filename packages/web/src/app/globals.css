@@ -320,6 +320,22 @@ input[type="range"].shadcn-slider::-webkit-slider-thumb:active {
   }
 }
 
+input[type="range"].shadcn-slider::-moz-range-track {
+  height: 5px;
+  border-radius: 9999px;
+  background: #e4e4e7;
+}
+
+input[type="range"].shadcn-slider::-moz-range-thumb {
+  width: 15px;
+  height: 15px;
+  border-radius: 9999px;
+  background: #09090b;
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 3px rgba(9, 9, 11, 0.25);
+  transition: transform 150ms var(--ease-out), background-color 150ms ease;
+}
+
 /* Mandatory Accessibility Reduced-Motion Guards */
 @media (prefers-reduced-motion: reduce) {
   .emil-press,

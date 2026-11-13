@@ -505,6 +505,10 @@ test("Multi-instruction Kamino refresh+repay passes, sneaking withdraw after ref
   const microCappedReport = await executeInterceptRescuePipeline({
     mode: "STRESS_TEST_MAINNET_MODE",
     stressShockPct: -25,
+    customPosition: {
+      depositedSol: 10,
+      borrowedUsdc: 500,
+    },
     customPolicy: {
       maxPerActionUsdcMicro: 2_000_000n,
       maxDailyUsdcMicro: 10_000_000n,
@@ -725,4 +729,53 @@ test("Multi-instruction Kamino refresh+repay passes, sneaking withdraw after ref
     instReport.onChainNearWasmVerification?.destinationLegVerified,
     true
   );
+
+  // 16. Clock-skew boundary parity with Rust tee_receipt.rs (+60s allowed, +61s rejected)
+  assert.equal(
+    verifyTeeDecisionReceiptFull({
+      receipt: microFeeReceipt.receipt,
+      enclavePublicKeyObject: enclave.publicKeyObject,
+      expectedObligationPubkey: obligation,
+      minTriggerHfBps: 11_500,
+      maxSlippageBps: 100,
+      currentTimestampSec: 1793550000 - 60,
+    }).ok,
+    true
+  );
+  assert.equal(
+    verifyTeeDecisionReceiptFull({
+      receipt: microFeeReceipt.receipt,
+      enclavePublicKeyObject: enclave.publicKeyObject,
+      expectedObligationPubkey: obligation,
+      minTriggerHfBps: 11_500,
+      maxSlippageBps: 100,
+      currentTimestampSec: 1793550000 - 61,
+    }).errorCode,
+    "FUTURE_TIMESTAMP"
+  );
+
+  // 17. End-to-end orderly pullback triggers MICRO_BUFFER_RESCUE (1.20x target HF) via pipeline
+  const unshockedSol = stressReport.pythTelemetry.rawSpotSolUsd;
+  const targetOrderlySol = (5_000 * 1.125) / (100 * 0.75); // $75.00 -> HF = 1.125x on 100 SOL / $5,000 USDC
+  const orderlyDropPct = Math.max(
+    1,
+    Math.min(17, Math.round((1 - targetOrderlySol / unshockedSol) * 100))
+  );
+  const microPipelineReport = await executeInterceptRescuePipeline({
+    mode: "STRESS_TEST_MAINNET_MODE",
+    stressShockPct: -orderlyDropPct,
+    customPosition: {
+      depositedSol: 100,
+      borrowedUsdc:
+        Math.round(
+          ((100 * unshockedSol * (1 - orderlyDropPct / 100) * 0.75) / 1.125) *
+            100
+        ) / 100,
+    },
+  });
+  assert.equal(
+    microPipelineReport.riskEvaluation.regime,
+    "MICRO_BUFFER_RESCUE"
+  );
+  assert.equal(microPipelineReport.riskEvaluation.targetHfBps, 12_000);
 });

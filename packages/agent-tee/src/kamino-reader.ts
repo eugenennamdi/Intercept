@@ -40,6 +40,7 @@ export interface KaminoObligationPositionInput {
   solReserveMaxLtvBps?: number;
   solReserveLiquidationLtvBps?: number;
   overrideOnChainBalances?: boolean;
+  discoverByOwner?: boolean;
 }
 
 export interface DeserializedKaminoObligationAccount {
@@ -414,6 +415,7 @@ export async function fetchKaminoObligationTelemetry(params: {
         solanaSlot = json.result.context.slot;
       }
       if (
+        !position.discoverByOwner &&
         json.result?.value?.owner === KAMINO_LEND_PROGRAM_ID &&
         json.result?.value?.data?.[0]
       ) {
@@ -432,10 +434,14 @@ export async function fetchKaminoObligationTelemetry(params: {
             }
           }
         }
-      } else if (process.env.USER_SOLANA_WALLET_PUBKEY) {
-        // If only USER_SOLANA_WALLET_PUBKEY is provided, auto-discover the user's Kamino Obligation via getProgramAccounts memcmp
+      } else if (
+        process.env.USER_SOLANA_WALLET_PUBKEY ||
+        position.discoverByOwner
+      ) {
+        // Auto-discover the user's Kamino Obligation via getProgramAccounts memcmp
         const discovered = await discoverKaminoObligationsByOwner({
-          ownerSolanaEoa: process.env.USER_SOLANA_WALLET_PUBKEY,
+          ownerSolanaEoa:
+            process.env.USER_SOLANA_WALLET_PUBKEY ?? effectiveOwnerEoa,
           lendingMarketPubkey: effectiveLendingMarket,
           solanaRpcUrl,
           timeoutMs,

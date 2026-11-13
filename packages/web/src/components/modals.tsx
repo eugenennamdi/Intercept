@@ -64,11 +64,16 @@ function ModalShell({
 }) {
   useEffect(() => {
     if (!open) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
   }, [open, onClose]);
 
   if (!open) return null;
@@ -172,7 +177,7 @@ export function WalkthroughModal({
     {
       index: "04",
       shortLabel: "Automated Rescue",
-      title: "Sub-2s Cross-Chain Settlement via NEAR Intents",
+      title: "Automated Cross-Chain Settlement via NEAR Intents",
       summary:
         "When a SOL drawdown pushes your Health Factor below your threshold, NEAR bridges Base USDC and repays your Solana debt automatically.",
       whatYouDo:
@@ -568,7 +573,13 @@ export function ConfigurePolicyModal({
             </label>
             <select
               value={maxPerAction}
-              onChange={(e) => setMaxPerAction(Number(e.target.value))}
+              onChange={(e) => {
+                const val = Number(e.target.value);
+                setMaxPerAction(val);
+                if (val > maxDaily) {
+                  setMaxDaily(val <= 10 ? 10 : val <= 1000 ? 1000 : val <= 5000 ? 5000 : 25000);
+                }
+              }}
               className="w-full rounded-md border border-border bg-secondary/40 px-2.5 py-1.5 font-mono text-xs text-foreground"
             >
               <option value={2}>$2.00 USDC</option>
@@ -585,7 +596,13 @@ export function ConfigurePolicyModal({
             </label>
             <select
               value={maxDaily}
-              onChange={(e) => setMaxDaily(Number(e.target.value))}
+              onChange={(e) => {
+                const val = Number(e.target.value);
+                setMaxDaily(val);
+                if (val < maxPerAction) {
+                  setMaxPerAction(val >= 2500 ? 2500 : val >= 500 ? 500 : 10);
+                }
+              }}
               className="w-full rounded-md border border-border bg-secondary/40 px-2.5 py-1.5 font-mono text-xs text-foreground"
             >
               <option value={10}>$10.00 USDC</option>
@@ -605,9 +622,9 @@ export function ConfigurePolicyModal({
               onChange={(e) => setSlippageBps(Number(e.target.value))}
               className="w-full rounded-md border border-border bg-secondary/40 px-2.5 py-1.5 font-mono text-xs text-foreground"
             >
-              <option value={25}>0.25%</option>
-              <option value={50}>0.50% (Default)</option>
-              <option value={100}>1.00%</option>
+              <option value={50}>0.50%</option>
+              <option value={100}>1.00% (Default)</option>
+              <option value={200}>2.00%</option>
             </select>
           </div>
         </div>
@@ -690,6 +707,9 @@ export function ConfigurePolicyModal({
             <span className="font-mono font-medium text-foreground">
               {nearContractId}
             </span>
+            <div className="text-[10px] text-muted-foreground mt-0.5">
+              Vaults above preview NEAR Mainnet v1.signer derivations; fund only after deploying your Mainnet guardrail contract.
+            </div>
           </div>
           <a
             href={`https://${
@@ -752,7 +772,7 @@ export function FaqModal({
     },
     {
       q: "Why is Intercept built on NEAR Protocol?",
-      a: "NEAR uniquely unifies all four primitives required for trustless cross-chain risk defense in one stack: NEAR AI Cloud for hardware-attested confidential inference, near-sdk-rs smart contracts for deterministic byte-level policy enforcement, Chain Signatures (v1.signer) for keyless multi-curve signing across Base (Secp256k1) and Solana (Ed25519), and NEAR Intents 1-Click for sub-2s cross-chain USDC settlement.",
+      a: "NEAR uniquely unifies all four primitives required for trustless cross-chain risk defense in one stack: NEAR AI Cloud for hardware-attested confidential inference, near-sdk-rs smart contracts for deterministic byte-level policy enforcement, Chain Signatures (v1.signer) for keyless multi-curve signing across Base (Secp256k1) and Solana (Ed25519), and NEAR Intents 1-Click for fast cross-chain USDC settlement.",
     },
     {
       q: "Why use a volatility-aware risk engine instead of a fixed threshold bot?",
@@ -768,7 +788,7 @@ export function FaqModal({
     },
     {
       q: "What is the minimum reserve needed to verify live cross-chain settlement?",
-      a: "As little as $3.50 USDC on Base (1-Click cross-chain delivery gas is ~$0.22 fixed plus ~3–12 bps spread). You can also toggle between the Live On-Chain (0.185 SOL) position and Institutional (100 SOL / $5K Loan) scale on the dashboard to test any crash scenario before funding your vault.",
+      a: "As little as $2.00–$3.50 USDC on Base (1-Click cross-chain delivery gas is ~$0.22 fixed plus solver spread). You can also toggle between the Live PDA (0.185 SOL) position and Institutional (100 SOL / $5K Loan) scale on the dashboard to test any crash scenario before funding your vault.",
     },
   ];
 

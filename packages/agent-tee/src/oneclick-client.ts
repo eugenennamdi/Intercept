@@ -178,11 +178,11 @@ export async function fetchOneClickRescueQuote(params: {
   const deadlineIso = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
   // ponytail: `maxSlippageBps` is the total on-chain guardrail cap (`amountIn -> minAmountOut`),
-  // while 1-Click's `slippageTolerance` is applied on top of `amountOut` after solver spread (~2–25 bps).
-  // Reserve 35 bps headroom (min 5 bps) so institutional quotes stay strictly inside `policy.max_slippage_bps`.
+  // while 1-Click's `slippageTolerance` is applied on top of `amountOut` after the 0.2% (20 bps) keyless
+  // protocol fee + solver spread. Reserve 38 bps headroom (min 5 bps) so quotes stay inside `policy.max_slippage_bps`.
   const quoteSlippageToleranceBps = Math.max(
     5,
-    Math.min(maxSlippageBps - 35, Math.floor(maxSlippageBps * 0.65))
+    Math.min(maxSlippageBps - 38, Math.floor(maxSlippageBps * 0.6))
   );
 
   const requestBody: OneClickQuoteRequest = {

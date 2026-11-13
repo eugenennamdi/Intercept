@@ -69,28 +69,45 @@ function clampFinite(
   return Math.min(max, Math.max(min, val));
 }
 
-function resolveInstitutionalPositionOverride(
+function resolvePositionOverride(
   scale: unknown,
-  safeObligation?: string
+  safeObligation?: string,
+  safeSolanaWallet?: string
 ) {
+  const discoverWalletOnly =
+    Boolean(safeSolanaWallet) &&
+    (!safeObligation ||
+      safeObligation === "C5dZVpvpA39SNLDkojsi98nRePRRy8ELhtxak8m2vMq");
+
   if (scale === "INSTITUTIONAL") {
-    // ponytail: 100 SOL / $5,000 USDC mirrors the live ~1.33x healthy baseline at ~$89 SOL
-    // while keeping -25% cascade rescues (~$1,555 USDC) inside the $2,500 per-action policy cap.
+    // ponytail: 100 SOL / $5,000 USDC mirrors a ~1.20x–1.33x institutional baseline
+    // while keeping -25% cascade rescues (~$1,555–$1,996 USDC) inside the $2,500 per-action policy cap.
     return {
       ...(safeObligation ? { obligationPubkey: safeObligation } : {}),
+      ...(safeSolanaWallet ? { ownerSolanaEoa: safeSolanaWallet } : {}),
       depositedSol: 100,
       borrowedUsdc: 5_000,
     };
   }
-  return safeObligation ? { obligationPubkey: safeObligation } : undefined;
+  if (discoverWalletOnly && safeSolanaWallet) {
+    return {
+      ownerSolanaEoa: safeSolanaWallet,
+      discoverByOwner: true,
+    };
+  }
+  if (safeObligation || safeSolanaWallet) {
+    return {
+      ...(safeObligation ? { obligationPubkey: safeObligation } : {}),
+      ...(safeSolanaWallet ? { ownerSolanaEoa: safeSolanaWallet } : {}),
+    };
+  }
+  return undefined;
 }
 
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
     const rawMode = url.searchParams.get("mode") as ExecutionMode | null;
-    const modeParam: ExecutionMode =
-      rawMode && VALID_MODES.has(rawMode) ? rawMode : "LIVE_MAINNET_MODE";
     const dropParam =
       url.searchParams.get("stressShockPct") ??
       url.searchParams.get("priceDropPct");
@@ -100,6 +117,12 @@ export async function GET(request: Request) {
       0,
       95
     );
+    const modeParam: ExecutionMode =
+      rawMode && VALID_MODES.has(rawMode)
+        ? rawMode
+        : clampedDrop && clampedDrop > 0
+          ? "STRESS_TEST_MAINNET_MODE"
+          : "LIVE_MAINNET_MODE";
     const stressShockPct =
       clampedDrop !== undefined ? -clampedDrop : undefined;
     const positionScale = url.searchParams.get("positionScale");
@@ -108,7 +131,7 @@ export async function GET(request: Request) {
       executeInterceptRescuePipeline({
         mode: modeParam,
         stressShockPct,
-        customPosition: resolveInstitutionalPositionOverride(positionScale),
+        customPosition: resolvePositionOverride(positionScale),
       }),
       getCachedMainnetPreflight(),
     ]);
@@ -153,6 +176,7 @@ export async function POST(request: Request) {
       priceDropPct?: number;
       minTriggerHfBpsOverride?: number;
       userObligationOverride?: string;
+      userSolanaWalletOverride?: string;
       maxPerActionUsdcOverride?: number;
       maxDailyUsdcOverride?: number;
       maxPerActionUsdcFormattedOverride?: string;
@@ -179,12 +203,18 @@ export async function POST(request: Request) {
       10_100,
       25_000
     );
-    const safeSlippageBps = clampFinite(body.maxSlippageBpsOverride, 1, 1_000);
+    // Floor slippage at 50 bps so keyless 1-Click quotes (20 bps protocol fee + solver spread) stay inside policy bounds
+    const safeSlippageBps = clampFinite(body.maxSlippageBpsOverride, 50, 1_000);
 
     const safeObligation =
       typeof body.userObligationOverride === "string" &&
       BASE58_PUBKEY_RE.test(body.userObligationOverride.trim())
         ? body.userObligationOverride.trim()
+        : undefined;
+    const safeSolanaWallet =
+      typeof body.userSolanaWalletOverride === "string" &&
+      BASE58_PUBKEY_RE.test(body.userSolanaWalletOverride.trim())
+        ? body.userSolanaWalletOverride.trim()
         : undefined;
 
     const maxPerActionMicro = parseUsdcOverrideToMicro(
@@ -200,6 +230,13 @@ export async function POST(request: Request) {
       5_000_000
     );
 
+    const effectiveMaxPerActionMicro = maxPerActionMicro ?? 2_500_000_000n;
+    const rawDailyMicro = maxDailyMicro ?? 5_000_000_000n;
+    const effectiveMaxDailyMicro =
+      rawDailyMicro < effectiveMaxPerActionMicro
+        ? effectiveMaxPerActionMicro
+        : rawDailyMicro;
+
     const [report, preflight] = await Promise.all([
       executeInterceptRescuePipeline({
         mode: safeMode,
@@ -209,24 +246,19 @@ export async function POST(request: Request) {
           safeMinTriggerHfBps !== undefined
             ? Math.round(safeMinTriggerHfBps)
             : undefined,
-        customPosition: resolveInstitutionalPositionOverride(
+        customPosition: resolvePositionOverride(
           body.positionScale,
-          safeObligation
+          safeObligation,
+          safeSolanaWallet
         ),
         customPolicy: {
           ...(safeObligation
             ? { userKaminoObligationPubkey: safeObligation }
             : {}),
-          ...(maxPerActionMicro !== undefined
-            ? { maxPerActionUsdcMicro: maxPerActionMicro }
-            : {}),
-          ...(maxDailyMicro !== undefined
+          ...(maxPerActionMicro !== undefined || maxDailyMicro !== undefined
             ? {
-                maxDailyUsdcMicro:
-                  maxPerActionMicro !== undefined &&
-                  maxDailyMicro < maxPerActionMicro
-                    ? maxPerActionMicro
-                    : maxDailyMicro,
+                maxPerActionUsdcMicro: effectiveMaxPerActionMicro,
+                maxDailyUsdcMicro: effectiveMaxDailyMicro,
               }
             : {}),
           ...(safeSlippageBps !== undefined

@@ -20,6 +20,6 @@
     "build": "npm --workspace=@intercept/agent-tee run build && npm --workspace=@intercept/web run build"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.6.0"
   }
 }

@@ -24,7 +24,7 @@ DeFi capital is structurally fragmented across chains. Borrowers routinely post 
 | NEAR Layer | Production Component | Role in Intercept |
 | :--- | :--- | :--- |
 | **Confidential Compute** | [NEAR AI Cloud](https://cloud.near.ai) (`deepseek-ai/DeepSeek-V4.1-Flash-1017`) | Fetches live Intel TDX DCAP + NVIDIA Hopper `/v1/attestation/report` quotes bound to fresh 32-byte nonces and signs canonical `TeeDecisionReceipt` payloads. |
-| **On-Chain Policy Engine** | `near-sdk-rs` (`5.7.0` WASM) | Enforces 4-state async cross-contract execution (`InFlightLeg1 -> ReadyForLeg2 -> InFlightLeg2 -> Completed`) and byte-parses EVM & Solana transactions prior to signing. |
+| **On-Chain Policy Engine** | `near-sdk-rs` (`5.29.1` WASM) | Enforces 4-state async cross-contract execution (`InFlightLeg1 -> ReadyForLeg2 -> InFlightLeg2 -> Completed`) and byte-parses EVM & Solana transactions prior to signing. |
 | **Multi-Curve MPC** | NEAR Chain Signatures (`v1.signer`) | Derives keyless deterministic accounts on Base (`domain_id: 0`, Secp256k1) and Solana (`domain_id: 1`, Ed25519) governed exclusively by the guardrail contract. |
 | **Cross-Chain Liquidity** | NEAR Intents (`1click.chaindefuser.com`) | Routes standby Base USDC (`0x8335...2913`) to Solana USDC (`EPjFW...Dt1v`) with slippage bounds verified on-chain. |
 
@@ -92,7 +92,7 @@ Static threshold bots fail DeFi borrowers in one of two ways: under-buffering du
 ## Security & Privacy Guarantees
 
 ### 1. Least-Privilege Access Keys & Contract-Sponsored MPC Fees
-- **Scoped `FunctionCall` Permission:** The off-chain runner operates exclusively through a restricted NEAR `AccessKeyPermission::FunctionCall` key (`runner.intercept-guardrail-373299.testnet`) scoped solely to `request_rescue_origin_leg`, `request_rescue_destination_leg`, and `cancel_refunded_rescue`. It holds **zero `FullAccess` keys** and cannot invoke `update_policy`, modify contract code, or transfer NEAR.
+- **Scoped `FunctionCall` Permission:** The off-chain runner operates exclusively through a restricted NEAR `AccessKeyPermission::FunctionCall` key (`runner.intercept-guardrail-373299.testnet`, provisioned on Testnet with the 2 rescue methods in tx `3TFzFZ...`, and expandable in the v3 key spec to include `cancel_refunded_rescue`). It holds **zero `FullAccess` keys** and cannot invoke `update_policy`, modify contract code, or transfer NEAR.
 - **Native Zero-Deposit Compatibility:** Because NEAR `FunctionCall` keys forbid non-zero `attached_deposit` (`DepositWithFunctionCall`), `resolve_mpc_sign_deposit()` automatically sponsors the `0.05 NEAR` `v1.signer::sign` deposit from the guardrail contract's own balance (`v1.signer` refunds unused deposit directly back to the guardrail contract).
 - **Allowance Calibration & Operational Rotation:** Cross-contract `300 TGas` calls reserve `~0.3009 NEAR` upfront under NEAR pessimistic gas accounting (`actual gas burned: ~0.0021 NEAR`). Agent keys are provisioned with a `1.00 NEAR` gas allowance and monitored for rotation whenever remaining allowance drops below `0.35 NEAR`.
 
@@ -103,7 +103,7 @@ Every signing request is validated in Rust WASM (`< 1.5 ms`, with live zero-gas 
 - **Async Cross-Contract TOCTOU & Solver Refund Safety (`src/lib.rs`):** Deducts rolling 24-hour spend caps *before* yielding to `v1.signer` (`InFlightLeg1`), blocks `update_policy` while any rescue is in flight, executes non-panicking state rollbacks in `#[private]` callbacks if downstream MPC signing fails, and reconciles 1-Click `REFUNDED` / `FAILED` solver outcomes via `cancel_refunded_rescue` (auto-refunding `MPC_Base_Vault` via `refundTo` while restoring the 24h cap and preserving replay locks).
 
 ### 3. Confidential Compute & Zero-Retention Privacy
-- **Fresh Cryptographic Nonces:** Every `NEAR AI Cloud` attestation request generates a fresh 32-byte CSPRNG nonce (`crypto.randomBytes(32)`) bound into both the Intel TDX `report_data` commitment and NVIDIA NRAS GPU `eat_nonce`, then cryptographically verifies the enclave's Ed25519 signature over `nonce:requestHash:responseHash`.
+- **Fresh Cryptographic Nonces:** Every `NEAR AI Cloud` attestation request generates a fresh 32-byte CSPRNG nonce (`crypto.randomBytes(32)`) bound into both the Intel TDX `report_data` commitment and NVIDIA NRAS GPU `eat_nonce`, while verifiable inference enforces the enclave's Ed25519 signature over `model:requestHash:responseHash`.
 - **Stateless Telemetry:** The web dashboard and `/api/intercept` route operate statelessly in memory with zero server-side persistence, database logging, or third-party tracking of user wallet addresses.
 
 ---
@@ -112,7 +112,7 @@ Every signing request is validated in Rust WASM (`< 1.5 ms`, with live zero-gas 
 
 - **Performance-Aligned Protocol Economics (`0` Idle Subscription):** Standby reserves on Base incur zero custody or management fees during `HOLD`. In production, Intercept charges a `15 bps` protection fee strictly on settled emergency rescues—less than `3%` of the `500–1,000 bps` (`5%–10%`) Kamino liquidation penalty prevented.
 - **Sub-Cent NEAR Execution Overhead:** Each two-leg cross-chain rescue burns `~0.0042 NEAR` in actual compute gas across `request_rescue_origin_leg` and `request_rescue_destination_leg`, while `v1.signer` automatically refunds unused MPC deposit back into the guardrail contract's sponsored pool.
-- **Institutional Solver Spread (`NEAR Intents`):** Partner `ONECLICK_JWT` fee tiers compress stablecoin cross-chain routing from `25 bps` to `1 bp`, keeping automated micro-buffer rebalancing cheaper than manual bridge + DEX execution.
+- **Institutional Solver Spread (`NEAR Intents`):** Works keylessly out of the box (with the standard `0.2%` / `20 bps` keyless protocol fee), while partner `ONECLICK_JWT` registration (`partners.near-intents.org`) waives the `20 bps` protocol fee entirely—keeping automated micro-buffer rebalancing cheaper than manual bridge + DEX execution.
 - **Horizontal Multi-Chain Expansion:** Because the core security boundary is byte-level pre-image verification in `near-sdk-rs` + `v1.signer` dual-curve threshold signing, additional destination adapters (**Aave v3**, **Morpho Blue**, **Marginfi**, and **Hyperliquid** cross-margin) plug into the same non-custodial NEAR control plane without taking custody of borrower collateral.
 
 ---
@@ -139,7 +139,7 @@ Every signing request is validated in Rust WASM (`< 1.5 ms`, with live zero-gas 
 ## Quickstart & Deterministic Verification
 
 ### Prerequisites
-- **Node.js** `>= 22.0.0` & **npm** `>= 10.0.0`
+- **Node.js** `>= 22.6.0` & **npm** `>= 10.0.0`
 - **Rust** `>= 1.82` with `wasm32-unknown-unknown` target (`rustup target add wasm32-unknown-unknown`)
 
 ### 1. Install Dependencies
@@ -174,11 +174,11 @@ npm run dev
 Open [`http://localhost:3000`](http://localhost:3000) (or the live deployment at [`https://intercept-inky.vercel.app`](https://intercept-inky.vercel.app)) and [`/docs`](https://intercept-inky.vercel.app/docs) for the full technical specification. For Mainnet deployment and live cross-chain execution instructions, see [Section 5 of `ARCHITECTURE.md`](./ARCHITECTURE.md#5-deployment--live-operations-guide).
 
 ### 4. Interactive Verification Walkthrough (`Do X -> See Y`)
-1. **Open [`https://intercept-inky.vercel.app`](https://intercept-inky.vercel.app) (`Live Market` preset)** → Observe live Solana Mainnet Kamino `Obligation` state (`3,344` bytes) and live Pyth `SOL/USD` volatility held in **`HOLD`** (`$0` bridged while `HF >= 1.15x`), or toggle **`Position Profile`** between `Live PDA (0.185 SOL)` and `Institutional (100 SOL / $5,000 USDC)`.
-2. **Select `-20% Dip` vs. `-25% Crash` in the Market Stress Simulator** → Observe the risk engine shift from **`Micro Buffer` (`1.20x` target HF)** during orderly pullbacks to **`Cascade Rescue` (`1.45x` target HF)** under severe downward velocity, pulling a live `Base USDC -> Solana USDC` quote (`dry: true`) from `1click.chaindefuser.com/v0/quote` and verifying both unsigned payloads live against `intercept-guardrail-373299.testnet` WASM view methods.
-3. **Open the `Transaction Proofs` tab** → Inspect the live **NEAR AI Cloud** Intel TDX + NVIDIA Hopper hardware quote commitment (`32-byte` CSPRNG nonce binding), the live `NEAR WASM Verified` badge (`intercept-guardrail-373299.testnet`), the raw `68`-byte Base EIP-1559 transfer calldata, and the raw `539`-byte Solana `V0` Kamino repay message.
-4. **Click any of the `11` rows under `Security Guardrails`** → Inspect deterministic Rust byte-parser revert codes blocking collateral withdrawal (`0xcaf97572...`), ERC-20 `approve` (`0x095ea7b3`), `V0` Address Lookup Tables, `32`-byte blind pre-hashes, and gas-fee siphoning.
-5. **Click `Configure Policy` in the navigation bar** → Override trigger Health Factor, per-rescue/daily USDC spending limits, or supply any live Solana Kamino `Obligation` address to re-run end-to-end verification in real time.
+1. **Open [`https://intercept-inky.vercel.app`](https://intercept-inky.vercel.app) (`Live Market` preset)** → Observe live Solana Mainnet Kamino `Obligation` state (`3,344` bytes) and live Pyth `SOL/USD` volatility held in **`HOLD`** (`$0` bridged while `HF >= 1.15x`), or toggle **`Position Profile`** between `Live PDA (0.185 SOL)` and `Institutional (100 SOL)`.
+2. **Select the `Micro Buffer` Dip preset vs. `-25% Crash` in the Market Stress Simulator** → Observe the risk engine shift from **`MICRO_BUFFER_RESCUE` (`1.20x` target HF)** during orderly pullbacks to **`CASCADE_DEEP_RESCUE` (`1.45x` target HF)** under severe downward velocity, pulling a live `Base USDC -> Solana USDC` quote (`dry: true`) from `1click.chaindefuser.com/v0/quote` and verifying both unsigned payloads live against `intercept-guardrail-373299.testnet` WASM view methods.
+3. **Open the `Transaction Payloads` tab** → Inspect the live **NEAR AI Cloud** Intel TDX + NVIDIA Hopper hardware quote commitment (`32-byte` CSPRNG nonce binding), the live `NEAR WASM Verified` badge (`intercept-guardrail-373299.testnet`), the raw `68`-byte Base EIP-1559 transfer calldata, and the raw `539`-byte Solana `V0` Kamino repay message.
+4. **Click any of the `11` rows under `Security Tests (11/11)`** → Inspect deterministic Rust byte-parser revert codes blocking collateral withdrawal (`0xcaf97572...`), ERC-20 `approve` (`0x095ea7b3`), `V0` Address Lookup Tables, `32`-byte blind pre-hashes, and gas-fee siphoning.
+5. **Click `Configure Protection Policy` in the hero section** → Override trigger Health Factor, per-rescue/daily USDC spending limits, or connect Phantom/Solflare (read-only) / supply any live Solana Kamino `Obligation` address to re-run end-to-end verification in real time.
 
 ---
 
@@ -187,7 +187,7 @@ Open [`http://localhost:3000`](http://localhost:3000) (or the live deployment at
 ```text
 Intercept/
 ├── contracts/
-│   └── policy-guardrail/        # Rust (near-sdk-rs 5.7.0) on-chain byte-level policy guardrail
+│   └── policy-guardrail/        # Rust (near-sdk-rs 5.29.1) on-chain byte-level policy guardrail
 │       └── src/
 │           ├── lib.rs           # 4-state async MPC state machine, refund reconciliation & sponsored deposit
 │           ├── tee_receipt.rs   # Canonical Ed25519 TeeDecisionReceipt verifier & slippage/fee bounds
@@ -202,6 +202,13 @@ Intercept/
 ├── ARCHITECTURE.md              # Deep byte-level protocol specification & Mainnet operations guide
 └── LICENSE                      # MIT License
 ```
+
+## Open-Source Libraries & Dependencies
+
+All project source code in `contracts/`, `packages/agent-tee/`, `packages/web/`, and `scripts/` was authored from scratch during the NEAR Hackathon window (`Oct 19 – Nov 14, 2026`). External open-source libraries used:
+- **`contracts/policy-guardrail` (Rust WASM):** `near-sdk` (`5.29.1`), `borsh`, `serde`, `serde_json`, `hex`, `bs58`, and `ed25519-dalek` (dev-dependency for deterministic test vectors).
+- **`packages/agent-tee` (TypeScript Engine):** Zero runtime npm dependencies (uses Node.js built-in `node:crypto` & `fetch`, plus `typescript` and `@types/node` for compilation).
+- **`packages/web` (Dashboard & Docs):** `next` (`15.x`), `react` / `react-dom` (`19.x`), `tailwindcss` (`4.x`), and `@phosphor-icons/react` (with local shadcn/ui New York Zinc primitives in `src/components/ui/`).
 
 ## License
 

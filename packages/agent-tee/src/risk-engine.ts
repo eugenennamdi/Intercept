@@ -420,11 +420,11 @@ export function verifyTeeDecisionReceiptFull(params: {
     };
   }
 
-  if (receipt.timestamp > currentTimestampSec + 30) {
+  if (receipt.timestamp > currentTimestampSec + 60) {
     return {
       ok: false,
       errorCode: "FUTURE_TIMESTAMP",
-      errorMessage: `Receipt timestamp (${receipt.timestamp}) exceeds current clock (${currentTimestampSec}) + 30s skew`,
+      errorMessage: `Receipt timestamp (${receipt.timestamp}) exceeds current clock (${currentTimestampSec}) + 60s skew`,
     };
   }
 

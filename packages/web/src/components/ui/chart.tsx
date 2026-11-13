@@ -36,8 +36,21 @@ export function HealthFactorTrajectoryChart({
   const plotW = width - padLeft - padRight;
   const plotH = height - padTop - padBottom;
 
-  const minY = 0.78;
-  const maxY = 1.55;
+  const allValues = points.flatMap((p) => [
+    p.unprotectedHf,
+    p.interceptHf,
+    p.naiveHf,
+    triggerHf,
+    1.0,
+  ]);
+  const minY = Math.min(
+    0.78,
+    Math.floor((Math.min(...allValues) - 0.05) * 20) / 20
+  );
+  const maxY = Math.max(
+    1.55,
+    Math.ceil((Math.max(...allValues) + 0.05) * 20) / 20
+  );
 
   const toX = (i: number) =>
     padLeft + (points.length <= 1 ? 0 : (i / (points.length - 1)) * plotW);

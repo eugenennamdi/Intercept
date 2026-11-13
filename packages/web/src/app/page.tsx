@@ -476,11 +476,11 @@ export default function InterceptDashboardPage() {
   const [faqOpen, setFaqOpen] = useState<boolean>(false);
   const [customPolicy, setCustomPolicy] = useState<CustomPolicyConfig>({
     userKaminoObligationPubkey: "C5dZVpvpA39SNLDkojsi98nRePRRy8ELhtxak8m2vMq",
-    userSolanaWalletPubkey: "BPMrNdZmw9QEzrxNQC46fUwFxevQhUdDgeSmD5WsMGzU",
+    userSolanaWalletPubkey: "",
     minTriggerHfBps: 11500,
     maxPerActionUsdc: 2500,
     maxDailyUsdc: 5000,
-    maxSlippageBps: 50,
+    maxSlippageBps: 100,
   });
 
   const workspaceRef = useRef<HTMLDivElement>(null);
@@ -546,6 +546,8 @@ export default function InterceptDashboardPage() {
             stressShockPct: -Math.abs(dropPct),
             minTriggerHfBpsOverride: policyCfg.minTriggerHfBps,
             userObligationOverride: policyCfg.userKaminoObligationPubkey,
+            userSolanaWalletOverride:
+              policyCfg.userSolanaWalletPubkey || undefined,
             maxPerActionUsdcOverride: policyCfg.maxPerActionUsdc,
             maxDailyUsdcOverride: policyCfg.maxDailyUsdc,
             maxSlippageBpsOverride: policyCfg.maxSlippageBps,
@@ -553,7 +555,10 @@ export default function InterceptDashboardPage() {
           }),
         });
         if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`);
+          const errBody = (await res.json().catch(() => null)) as {
+            error?: string;
+          } | null;
+          throw new Error(errBody?.error || `HTTP ${res.status}`);
         }
         const json = (await res.json()) as InterceptApiResponse;
         if (controller.signal.aborted) return;
@@ -623,9 +628,26 @@ export default function InterceptDashboardPage() {
     adversarialSuite.find((c) => c.attackId === selectedAdvId) ??
     adversarialSuite[0];
 
-  const hfBefore = report?.kaminoBefore?.healthFactor ?? 1.3323;
+  const hfBefore = report?.kaminoBefore?.healthFactor ?? 1.2057;
   const hfAfter = report?.kaminoAfter?.healthFactor ?? hfBefore;
   const triggerHf = (report?.riskEvaluation?.triggerThresholdHfBps ?? 11500) / 10000;
+  const currentDropPct = mode === "LIVE_MAINNET_MODE" ? 0 : priceDropPct;
+  const unshockedHf =
+    currentDropPct > 0 && currentDropPct < 95
+      ? Number((hfBefore / (1 - currentDropPct / 100)).toFixed(4))
+      : hfBefore;
+  // Calibrate orderly dip preset dynamically so 1.10 <= shocked HF < triggerHf (MICRO_BUFFER_RESCUE -> 1.20x)
+  const targetMicroMidHf = Math.max(1.105, Math.min(triggerHf - 0.025, 1.125));
+  const orderlyDipDrop = Math.max(
+    4,
+    Math.min(
+      17,
+      Math.round(
+        (1 - targetMicroMidHf / Math.max(unshockedHf, targetMicroMidHf + 0.05)) *
+          100
+      )
+    )
+  );
 
   const hfToPercent = (hf: number) =>
     Math.max(2, Math.min(98, ((hf - 0.85) / (1.6 - 0.85)) * 100));
@@ -634,7 +656,7 @@ export default function InterceptDashboardPage() {
 
   // Build dynamic 7-tick Health Factor trajectory series for the shadcn/ui Monochrome Chart
   const trajectoryPoints = useMemo<TrajectoryPoint[]>(() => {
-    const baseSpot = report?.pythTelemetry?.rawSpotSolUsd ?? 88.85;
+    const baseSpot = report?.pythTelemetry?.rawSpotSolUsd ?? 88.5;
     const drop = mode === "LIVE_MAINNET_MODE" ? 0 : priceDropPct;
     const factors = [
       1.0,
@@ -645,7 +667,7 @@ export default function InterceptDashboardPage() {
       1 - (drop * 0.92) / 100,
       1 - (drop * 0.85) / 100,
     ];
-    const baseHf = 1.336;
+    const baseHf = unshockedHf;
     return factors.map((mult, idx) => {
       const price = baseSpot * mult;
       const rawHf = Number((baseHf * mult).toFixed(4));
@@ -665,7 +687,7 @@ export default function InterceptDashboardPage() {
         naiveHf: naive,
       };
     });
-  }, [report, mode, priceDropPct, triggerHf, hfAfter, isRescueTriggered]);
+  }, [report, mode, priceDropPct, unshockedHf, triggerHf, hfAfter, isRescueTriggered]);
 
   const rawRepayFormatted = report?.riskEvaluation?.repayAmountUsdcFormatted ?? "0.00";
   const repayDisplay = rawRepayFormatted.startsWith("$")
@@ -759,7 +781,9 @@ export default function InterceptDashboardPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => void fetchPipeline(mode, priceDropPct, customPolicy)}
+              onClick={() =>
+                void fetchPipeline(mode, priceDropPct, customPolicy, positionScale)
+              }
               disabled={loading}
               aria-label="Refresh telemetry"
             >
@@ -854,7 +878,7 @@ export default function InterceptDashboardPage() {
                       03 · NEAR INTENTS & MPC
                     </div>
                     <div className="mt-1 text-xs font-medium text-foreground">
-                      Sub-2s Base → Kamino Debt Repay
+                      Keyless Base → Kamino Auto-Repay
                     </div>
                   </div>
                 </div>
@@ -969,10 +993,10 @@ export default function InterceptDashboardPage() {
                       drop: 0,
                     },
                     {
-                      label: "-20% Dip",
+                      label: `-${orderlyDipDrop}% Dip`,
                       sub: "Micro Buffer",
                       targetMode: "STRESS_TEST_MAINNET_MODE" as const,
-                      drop: 20,
+                      drop: orderlyDipDrop,
                     },
                     {
                       label: "-25% Crash",
@@ -1623,24 +1647,35 @@ export default function InterceptDashboardPage() {
                         Confidential Enclave Attestation · NEAR AI Cloud
                       </CardTitle>
                       <div className="flex flex-wrap items-center gap-1.5">
-                        {report.onChainNearWasmVerification && (
-                          <a
-                            href={report.onChainNearWasmVerification.explorerUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex"
-                          >
-                            <Badge variant="secondary" className="gap-1 hover:border-zinc-400">
-                              <span>
-                                {report.onChainNearWasmVerification.source ===
-                                "NEAR_TESTNET_WASM_VM_LIVE"
-                                  ? `NEAR WASM Verified (${report.onChainNearWasmVerification.latencyMs}ms)`
-                                  : "Guardrail Byte-Verified"}
-                              </span>
-                              <ArrowSquareOut className="h-3 w-3" />
+                        {report.onChainNearWasmVerification &&
+                          (report.onChainNearWasmVerification.source ===
+                          "NEAR_TESTNET_WASM_VM_LIVE" ? (
+                            <a
+                              href={report.onChainNearWasmVerification.explorerUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex"
+                            >
+                              <Badge
+                                variant="secondary"
+                                className="gap-1 hover:border-zinc-400"
+                              >
+                                <span>
+                                  {`NEAR WASM Verified (${report.onChainNearWasmVerification.latencyMs}ms)`}
+                                </span>
+                                <ArrowSquareOut className="h-3 w-3" />
+                              </Badge>
+                            </a>
+                          ) : (
+                            <Badge
+                              variant="outline"
+                              title={
+                                report.onChainNearWasmVerification.fallbackReason
+                              }
+                            >
+                              Local Byte-Mirror Verified (Custom Policy)
                             </Badge>
-                          </a>
-                        )}
+                          ))}
                         <Badge
                           variant={
                             report.nearAiCloudAttestation.source !==
@@ -1822,7 +1857,7 @@ export default function InterceptDashboardPage() {
                           </div>
                           <div className="flex items-center justify-between py-2">
                             <span className="text-muted-foreground">
-                              Verified NEAR MPC Tx (Secp256k1)
+                              Reference Testnet MPC Tx (Secp256k1)
                             </span>
                             <div className="flex items-center gap-1.5">
                               <CopyChip
@@ -1923,7 +1958,7 @@ export default function InterceptDashboardPage() {
                           </div>
                           <div className="flex items-center justify-between py-2">
                             <span className="text-muted-foreground">
-                              Verified NEAR MPC Tx (Ed25519)
+                              Reference Testnet MPC Tx (Ed25519)
                             </span>
                             <div className="flex items-center gap-1.5">
                               <CopyChip

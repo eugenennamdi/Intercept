@@ -16,6 +16,12 @@ export const DEFAULT_HERMES_ENDPOINT = "https://hermes.pyth.network";
 export const DEFAULT_SOLANA_RPC_URL = "https://api.mainnet-beta.solana.com";
 export const BACKUP_SOLANA_RPC_URL = "https://solana-rpc.publicnode.com";
 
+let lastLivePythSnapshot: {
+  spot: number;
+  ema: number;
+  conf: number;
+} | null = null;
+
 export interface PythRawPrice {
   price: string;
   conf: string;
@@ -90,9 +96,19 @@ export function calculateVolatilityAndVelocityBps(params: {
     (confidenceUsd / Math.max(spotPrice, 0.0001)) * 10_000
   );
 
+  // ponytail: Moderate simulated pullbacks (<18% drop) represent orderly multi-hour drawdowns where EMA tracks
+  // 85% of the move (allowing MICRO_BUFFER_RESCUE 1.20x when 1.10 <= HF < 1.15), whereas >=18% shocks model
+  // single-candle flash crashes against an unshifted EMA (triggering CASCADE_DEEP_RESCUE 1.45x).
+  const effectiveEmaPrice =
+    stressShockPct < 0 && Math.abs(stressShockPct) < 18
+      ? emaPrice * (1 + (stressShockPct * 0.85) / 100)
+      : emaPrice;
+
   // Negative velocity indicates downward price cascade relative to EMA
   const emaVelocityBps = Math.round(
-    ((effectiveSolUsd - emaPrice) / Math.max(emaPrice, 0.0001)) * 10_000
+    ((effectiveSolUsd - effectiveEmaPrice) /
+      Math.max(effectiveEmaPrice, 0.0001)) *
+      10_000
   );
 
   // Log-return sample standard deviation if tick history is provided
@@ -209,6 +225,11 @@ async function fetchPythFromSolanaMainnet(params: {
   const rawSpotSolUsd = Number(scalePythValue(rawPriceI64, expo).toFixed(4));
   const emaSolUsd = Number(scalePythValue(rawEmaPriceI64, expo).toFixed(4));
   const confidenceUsd = Number(scalePythValue(rawConfU64, expo).toFixed(4));
+  lastLivePythSnapshot = {
+    spot: rawSpotSolUsd,
+    ema: emaSolUsd,
+    conf: confidenceUsd,
+  };
 
   const metrics = calculateVolatilityAndVelocityBps({
     spotPrice: rawSpotSolUsd,
@@ -331,6 +352,11 @@ export async function fetchPythSolVolatility(options?: {
     const confidenceUsd = Number(
       scalePythValue(solFeed.price.conf, solFeed.price.expo).toFixed(4)
     );
+    lastLivePythSnapshot = {
+      spot: rawSpotSolUsd,
+      ema: emaSolUsd,
+      conf: confidenceUsd,
+    };
     const usdcSpotUsd = usdcFeed
       ? Number(
           scalePythValue(usdcFeed.price.price, usdcFeed.price.expo).toFixed(4)
@@ -372,11 +398,11 @@ export async function fetchPythSolVolatility(options?: {
       fetchLatencyMs: Math.round(performance.now() - t0),
     };
   } catch (err) {
-    // ponytail: offline/airgapped CI fallback uses a deterministic mainnet snapshot only if both Solana RPC and Hermes are unreachable
+    // ponytail: reuse most recent live oracle tick during transient RPC 429 bursts; use calibrated $88.50 snapshot only in cold airgapped CI
     const fallbackReason = err instanceof Error ? err.message : String(err);
-    const fallbackSpot = 101.89;
-    const fallbackEma = 101.8;
-    const fallbackConf = 0.036;
+    const fallbackSpot = lastLivePythSnapshot?.spot ?? 88.5;
+    const fallbackEma = lastLivePythSnapshot?.ema ?? 88.6;
+    const fallbackConf = lastLivePythSnapshot?.conf ?? 0.036;
     const metrics = calculateVolatilityAndVelocityBps({
       spotPrice: fallbackSpot,
       emaPrice: fallbackEma,

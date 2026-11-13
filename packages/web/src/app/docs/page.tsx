@@ -5,18 +5,9 @@ import Link from "next/link";
 import {
   ArrowLeft,
   BookOpen,
-  LockKey,
-  ShieldCheck,
-  Cpu,
-  Code,
-  Pulse,
-  TerminalWindow,
   Check,
   Copy,
   ArrowSquareOut,
-  CheckCircle,
-  Skull,
-  ChartLineUp,
 } from "@phosphor-icons/react";
 import { InterceptLogoMark } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
@@ -338,7 +329,7 @@ export default function InterceptDocsPage() {
                   <code className="font-mono">
                     0xfa1d66b9f3ae95f9d21b8db2315720c2fcde5320
                   </code>
-                  ). Even <strong className="text-foreground">$1.00–$2.00 USDC</strong>{" "}
+                  ). Even <strong className="text-foreground">$2.00–$3.50 USDC</strong>{" "}
                   is sufficient to test a complete live cross-chain rescue.
                 </p>
               </div>
@@ -377,13 +368,13 @@ export default function InterceptDocsPage() {
                     1. Live vs. Flash-Crash Simulation
                   </TableCell>
                   <TableCell className="font-mono text-xs">
-                    Dashboard → Scenario Bar
+                    Dashboard → Market Stress Simulator
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
-                    Toggle between <strong>Live Mainnet (0%)</strong> and{" "}
-                    <strong>-25% Crash</strong>. Watch Health Factor recover from{" "}
-                    <code className="font-mono">1.06 → 1.45</code> across the chart and
-                    5-stage pipeline.
+                    Toggle between <strong>Live Market (0% Shock)</strong>, the{" "}
+                    <strong>Micro Buffer Dip</strong> (<code className="font-mono">1.20x</code>), and{" "}
+                    <strong>-25% Crash</strong> (<code className="font-mono">1.45x</code>) across
+                    the trajectory chart and 5-stage pipeline.
                   </TableCell>
                 </TableRow>
                 <TableRow>
@@ -391,7 +382,7 @@ export default function InterceptDocsPage() {
                     2. Prompt-Injection Red-Team (11/11)
                   </TableCell>
                   <TableCell className="font-mono text-xs">
-                    Dashboard → Security Tests Tab
+                    Dashboard → Security Tests (11/11)
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     Click any of the 11 attack vectors (e.g. rogue ERC-20 destination,
@@ -404,7 +395,7 @@ export default function InterceptDocsPage() {
                     3. Raw EIP-1559 & Solana V0 Bytes
                   </TableCell>
                   <TableCell className="font-mono text-xs">
-                    Dashboard → Cross-Chain Execution Tab
+                    Dashboard → Transaction Payloads
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     Inspect the decoded RLP fields for <code className="font-mono">domain_id: 0</code>{" "}
@@ -456,7 +447,7 @@ export default function InterceptDocsPage() {
 [Domain B: NEAR AI Cloud TEE + intercept-guardrail-373299.testnet]
   ├── TEE Enclave signs Ed25519 Rescue Receipt (32B CSPRNG nonce + TDX/Hopper quote)
   ├── Scoped NEAR FunctionCall Access Key (1.00 NEAR gas allowance, 0 NEAR attached deposit)
-  │     ├── Permitted methods ONLY: request_rescue_origin_leg, request_rescue_destination_leg, cancel_refunded_rescue
+  │     ├── v3 Key Spec: request_rescue_origin_leg, request_rescue_destination_leg, cancel_refunded_rescue
   │     ├── Contract sponsors 0.05 NEAR v1.signer fee internally (reclaimed via refund)
   │     └── Forbidden: update_policy (Owner-only, locked while in flight), TransferNEAR, DeployContract, AddKey
   └── Rust Guardrail parses every byte of Leg 1 & Leg 2 before calling v1.signer

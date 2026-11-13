@@ -1,4 +1,5 @@
 import {
+  evaluateKaminoObligationHealth,
   fetchKaminoObligationTelemetry,
   KAMINO_MAIN_MARKET_PUBKEY,
   type KaminoObligationPositionInput,
@@ -228,7 +229,7 @@ export function getDefaultInterceptSetup(): {
       rolling24hSpentUsdcMicro: 0n,
       maxSlippageBps: 100, // 1.00% max slippage (+$0.35 fixed solver gas buffer)
       minTriggerHfBps: 11_500, // 1.1500 HF trigger threshold
-      availableBaseVaultUsdcMicro: 5_000_000_000n, // 5,000.00 USDC institutional Base MPC Vault capacity
+      availableBaseVaultUsdcMicro: 25_000_000_000n, // 25,000.00 USDC institutional Base MPC Vault capacity
     },
   };
 }
@@ -504,6 +505,7 @@ export async function executeInterceptRescuePipeline(options?: {
     "02" + unsignedEip1559.signingHashHex.replace(/^0x/i, "");
   let leg1SScalarHex = signedReceiptBundle.receiptHashHex;
   let leg1RecoveryId = 0;
+  let leg1AuthorizedAtMs = 0;
   let broadcastedBaseTxHashHex: string | null = null;
 
   if (liveBroadcastEnabled) {
@@ -525,6 +527,7 @@ export async function executeInterceptRescuePipeline(options?: {
     leg1BigRAffineHex = nearLeg1Res.returnValue.big_r_affine_hex;
     leg1SScalarHex = nearLeg1Res.returnValue.s_scalar_hex;
     leg1RecoveryId = nearLeg1Res.returnValue.recovery_id;
+    leg1AuthorizedAtMs = Date.now();
   }
 
   const assembledBaseTx = assembleSignedEip1559Transaction({
@@ -599,13 +602,38 @@ export async function executeInterceptRescuePipeline(options?: {
     settlementStatus.status === "REFUNDED" ||
     settlementStatus.status === "FAILED"
   ) {
+    let refundReconciliationNote =
+      "cancel_refunded_rescue reconciles 24h cap.";
+    if (liveBroadcastEnabled && leg1AuthorizedAtMs > 0) {
+      const remainingGraceMs =
+        process.env.NEAR_ACCOUNT_ID === policy.ownerNearAccount
+          ? 0
+          : Math.max(0, 122_000 - (Date.now() - leg1AuthorizedAtMs));
+      if (remainingGraceMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, remainingGraceMs));
+      }
+      const reconcileRes = await invokeNearPolicyContractLive<void>({
+        signerAccountId: process.env.NEAR_ACCOUNT_ID!,
+        signerPrivateKeyBase58: process.env.NEAR_PRIVATE_KEY!,
+        receiverContractId: process.env.POLICY_CONTRACT_ID!,
+        methodName: "cancel_refunded_rescue",
+        argsJson: {
+          receipt_hash_hex: signedReceiptBundle.receiptHashHex.replace(
+            /^0x/i,
+            ""
+          ),
+        },
+      });
+      refundReconciliationNote = `cancel_refunded_rescue reconciled 24h cap on NEAR (${reconcileRes.txHashBase58}).`;
+    }
+
     stages.push({
       stageIndex: 4,
       stageId: "STAGE_4_NEAR_INTENTS_SOLVER_SETTLEMENT",
       label: "Base USDC Deposit & NEAR Intents Cross-Chain Solver Fill",
       status: "REFUNDED_TO_BASE_VAULT",
-      measuredLatencyMs: stage4Ms,
-      detail: `1-Click solver returned ${settlementStatus.status}: ${oneClickQuote.amountInFormatted} USDC auto-refunded on Base to MPC_Base_Vault (${policy.mpcBaseVaultAddress.slice(0, 10)}...); cancel_refunded_rescue reconciles 24h cap.`,
+      measuredLatencyMs: Math.max(1, Math.round(performance.now() - tStage4)),
+      detail: `1-Click solver returned ${settlementStatus.status}: ${oneClickQuote.amountInFormatted} USDC auto-refunded on Base to MPC_Base_Vault (${policy.mpcBaseVaultAddress.slice(0, 10)}...); ${refundReconciliationNote}`,
       explorerUrl: `https://basescan.org/token/0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913?a=${policy.mpcBaseVaultAddress}`,
       explorerLabel: "BaseScan (Refund Vault)",
     });
@@ -746,29 +774,31 @@ export async function executeInterceptRescuePipeline(options?: {
     broadcastedSolanaSigBase58 ?? assembledSolanaTx.signatureBase58;
 
   const settledRepayUsd = Number(settledAmountOutMicro) / 1_000_000;
-  const [kaminoAfter, onChainNearWasmVerification] = await Promise.all([
-    fetchKaminoObligationTelemetry({
-      position: {
-        ...position,
-        depositedSol: kaminoBefore.depositedSol,
-        borrowedUsdc: Math.max(0, kaminoBefore.borrowedUsdc - settledRepayUsd),
-        overrideOnChainBalances: true,
-      },
-      solPriceUsd: pythTelemetry.effectiveSolUsd,
-      usdcPriceUsd: pythTelemetry.usdcSpotUsd,
-    }),
-    verifyRescuePayloadsOnNearWasmView({
-      receipt: signedReceiptBundle.receipt,
-      unsignedEip1559TxHex: unsignedEip1559.rawUnsignedTxHex,
-      userObligationPubkey: policy.userKaminoObligationPubkey,
-      lendingMarketPubkey: policy.kaminoLendingMarketPubkey,
-      recentBlockhashBase58: solanaChainState.recentBlockhashBase58,
-      settledAmountOutMicro,
-      minRepayAmountUsdcMicro: oneClickQuote.minAmountOutMicroUsdc,
-      repayAmountUsdcMicro: riskEvaluation.repayAmountUsdcMicro,
-      contractId: policy.nearContractId,
-    }),
-  ]);
+  const kaminoAfter = evaluateKaminoObligationHealth({
+    obligationPubkey: kaminoBefore.obligationPubkey,
+    ownerSolanaEoa: kaminoBefore.ownerSolanaEoa,
+    lendingMarketPubkey: kaminoBefore.lendingMarketPubkey,
+    depositedSol: kaminoBefore.depositedSol,
+    borrowedUsdc: Math.max(0, kaminoBefore.borrowedUsdc - settledRepayUsd),
+    solPriceUsd: pythTelemetry.effectiveSolUsd,
+    usdcPriceUsd: pythTelemetry.usdcSpotUsd,
+    maxLtvBps: kaminoBefore.maxLtvBps,
+    liquidationLtvBps: kaminoBefore.liquidationLtvBps,
+    solanaSlot: kaminoBefore.solanaSlot,
+    source: kaminoBefore.source,
+    rpcLatencyMs: 0,
+  });
+  const onChainNearWasmVerification = await verifyRescuePayloadsOnNearWasmView({
+    receipt: signedReceiptBundle.receipt,
+    unsignedEip1559TxHex: unsignedEip1559.rawUnsignedTxHex,
+    userObligationPubkey: policy.userKaminoObligationPubkey,
+    lendingMarketPubkey: policy.kaminoLendingMarketPubkey,
+    recentBlockhashBase58: solanaChainState.recentBlockhashBase58,
+    settledAmountOutMicro,
+    minRepayAmountUsdcMicro: oneClickQuote.minAmountOutMicroUsdc,
+    repayAmountUsdcMicro: riskEvaluation.repayAmountUsdcMicro,
+    contractId: policy.nearContractId,
+  });
   const stage5Ms = Math.max(1, Math.round(performance.now() - tStage5));
 
   stages.push({

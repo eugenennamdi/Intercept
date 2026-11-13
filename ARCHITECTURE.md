@@ -78,7 +78,7 @@ The NEAR Policy Guardrail Contract verifies:
 3. `regime` is `"MICRO_BUFFER_RESCUE"` or `"CASCADE_DEEP_RESCUE"` (rejects `"HOLD"`).
 4. Timestamp freshness & policy invariant: `policy.max_receipt_age_sec` is strictly enforced in `30..=3600`, and `receipt.timestamp + policy.max_receipt_age_sec >= block_timestamp_sec`.
 5. `bs58::decode(receipt.obligation_pubkey) == self.user_kamino_obligation_pubkey`.
-6. Slippage & cross-chain delivery fee bound: `receipt.min_amount_out >= min(proportional_floor, repay_amount_usdc.saturating_sub(MAX_FIXED_SOLVER_DELIVERY_FEE_USDC))` where `proportional_floor = ceil(repay_amount_usdc * (10_000 - policy.max_slippage_bps) / 10_000)` and `MAX_FIXED_SOLVER_DELIVERY_FEE_USDC = 350_000` (`$0.35 USDC`), accommodating fixed destination gas overhead on micro-rescues without loosening institutional proportional slippage caps.
+6. Slippage & cross-chain delivery fee bound: `receipt.min_amount_out >= max(1, proportional_floor.saturating_sub(MAX_FIXED_SOLVER_DELIVERY_FEE_USDC))` where `proportional_floor = (repay_amount_usdc * (10_000 - policy.max_slippage_bps)) / 10_000` and `MAX_FIXED_SOLVER_DELIVERY_FEE_USDC = 350_000` (`$0.35 USDC`), accommodating fixed destination gas overhead on micro-rescues without loosening institutional proportional slippage caps.
 7. Health-factor trigger threshold: `receipt.observed_hf_bps < policy.min_trigger_hf_bps` (blocks premature Base USDC depletion when the position is healthy above the owner's configured trigger).
 
 ### 3.2 Leg 1 Byte-Level EIP-1559 RLP Verifier (`src/evm_parser.rs`)
@@ -114,7 +114,7 @@ The contract parses the raw serialized Solana `Message` bytes (`64..=1232` bytes
    - If `V0` (`0x80` prefix), asserts `address_table_lookups_len == 0` (forbidding opaque Address Lookup Table indirection) and asserts zero trailing bytes.
 2. **Program Whitelist & ComputeBudget Fee Bounds:**
    - Every compiled instruction's `program_id_index` must resolve to either:
-     - `ComputeBudget111111111111111111111111111111` (`SetComputeUnitLimit` `0x02` bounded to `50_000..=1_400_000` CUs; `SetComputeUnitPrice` `0x03` bounded to `<= 5_000_000` micro-lamports/CU to block SOL fee-drain attacks)
+     - `ComputeBudget111111111111111111111111111111` (`RequestHeapFrame` `0x01` bounded to `1..=262_144` bytes; `SetComputeUnitLimit` `0x02` bounded to `1..=1_400_000` CUs; `SetComputeUnitPrice` `0x03` bounded to `<= 5_000_000` micro-lamports/CU to block SOL fee-drain attacks)
      - `KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD` (`[4, 178, 172, 177, 18, 88, 204, 227, 104, 44, 65, 139, 168, 114, 255, 61, 249, 17, 2, 113, 47, 21, 175, 18, 182, 190, 105, 179, 67, 91, 0, 8]`)
 3. **Kamino Same-Slot Refresh & Repayment Anchor Discriminator Verification:**
    - Preceding Kamino instructions in the transaction are permitted **only if** their 8-byte discriminator matches one of the 4 permissionless refresh instructions:

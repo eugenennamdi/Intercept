@@ -92,7 +92,7 @@ export default function OpenGraphImage() {
                   letterSpacing: "0.06em",
                 }}
               >
-                GUARDRAIL.INTERCEPT-DEFI.NEAR
+                INTERCEPT-GUARDRAIL-373299.TESTNET
               </span>
             </div>
           </div>

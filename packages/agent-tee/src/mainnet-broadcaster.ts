@@ -437,13 +437,21 @@ export async function fetchSolanaMainnetBlockhashAndBalances(params: {
       },
     ];
 
-    const res = await fetch(solanaRpcUrl, {
+    let res = await fetch(solanaRpcUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(batchReq),
       signal: controller.signal,
     });
     clearTimeout(timer);
+    if (!res.ok && !params.solanaRpcUrl) {
+      res = await fetch("https://solana-rpc.publicnode.com", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(batchReq),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    }
 
     if (res.ok) {
       const results = (await res.json()) as Array<{
@@ -555,7 +563,10 @@ export async function invokeNearPolicyContractLive<T>(params: {
   signerAccountId: string;
   signerPrivateKeyBase58: string;
   receiverContractId: string;
-  methodName: "request_rescue_origin_leg" | "request_rescue_destination_leg";
+  methodName:
+    | "request_rescue_origin_leg"
+    | "request_rescue_destination_leg"
+    | "cancel_refunded_rescue";
   argsJson: Record<string, unknown>;
   gasUnits?: bigint;
   attachedDepositYocto?: bigint;
@@ -567,7 +578,9 @@ export async function invokeNearPolicyContractLive<T>(params: {
     receiverContractId,
     methodName,
     argsJson,
-    gasUnits = 300_000_000_000_000n, // 300 TGas (250 TGas v1.signer + 30 TGas callback + 20 TGas contract)
+    gasUnits = methodName === "cancel_refunded_rescue"
+      ? 30_000_000_000_000n // 30 TGas local state reconciliation (no v1.signer cross-contract hop)
+      : 300_000_000_000_000n, // 300 TGas (250 TGas v1.signer + 30 TGas callback + 20 TGas contract)
     // ponytail: 0 yoctoNEAR default because NEAR AccessKeyPermission::FunctionCall forbids >0 attached_deposit
     // (InvalidAccessKeyError::DepositWithFunctionCall); guardrail contract sponsors 0.05 NEAR v1.signer fee from its own balance.
     attachedDepositYocto = 0n,
@@ -731,7 +744,9 @@ export async function invokeNearPolicyContractLive<T>(params: {
     commitJson.result.status.SuccessValue,
     "base64"
   );
-  const returnValue = JSON.parse(returnBuf.toString("utf8")) as T;
+  const returnValue = (
+    returnBuf.length === 0 ? undefined : JSON.parse(returnBuf.toString("utf8"))
+  ) as T;
   return {
     txHashBase58: commitJson.result.transaction?.hash ?? expectedTxHashBase58,
     returnValue,
